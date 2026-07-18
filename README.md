@@ -156,7 +156,7 @@ node scripts/browser_verify.mjs
 
 Current reproducible evidence:
 
-- 24 Python contract/server/static assertions;
+- 25 Python contract/server/static assertions;
 - 22 JavaScript state-machine assertions;
 - 30/30 Chromium journey checks at desktop and 390 px mobile;
 - zero axe-core violations in blocked, dialog, receipt, and mobile states;

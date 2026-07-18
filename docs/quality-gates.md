@@ -15,7 +15,7 @@ Codex feedback ID, and video/upload steps
 | G6 performance | PASS on reference | first meaningful render 459.7 ms; no runtime package/build/network dependency | not a broad device benchmark |
 | G7 operations | PASS | run/correlation/revision/source visible; append-only replay and receipt | local synthetic evidence only |
 | G8 agent boundary | PASS | effect boundary and model/tool/approval/queue causality explicit; no model/tool runtime | no claim of live Kynist integration |
-| G9 proof | PASS | 24 Python + 22 Node + 30 browser checks; screenshots and accessibility audit | GPT API result pending |
+| G9 proof | PASS | 25 Python + 22 Node + 30 browser checks; screenshots and accessibility audit | GPT API result pending |
 | G10 release | PENDING clean clone | one-command entry, MIT license, forward-only commits, no install | final clone rehearsal follows documentation commit |
 
 ## Reproduce
