@@ -16,7 +16,7 @@ Codex feedback ID, and video/upload steps
 | G7 operations | PASS | run/correlation/revision/source visible; append-only replay and receipt | local synthetic evidence only |
 | G8 agent boundary | PASS | effect boundary and model/tool/approval/queue causality explicit; no model/tool runtime | no claim of live Kynist integration |
 | G9 proof | PASS | 25 Python + 22 Node + 30 browser checks; screenshots and accessibility audit | GPT API result pending |
-| G10 release | PENDING clean clone | one-command entry, MIT license, forward-only commits, no install | final clone rehearsal follows documentation commit |
+| G10 release | PASS locally | isolated clone: 25 Python + 22 Node + 30 browser checks; clean worktree; one-command entry | repeat from selected remote after publication |
 
 ## Reproduce
 
@@ -37,4 +37,5 @@ submission evidence gate and requires `OPENAI_API_KEY`.
 - `evidence/screenshots/`: generated blocked, receipt, and mobile states.
 - `evidence/accessibility-verification.md`: tools, states, contrast math, residual.
 - `evidence/gpt-5.6-review.pending.md`: exact status of external model proof.
+- `evidence/clean-clone-verification.md`: isolated local-clone rehearsal.
 - Git history: new-work and Codex collaboration chronology.

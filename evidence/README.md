@@ -13,6 +13,8 @@ repository, not screenshots copied from the Kynist monorepo.
   physical-screen-reader limitation.
 - [`gpt-5.6-review.pending.md`](gpt-5.6-review.pending.md) — explicit status and
   acceptance criteria for the one external GPT-5.6 evidence call.
+- [`clean-clone-verification.md`](clean-clone-verification.md) — isolated clone,
+  complete test/browser run, and clean-worktree result.
 
 Regenerate the browser report and screenshots from the repository root:
 
