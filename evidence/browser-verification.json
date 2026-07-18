@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-18T20:00:41.111Z",
+  "generated_at": "2026-07-18T20:07:30.422Z",
   "surface": "Kyn.ist Flight Recorder standalone browser journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -16,7 +16,7 @@
     "failed": 0
   },
   "metrics": {
-    "first_render_ms": 182.19999980926514
+    "first_render_ms": 126.59999990463257
   },
   "checks": [
     {
@@ -30,7 +30,7 @@
         "rawCredentialInDom": false,
         "unnamedButtons": 0,
         "horizontalOverflow": 0,
-        "renderMark": 182.19999980926514
+        "renderMark": 126.59999990463257
       }
     },
     {
@@ -61,7 +61,7 @@
     {
       "name": "first render stays under one second locally",
       "status": "pass",
-      "detail": 182.19999980926514
+      "detail": 126.59999990463257
     },
     {
       "name": "accessibility tree exposes named controls",
@@ -271,8 +271,8 @@
       "detail": {
         "dialogBottom": 506,
         "viewportHeight": 520,
-        "bodyBottom": 390,
-        "footerTop": 390,
+        "bodyBottom": 388,
+        "footerTop": 388,
         "acknowledgementTop": 355,
         "acknowledgementBottom": 372,
         "rowTop": 355,
@@ -340,17 +340,17 @@
   ],
   "diagnostics": {
     "server_output": [
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -",
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/core.mjs HTTP/1.1\" 200 -",
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /schema/kyn-flight-trace-v1.schema.json HTTP/1.1\" 200 -",
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -",
-      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -"
+      "18/Jul/2026 22:07:29 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:07:29 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:07:30 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:07:30 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:07:30 127.0.0.1 \"GET /app/core.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:07:30 127.0.0.1 \"GET /schema/kyn-flight-trace-v1.schema.json HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:07:30 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:07:30 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -"
     ],
     "browser_output": [
-      "DevTools listening on ws://127.0.0.1:36897/devtools/browser/cf7d6a52-0dfa-4ec2-bb1d-c0f6bcead4ad"
+      "DevTools listening on ws://127.0.0.1:45957/devtools/browser/8d024772-677d-43ac-b508-790a8ec53d37"
     ]
   }
 }

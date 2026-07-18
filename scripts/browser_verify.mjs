@@ -510,7 +510,23 @@ async function main() {
     });
     await waitForExpression(client, `(window.visualViewport?.height ?? window.innerHeight) <= 520`);
     await pressKey(client, "Tab", "Tab");
-    await waitForExpression(client, `document.activeElement?.id === "simulation-acknowledgement"`);
+    await waitForExpression(client, `(() => {
+      const body = document.querySelector(".dialog-body").getBoundingClientRect();
+      const row = document.querySelector(".check-row").getBoundingClientRect();
+      const control = document.querySelector(".custom-check").getBoundingClientRect();
+      return document.activeElement?.id === "simulation-acknowledgement" &&
+        row.top >= body.top - 1 && row.bottom <= body.bottom + 1 &&
+        control.top >= body.top - 1 && control.bottom <= body.bottom + 1;
+    })()`);
+    await delay(100);
+    await waitForExpression(client, `(() => {
+      const body = document.querySelector(".dialog-body").getBoundingClientRect();
+      const row = document.querySelector(".check-row").getBoundingClientRect();
+      const control = document.querySelector(".custom-check").getBoundingClientRect();
+      return document.activeElement?.id === "simulation-acknowledgement" &&
+        row.top >= body.top - 1 && row.bottom <= body.bottom + 1 &&
+        control.top >= body.top - 1 && control.bottom <= body.bottom + 1;
+    })()`);
     const shortMobileDialog = await evaluate(client, `(() => {
       const dialog = document.querySelector("#intervention-dialog").getBoundingClientRect();
       const body = document.querySelector(".dialog-body").getBoundingClientRect();

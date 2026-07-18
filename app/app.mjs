@@ -567,6 +567,40 @@ function closeIntervention({ restoreFocus = true } = {}) {
   }
 }
 
+function scheduleDialogFocusVisibility(candidate = document.activeElement) {
+  const dialog = byId("intervention-dialog");
+  const scrollBody = dialog.querySelector(".dialog-body");
+  const target = candidate instanceof HTMLElement
+    ? candidate.closest(".check-row") ?? candidate
+    : null;
+  if (
+    !dialog.open ||
+    !(scrollBody instanceof HTMLElement) ||
+    !(target instanceof HTMLElement) ||
+    !scrollBody.contains(target)
+  ) return;
+
+  let remainingFrames = 3;
+  const alignTarget = () => {
+    if (!dialog.open || !scrollBody.isConnected || !target.isConnected) return;
+    const bodyRect = scrollBody.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const inset = 16;
+    if (targetRect.top < bodyRect.top + inset) {
+      scrollBody.scrollTop -= bodyRect.top + inset - targetRect.top;
+    } else if (targetRect.bottom > bodyRect.bottom - inset) {
+      scrollBody.scrollTop += targetRect.bottom - (bodyRect.bottom - inset);
+    }
+    remainingFrames -= 1;
+    if (remainingFrames > 0) requestAnimationFrame(alignTarget);
+  };
+  requestAnimationFrame(alignTarget);
+}
+
+function keepDialogFocusVisible(event) {
+  scheduleDialogFocusVisibility(event.target);
+}
+
 function handleInterventionSubmit(event) {
   event.preventDefault();
   const reasonInput = byId("intervention-reason");
@@ -753,6 +787,11 @@ function bindEvents() {
       requestAnimationFrame(() => target.focus());
     }
   });
+  byId("intervention-dialog")
+    .querySelector(".dialog-body")
+    ?.addEventListener("focusin", keepDialogFocusVisible);
+  window.addEventListener("resize", () => scheduleDialogFocusVisibility());
+  window.visualViewport?.addEventListener("resize", () => scheduleDialogFocusVisibility());
   byId("intervention-reason").addEventListener("input", (event) => {
     event.currentTarget.removeAttribute("aria-invalid");
     byId("reason-error").hidden = true;
