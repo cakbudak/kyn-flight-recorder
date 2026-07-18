@@ -36,6 +36,9 @@ class StaticContractTests(unittest.TestCase):
         cls.core = (APP / "core.mjs").read_text(encoding="utf-8")
         cls.styles = (APP / "styles.css").read_text(encoding="utf-8")
         cls.fixture = json.loads((APP / "data" / "demo-run.json").read_text(encoding="utf-8"))
+        cls.schema = json.loads(
+            (ROOT / "schema" / "kyn-flight-trace-v1.schema.json").read_text(encoding="utf-8")
+        )
 
     def test_application_has_no_remote_asset_or_script_dependency(self) -> None:
         remote_asset = re.compile(r"(?:src|href)=[\"']https?://", re.IGNORECASE)
@@ -137,6 +140,13 @@ class StaticContractTests(unittest.TestCase):
         self.assertEqual([path.name for path in (APP / "data").glob("*.json")], ["demo-run.json"])
         scripts = re.findall(r'<script[^>]+src="([^"]+)"', self.index)
         self.assertEqual(scripts, ["./app.mjs"])
+
+    def test_machine_readable_schema_matches_the_v1_top_level_envelope(self) -> None:
+        self.assertEqual(self.schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
+        self.assertEqual(self.schema["properties"]["schema_version"]["const"], "1.0")
+        self.assertFalse(self.schema["additionalProperties"])
+        self.assertEqual(set(self.schema["required"]), set(self.fixture))
+        self.assertEqual(self.schema["$defs"]["run"]["properties"]["impact"]["properties"]["external_effect"]["const"], False)
 
 
 if __name__ == "__main__":

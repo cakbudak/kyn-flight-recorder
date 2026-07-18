@@ -1,7 +1,7 @@
 # Product contract
 
 Date frozen: 2026-07-18  
-Maturity: `implemented` (formal verification pending)
+Maturity: `verified standalone demo` (external submission steps pending)
 
 ## Promise
 
@@ -62,7 +62,7 @@ returns it to the signed fixture state.
 | G1 UX | Complete, empty, invalid-fixture, and reset paths; keyboard-only journey; WCAG 2.2 AA | browser journey + manual checklist |
 | G2 contract | Fixture schema version and command contract are explicit; invalid data fails closed | standard-library contract tests |
 | G3 security | No secrets/network writes; command validation and DOM-safe rendering | threat model + negative tests |
-| G4 data | Fixture-only, synthetic, localStorage/session state deletable by reset | data note + reset test |
+| G4 data | Fixture-only, synthetic, browser-memory/session state deletable by reset | data note + reset test |
 | G5 reliability | Idempotency, revision fence, terminal absorption, deterministic reset | state-machine tests |
 | G6 performance | First meaningful render under 1 s locally; interaction under 100 ms on reference machine | browser measurement |
 | G7 operation | Correlation, source class, timestamps, and receipts visible | UI assertions |
