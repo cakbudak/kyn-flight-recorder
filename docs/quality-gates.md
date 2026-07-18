@@ -2,8 +2,7 @@
 
 Date: 2026-07-18  
 Standalone maturity: verified demo  
-Submission maturity: blocked only on publication, Codex feedback ID, and
-video/upload steps
+Submission maturity: blocked only on publication and video/upload steps
 
 | Gate | Result | Proof | Honest boundary |
 | --- | --- | --- | --- |
