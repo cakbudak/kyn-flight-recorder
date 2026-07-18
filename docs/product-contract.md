@@ -1,7 +1,7 @@
 # Product contract
 
 Date frozen: 2026-07-18  
-Maturity: `designed`
+Maturity: `implemented` (formal verification pending)
 
 ## Promise
 
