@@ -251,9 +251,11 @@ function handleGraphKeydown(event) {
   if (event.key === "ArrowRight") nextIndex = Math.min(buttons.length - 1, currentIndex + 1);
   if (event.key === "Home") nextIndex = 0;
   if (event.key === "End") nextIndex = buttons.length - 1;
-  const nextButton = buttons[nextIndex];
-  selectGraphNode(nextButton.dataset.nodeId);
-  nextButton.focus();
+  const nextNodeId = buttons[nextIndex].dataset.nodeId;
+  selectGraphNode(nextNodeId);
+  const renderedButton = [...byId("causal-graph").querySelectorAll(".graph-node")]
+    .find((button) => button.dataset.nodeId === nextNodeId);
+  renderedButton?.focus();
 }
 
 function createGraphEdge(edge) {

@@ -1,0 +1,252 @@
+{
+  "generated_at": "2026-07-18T17:42:58.127Z",
+  "surface": "Kyn.ist Flight Recorder standalone browser journey",
+  "runtime": {
+    "chromium": "/usr/bin/chromium",
+    "server": "Python standard library",
+    "viewport_matrix": [
+      "1440x1000",
+      "390x844"
+    ]
+  },
+  "summary": {
+    "checks": 30,
+    "passed": 30,
+    "failed": 0
+  },
+  "metrics": {
+    "first_render_ms": 459.69999980926514
+  },
+  "checks": [
+    {
+      "name": "initial blocked run renders",
+      "status": "pass",
+      "detail": {
+        "status": "blocked",
+        "graphNodes": 7,
+        "recentEvents": 3,
+        "visiblePanel": "run",
+        "rawCredentialInDom": false,
+        "unnamedButtons": 0,
+        "horizontalOverflow": 0,
+        "renderMark": 459.69999980926514
+      }
+    },
+    {
+      "name": "causal graph contains seven evidence nodes",
+      "status": "pass",
+      "detail": 7
+    },
+    {
+      "name": "recent evidence list is populated",
+      "status": "pass",
+      "detail": 3
+    },
+    {
+      "name": "raw fixture credentials never enter the DOM",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "all buttons have accessible names",
+      "status": "pass",
+      "detail": 0
+    },
+    {
+      "name": "desktop document has no horizontal overflow",
+      "status": "pass",
+      "detail": 0
+    },
+    {
+      "name": "first render stays under one second locally",
+      "status": "pass",
+      "detail": 459.69999980926514
+    },
+    {
+      "name": "accessibility tree exposes named controls",
+      "status": "pass",
+      "detail": {
+        "buttons": 18
+      }
+    },
+    {
+      "name": "causal graph supports arrow and boundary-key navigation",
+      "status": "pass",
+      "detail": {
+        "graphAfterArrow": {
+          "focus": "plan",
+          "selected": "plan"
+        },
+        "graphAfterEnd": {
+          "focus": "queue",
+          "selected": "queue"
+        }
+      }
+    },
+    {
+      "name": "server sends a restrictive content security policy",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "server disables caching for fixture fidelity",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "command preview is explicit and local-only",
+      "status": "pass",
+      "detail": {
+        "dialogOpen": true,
+        "externalEffect": true,
+        "actor": "build-week-judge",
+        "revision": "7 → 8"
+      }
+    },
+    {
+      "name": "preview pins actor and revision",
+      "status": "pass",
+      "detail": {
+        "dialogOpen": true,
+        "externalEffect": true,
+        "actor": "build-week-judge",
+        "revision": "7 → 8"
+      }
+    },
+    {
+      "name": "keyboard-opened dialog skips motion and focuses the reason",
+      "status": "pass",
+      "detail": "true"
+    },
+    {
+      "name": "keyboard path reaches acknowledgement and both dialog actions",
+      "status": "pass",
+      "detail": {
+        "checkboxFocus": "simulation-acknowledgement",
+        "checkboxChecked": true,
+        "cancelFocus": "cancel-intervention",
+        "applyFocus": "apply-intervention"
+      }
+    },
+    {
+      "name": "authorized intervention completes the run",
+      "status": "pass",
+      "detail": {
+        "status": "completed",
+        "visiblePanel": "audit",
+        "ledgerRows": 9,
+        "receiptVisible": true,
+        "sessionStored": true,
+        "revision": "7 → 8"
+      }
+    },
+    {
+      "name": "intervention appends four events and a receipt",
+      "status": "pass",
+      "detail": {
+        "status": "completed",
+        "visiblePanel": "audit",
+        "ledgerRows": 9,
+        "receiptVisible": true,
+        "sessionStored": true,
+        "revision": "7 → 8"
+      }
+    },
+    {
+      "name": "receipt advances exactly one revision",
+      "status": "pass",
+      "detail": "7 → 8"
+    },
+    {
+      "name": "session state is locally resumable",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "reload returns the idempotent receipt without duplication",
+      "status": "pass",
+      "detail": 9
+    },
+    {
+      "name": "reset restores the deterministic initial state",
+      "status": "pass",
+      "detail": {
+        "ledgerRows": 5,
+        "session": null,
+        "visiblePanel": "run"
+      }
+    },
+    {
+      "name": "reduced-motion preference collapses interaction duration",
+      "status": "pass",
+      "detail": "0.001s"
+    },
+    {
+      "name": "narrow viewport has no document-level overflow",
+      "status": "pass",
+      "detail": {
+        "viewport": 390,
+        "scrollWidth": 390,
+        "navPosition": "fixed",
+        "inspectorWidth": 364,
+        "dialogWidth": 349
+      }
+    },
+    {
+      "name": "mobile navigation remains fixed and reachable",
+      "status": "pass",
+      "detail": "fixed"
+    },
+    {
+      "name": "mobile inspector and dialog stay within viewport",
+      "status": "pass",
+      "detail": {
+        "viewport": 390,
+        "scrollWidth": 390,
+        "navPosition": "fixed",
+        "inspectorWidth": 364,
+        "dialogWidth": 349
+      }
+    },
+    {
+      "name": "empty trace state is explicit",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "invalid trace fails closed with evidence",
+      "status": "pass",
+      "detail": 1
+    },
+    {
+      "name": "browser journey makes no external network request",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no failed requests",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no console or page errors",
+      "status": "pass",
+      "detail": []
+    }
+  ],
+  "diagnostics": {
+    "server_output": [
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/core.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/?mode=error HTTP/1.1\" 200 -",
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/core.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -"
+    ],
+    "browser_output": [
+      "DevTools listening on ws://127.0.0.1:34485/devtools/browser/79e1552d-31a3-49ea-adc1-d58a8afbc4e0"
+    ]
+  }
+}

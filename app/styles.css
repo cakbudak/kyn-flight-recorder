@@ -363,7 +363,7 @@ svg {
 
 .sidebar-label {
   margin: 0 0 10px;
-  color: #69727c;
+  color: #929ba4;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.11em;
@@ -413,7 +413,7 @@ svg {
   gap: 7px;
   margin-top: auto;
   padding: 0 6px;
-  color: #66707a;
+  color: var(--muted-strong);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.035em;
@@ -818,7 +818,7 @@ svg {
 
 .legend-completed { background: var(--green); }
 .legend-blocked { background: var(--amber); }
-.legend-pending { background: #5b646e; }
+.legend-pending { background: var(--muted); }
 
 .causal-graph {
   overflow-x: auto;
@@ -923,7 +923,7 @@ svg {
   grid-column: 1 / -1;
   margin-top: 2px;
   overflow: hidden;
-  color: #68717b;
+  color: #929ba4;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 8px;
   text-overflow: ellipsis;
@@ -969,7 +969,7 @@ svg {
   position: absolute;
   top: -15px;
   left: 50%;
-  color: #626b74;
+  color: var(--muted);
   font-size: 7px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1026,7 +1026,7 @@ code {
 }
 
 .graph-correlation {
-  color: #69737d;
+  color: var(--muted);
 }
 
 .inspector {
@@ -1344,12 +1344,12 @@ code {
 
 .replay-content code {
   margin-top: 6px;
-  color: #68727c;
+  color: var(--muted);
   font-size: 8px;
 }
 
 .replay-sequence {
-  color: #606a74;
+  color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 8px;
 }
@@ -1867,7 +1867,7 @@ textarea {
 }
 
 textarea::placeholder {
-  color: #59626c;
+  color: var(--muted);
 }
 
 textarea:focus {

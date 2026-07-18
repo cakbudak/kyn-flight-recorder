@@ -29,7 +29,7 @@
           </span>
         </a>
 
-        <div class="topbar-center" aria-label="Demo environment">
+        <div class="topbar-center" role="group" aria-label="Demo environment">
           <span class="environment-dot" aria-hidden="true"></span>
           <span>Synthetic trace</span>
           <span class="topbar-separator" aria-hidden="true"></span>
@@ -37,14 +37,14 @@
         </div>
 
         <div class="topbar-actions">
-          <button class="button button-quiet file-button" id="load-trace" type="button">
+          <button class="button button-quiet file-button" id="load-trace" type="button" aria-label="Load a local Kyn Flight Trace JSON file">
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <path d="M10 3v9m0-9 3 3m-3-3L7 6M4 11v4a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4"/>
             </svg>
             <span>Load trace</span>
           </button>
-          <input id="trace-file" class="visually-hidden" type="file" accept="application/json,.json">
-          <button class="button button-quiet" id="reset-demo" type="button">
+          <input id="trace-file" class="visually-hidden" type="file" accept="application/json,.json" aria-label="Choose a local Kyn Flight Trace JSON file">
+          <button class="button button-quiet" id="reset-demo" type="button" aria-label="Reset the current trace">
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <path d="M4.2 7.2A6 6 0 1 1 4 12m.2-4.8V3.8m0 3.4h3.4"/>
             </svg>
@@ -185,13 +185,13 @@
                     <p class="eyebrow">Cross-system causality</p>
                     <h2 id="graph-title">Why is this run stuck?</h2>
                   </div>
-                  <div class="graph-legend" aria-label="Graph status legend">
+                  <div class="graph-legend" role="group" aria-label="Graph status legend">
                     <span><i class="legend-dot legend-completed" aria-hidden="true"></i>Traversed</span>
                     <span><i class="legend-dot legend-blocked" aria-hidden="true"></i>Blocking</span>
                     <span><i class="legend-dot legend-pending" aria-hidden="true"></i>Pending</span>
                   </div>
                 </header>
-                <div id="causal-graph" class="causal-graph" aria-label="Causal run graph"></div>
+                <div id="causal-graph" class="causal-graph" role="region" aria-label="Causal run graph"></div>
                 <footer class="graph-foot">
                   <span class="graph-instruction">Select any node to inspect its evidence.</span>
                   <span id="graph-correlation" class="mono"></span>
