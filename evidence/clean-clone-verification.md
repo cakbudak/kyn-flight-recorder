@@ -2,7 +2,7 @@
 
 Date: 2026-07-18  
 Commit under test: `108b031`
-Source: local Git clone with `--no-local` into an automatically deleted temporary directory
+Source: local Git clone with `--no-local` into a temporary directory outside the workspace
 
 ## Procedure
 
