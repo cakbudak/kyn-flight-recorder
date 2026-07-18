@@ -15,7 +15,7 @@ Submission maturity: blocked only on publication and video/upload steps
 | G7 operations | PASS | run/correlation/revision/source visible; append-only replay and receipt | local synthetic evidence only |
 | G8 agent boundary | PASS | effect boundary and model/tool/approval/queue causality explicit; no model/tool runtime | no claim of live Kynist integration |
 | G9 proof | PASS | 28 Python + 25 Node + 38 browser checks; screenshots, accessibility audit, and sanitized GPT-5.6 review | external review is bounded to the synthetic packet, not runtime proof |
-| G10 release | PASS locally | isolated-clone proof is refreshed after each stable fix commit; clean worktree; one-command entry | repeat from selected remote after publication |
+| G10 release | PASS locally | isolated clone of `108b031`: 28 Python + 25 Node + 38 browser checks; clean worktree; one-command entry | repeat from selected remote after publication |
 
 ## Reproduce
 
