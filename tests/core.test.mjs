@@ -39,6 +39,15 @@ function expectCode(code, operation) {
   });
 }
 
+function expectInvalidPath(candidate, path) {
+  const verdict = validateFixture(candidate);
+  assert.equal(verdict.ok, false, `expected invalid fixture at ${path}`);
+  assert.ok(
+    verdict.issues.some((issue) => issue.path === path),
+    `missing ${path} in ${JSON.stringify(verdict.issues)}`
+  );
+}
+
 test("the signed fixture satisfies the v1 contract", () => {
   const verdict = validateFixture(fixture());
   assert.deepEqual(verdict, { ok: true, issues: [] });
@@ -50,6 +59,100 @@ test("unsupported schema versions fail closed", () => {
   const verdict = validateFixture(candidate);
   assert.equal(verdict.ok, false);
   assert.ok(verdict.issues.some((issue) => issue.path === "schema_version"));
+});
+
+test("the runtime enforces required fields and rejects unknown properties", () => {
+  const cases = [
+    {
+      path: "fixture.title",
+      mutate(candidate) {
+        delete candidate.fixture.title;
+      }
+    },
+    {
+      path: "run.agent.untrusted_override",
+      mutate(candidate) {
+        candidate.run.agent.untrusted_override = true;
+      }
+    },
+    {
+      path: "nodes[0].subtitle",
+      mutate(candidate) {
+        delete candidate.nodes[0].subtitle;
+      }
+    },
+    {
+      path: "events[0].unexpected",
+      mutate(candidate) {
+        candidate.events[0].unexpected = "accepted by the old partial validator";
+      }
+    }
+  ];
+
+  for (const { path, mutate } of cases) {
+    const candidate = fixture();
+    mutate(candidate);
+    expectInvalidPath(candidate, path);
+  }
+});
+
+test("the runtime enforces schema types, bounds, formats, and collection constraints", () => {
+  const cases = [
+    {
+      path: "fixture.created_at",
+      mutate(candidate) {
+        candidate.fixture.created_at = "not-a-timestamp";
+      }
+    },
+    {
+      path: "run.duration_ms",
+      mutate(candidate) {
+        candidate.run.duration_ms = -1;
+      }
+    },
+    {
+      path: "nodes[0].fields",
+      mutate(candidate) {
+        candidate.nodes[0].fields = [];
+      }
+    },
+    {
+      path: "events[0].detail",
+      mutate(candidate) {
+        candidate.events[0].detail = [];
+      }
+    },
+    {
+      path: "intervention.preview",
+      mutate(candidate) {
+        candidate.intervention.preview = [];
+      }
+    },
+    {
+      path: "intervention.resolution.node_updates",
+      mutate(candidate) {
+        candidate.intervention.resolution.node_updates = {};
+      }
+    },
+    {
+      path: "intervention.resolution.edge_updates.edge_4",
+      mutate(candidate) {
+        candidate.intervention.resolution.edge_updates.edge_4 = "pending";
+      }
+    },
+    {
+      path: "redaction.keys",
+      mutate(candidate) {
+        candidate.redaction.keys[1] = candidate.redaction.keys[0];
+      }
+    }
+  ];
+
+  for (const { path, mutate } of cases) {
+    const candidate = fixture();
+    mutate(candidate);
+    expectInvalidPath(candidate, path);
+  }
 });
 
 test("unknown run and node states fail closed", () => {
@@ -94,6 +197,18 @@ test("standalone traces cannot claim an external effect", () => {
   const verdict = validateFixture(candidate);
   assert.equal(verdict.ok, false);
   assert.ok(verdict.issues.some((issue) => issue.path === "run.impact.external_effect"));
+});
+
+test("nested trace evidence cannot smuggle an external-effect claim", () => {
+  const candidate = fixture();
+  candidate.intervention.resolution.events[1].detail.external_effect = true;
+  const verdict = validateFixture(candidate);
+  assert.equal(verdict.ok, false);
+  assert.ok(
+    verdict.issues.some(
+      (issue) => issue.path === "intervention.resolution.events[1].detail.external_effect"
+    )
+  );
 });
 
 test("required secret classes cannot be removed from redaction", () => {
@@ -189,6 +304,8 @@ test("the legal command advances exactly one revision and appends evidence", () 
   assert.equal(findNode(result.state, "terminal").status, "completed");
   assert.equal(result.receipt.from_revision, 7);
   assert.equal(result.receipt.to_revision, 8);
+  assert.equal(result.receipt.run_id, initial.run.id);
+  assert.equal(result.receipt.correlation_id, initial.run.correlation_id);
   assert.equal(result.receipt.external_effect, false);
   assert.equal(initial.run.status, "blocked", "the input state remains immutable");
 });

@@ -1638,8 +1638,9 @@ tbody tr:last-child td {
 dialog {
   width: min(620px, calc(100vw - 28px));
   max-height: min(820px, calc(100vh - 28px));
+  max-height: min(820px, calc(100dvh - 28px));
   padding: 0;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: #121519;
@@ -1652,6 +1653,21 @@ dialog {
     transform 180ms var(--ease-out),
     overlay 180ms allow-discrete,
     display 180ms allow-discrete;
+}
+
+#intervention-form {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: inherit;
+  min-height: 0;
+}
+
+.dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 16px;
+  scrollbar-gutter: stable;
 }
 
 dialog::backdrop {
@@ -1681,9 +1697,8 @@ dialog[data-instant="true"]::backdrop {
 }
 
 .dialog-header {
-  position: sticky;
+  position: relative;
   z-index: 2;
-  top: 0;
   display: flex;
   gap: 20px;
   align-items: center;
@@ -1864,6 +1879,7 @@ textarea {
   font-size: 11px;
   line-height: 1.5;
   transition: border-color 140ms ease, box-shadow 140ms ease;
+  scroll-margin-block: 16px;
 }
 
 textarea::placeholder {
@@ -1887,6 +1903,7 @@ textarea[aria-invalid="true"] {
 }
 
 .check-row {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 9px;
@@ -1895,12 +1912,19 @@ textarea[aria-invalid="true"] {
   color: var(--muted-strong);
   cursor: pointer;
   font-size: 9px;
+  scroll-margin-block: 16px;
 }
 
 .check-row input {
   position: absolute;
+  top: 50%;
+  left: 0;
+  width: 17px;
+  height: 17px;
+  margin: 0;
   opacity: 0;
   pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .custom-check {
@@ -1934,8 +1958,7 @@ textarea[aria-invalid="true"] {
 }
 
 .dialog-footer {
-  position: sticky;
-  bottom: 0;
+  position: relative;
   display: flex;
   gap: 20px;
   align-items: center;

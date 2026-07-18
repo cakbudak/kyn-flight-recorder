@@ -81,9 +81,9 @@ returns it to the signed fixture state.
 ## Build Week provenance
 
 This standalone repository and its core functionality are new work created after
-the OpenAI Build Week start. The repository history is the chronology. The final
-submission must add the Codex Session ID returned by `/feedback` for the project
-thread in which the majority of the core functionality was built.
+the OpenAI Build Week start. The repository history is the chronology. The
+primary build thread is recorded under Codex Session ID
+`019f7621-5200-7400-9242-920cb718d09a`.
 
 Official event references:
 

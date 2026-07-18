@@ -49,29 +49,75 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
+    def _redirect_to_app(self) -> None:
+        self.send_response(HTTPStatus.TEMPORARY_REDIRECT)
+        self.send_header("Location", "/app/")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    @staticmethod
+    def _health_payload() -> bytes:
+        return json.dumps(
+            {
+                "status": "ok",
+                "mode": "standalone-demo",
+                "external_dependencies": 0,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    def _send_health(self, *, include_body: bool) -> None:
+        payload = self._health_payload()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        if include_body:
+            self.wfile.write(payload)
+
+    def _method_not_allowed(self) -> None:
+        self.send_response(HTTPStatus.METHOD_NOT_ALLOWED)
+        self.send_header("Allow", "GET, HEAD")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def translate_path(self, path: str) -> str:
+        """Resolve static paths without following a symlink outside the served root."""
+
+        served_root = Path(self.directory).resolve()
+        candidate = Path(super().translate_path(path)).resolve()
+        try:
+            candidate.relative_to(served_root)
+        except ValueError:
+            return str(served_root / ".kyn-flight-recorder-path-denied")
+        return str(candidate)
+
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
         if path == "/":
-            self.send_response(HTTPStatus.TEMPORARY_REDIRECT)
-            self.send_header("Location", "/app/")
-            self.end_headers()
+            self._redirect_to_app()
             return
         if path == "/healthz":
-            payload = json.dumps(
-                {
-                    "status": "ok",
-                    "mode": "standalone-demo",
-                    "external_dependencies": 0,
-                },
-                separators=(",", ":"),
-            ).encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+            self._send_health(include_body=True)
             return
         super().do_GET()
+
+    def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler API
+        path = urlsplit(self.path).path
+        if path == "/":
+            self._redirect_to_app()
+            return
+        if path == "/healthz":
+            self._send_health(include_body=False)
+            return
+        super().do_HEAD()
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        self._method_not_allowed()
+
+    do_PUT = do_POST
+    do_PATCH = do_POST
+    do_DELETE = do_POST
 
     def list_directory(self, path: str):  # type: ignore[no-untyped-def]
         self.send_error(HTTPStatus.NOT_FOUND, "Directory listing is disabled")

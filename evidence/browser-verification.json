@@ -1,21 +1,22 @@
 {
-  "generated_at": "2026-07-18T17:42:58.127Z",
+  "generated_at": "2026-07-18T20:00:41.111Z",
   "surface": "Kyn.ist Flight Recorder standalone browser journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "server": "Python standard library",
     "viewport_matrix": [
       "1440x1000",
-      "390x844"
+      "390x844",
+      "390x520 dialog"
     ]
   },
   "summary": {
-    "checks": 30,
-    "passed": 30,
+    "checks": 38,
+    "passed": 38,
     "failed": 0
   },
   "metrics": {
-    "first_render_ms": 459.69999980926514
+    "first_render_ms": 182.19999980926514
   },
   "checks": [
     {
@@ -29,7 +30,7 @@
         "rawCredentialInDom": false,
         "unnamedButtons": 0,
         "horizontalOverflow": 0,
-        "renderMark": 459.69999980926514
+        "renderMark": 182.19999980926514
       }
     },
     {
@@ -60,7 +61,7 @@
     {
       "name": "first render stays under one second locally",
       "status": "pass",
-      "detail": 459.69999980926514
+      "detail": 182.19999980926514
     },
     {
       "name": "accessibility tree exposes named controls",
@@ -114,6 +115,11 @@
       }
     },
     {
+      "name": "closing the dialog restores its invoking control",
+      "status": "pass",
+      "detail": null
+    },
+    {
       "name": "keyboard-opened dialog skips motion and focuses the reason",
       "status": "pass",
       "detail": "true"
@@ -137,7 +143,17 @@
         "ledgerRows": 9,
         "receiptVisible": true,
         "sessionStored": true,
-        "revision": "7 → 8"
+        "receipt": {
+          "Receipt": "receipt_01JY7M8ZQJ2K",
+          "Command": "cmd_01JY7M8ZQJ2K",
+          "Run": "run_01JY7KYN9X4N",
+          "Correlation": "corr_01JY7KYN7M2Q",
+          "Actor": "build-week-judge",
+          "Reason": "Evidence is verified and the synthetic staging scope is bounded.",
+          "Applied": "14:32:21.204Z",
+          "Revision": "7 → 8",
+          "External effect": "false"
+        }
       }
     },
     {
@@ -149,13 +165,31 @@
         "ledgerRows": 9,
         "receiptVisible": true,
         "sessionStored": true,
-        "revision": "7 → 8"
+        "receipt": {
+          "Receipt": "receipt_01JY7M8ZQJ2K",
+          "Command": "cmd_01JY7M8ZQJ2K",
+          "Run": "run_01JY7KYN9X4N",
+          "Correlation": "corr_01JY7KYN7M2Q",
+          "Actor": "build-week-judge",
+          "Reason": "Evidence is verified and the synthetic staging scope is bounded.",
+          "Applied": "14:32:21.204Z",
+          "Revision": "7 → 8",
+          "External effect": "false"
+        }
       }
     },
     {
       "name": "receipt advances exactly one revision",
       "status": "pass",
       "detail": "7 → 8"
+    },
+    {
+      "name": "receipt preserves run and correlation identity",
+      "status": "pass",
+      "detail": {
+        "run": "run_01JY7KYN9X4N",
+        "correlation": "corr_01JY7KYN7M2Q"
+      }
     },
     {
       "name": "session state is locally resumable",
@@ -188,8 +222,7 @@
         "viewport": 390,
         "scrollWidth": 390,
         "navPosition": "fixed",
-        "inspectorWidth": 364,
-        "dialogWidth": 349
+        "inspectorWidth": 364
       }
     },
     {
@@ -198,14 +231,56 @@
       "detail": "fixed"
     },
     {
-      "name": "mobile inspector and dialog stay within viewport",
+      "name": "mobile inspector stays within viewport",
+      "status": "pass",
+      "detail": 364
+    },
+    {
+      "name": "mobile dialog stays within viewport",
       "status": "pass",
       "detail": {
-        "viewport": 390,
-        "scrollWidth": 390,
-        "navPosition": "fixed",
-        "inspectorWidth": 364,
-        "dialogWidth": 349
+        "width": 356,
+        "dialogBottom": 830,
+        "viewportHeight": 844,
+        "bodyBottom": 714,
+        "footerTop": 714,
+        "reasonTop": 579,
+        "reasonBottom": 661,
+        "reasonVisible": true,
+        "focused": "intervention-reason"
+      }
+    },
+    {
+      "name": "mobile dialog scroll body does not overlap its actions",
+      "status": "pass",
+      "detail": {
+        "width": 356,
+        "dialogBottom": 830,
+        "viewportHeight": 844,
+        "bodyBottom": 714,
+        "footerTop": 714,
+        "reasonTop": 579,
+        "reasonBottom": 661,
+        "reasonVisible": true,
+        "focused": "intervention-reason"
+      }
+    },
+    {
+      "name": "short mobile viewport keeps focused fields above dialog actions",
+      "status": "pass",
+      "detail": {
+        "dialogBottom": 506,
+        "viewportHeight": 520,
+        "bodyBottom": 390,
+        "footerTop": 390,
+        "acknowledgementTop": 355,
+        "acknowledgementBottom": 372,
+        "rowTop": 355,
+        "rowBottom": 372,
+        "visibleControlTop": 355,
+        "visibleControlBottom": 372,
+        "acknowledgementVisible": true,
+        "focused": "simulation-acknowledgement"
       }
     },
     {
@@ -216,7 +291,36 @@
     {
       "name": "invalid trace fails closed with evidence",
       "status": "pass",
-      "detail": 1
+      "detail": {
+        "issues": 1,
+        "focused": true
+      }
+    },
+    {
+      "name": "failed trace load moves focus to the error heading",
+      "status": "pass",
+      "detail": {
+        "issues": 1,
+        "focused": true
+      }
+    },
+    {
+      "name": "schema-invalid local import fails closed before rendering",
+      "status": "pass",
+      "detail": {
+        "issue": "run.agent.untrusted_override: is not allowed",
+        "focused": true,
+        "renderedPanels": 0
+      }
+    },
+    {
+      "name": "rejected local import keeps focus on its error evidence",
+      "status": "pass",
+      "detail": {
+        "issue": "run.agent.untrusted_override: is not allowed",
+        "focused": true,
+        "renderedPanels": 0
+      }
     },
     {
       "name": "browser journey makes no external network request",
@@ -236,17 +340,17 @@
   ],
   "diagnostics": {
     "server_output": [
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/core.mjs HTTP/1.1\" 200 -",
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/?mode=error HTTP/1.1\" 200 -",
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/core.mjs HTTP/1.1\" 200 -",
-      "18/Jul/2026 19:42:57 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -"
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/core.mjs HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /schema/kyn-flight-trace-v1.schema.json HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -",
+      "18/Jul/2026 22:00:40 127.0.0.1 \"GET /app/data/demo-run.json HTTP/1.1\" 200 -"
     ],
     "browser_output": [
-      "DevTools listening on ws://127.0.0.1:34485/devtools/browser/79e1552d-31a3-49ea-adc1-d58a8afbc4e0"
+      "DevTools listening on ws://127.0.0.1:36897/devtools/browser/cf7d6a52-0dfa-4ec2-bb1d-c0f6bcead4ad"
     ]
   }
 }

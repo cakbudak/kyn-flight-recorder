@@ -36,6 +36,8 @@ let state = null;
 let activeView = "run";
 let replayFilter = "all";
 let toastTimer = null;
+let dialogReturnFocus = null;
+let restoreDialogFocus = true;
 
 function byId(id) {
   const element = document.getElementById(id);
@@ -165,6 +167,7 @@ function showError(error) {
     item.textContent = `${issues.length - 12} additional issues omitted.`;
     list.append(item);
   }
+  byId("error-state").querySelector("h1")?.focus();
 }
 
 function viewFromHash() {
@@ -438,6 +441,8 @@ function renderAudit() {
     receiptFields.replaceChildren(
       makeDefinitionRow("Receipt", receipt.receipt_id),
       makeDefinitionRow("Command", receipt.command_id),
+      makeDefinitionRow("Run", receipt.run_id),
+      makeDefinitionRow("Correlation", receipt.correlation_id),
       makeDefinitionRow("Actor", receipt.actor),
       makeDefinitionRow("Reason", receipt.reason),
       makeDefinitionRow("Applied", formatTime(receipt.applied_at, true)),
@@ -539,6 +544,12 @@ function openIntervention(event) {
     return;
   }
   const dialog = byId("intervention-dialog");
+  dialogReturnFocus = event?.currentTarget instanceof HTMLElement
+    ? event.currentTarget
+    : document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  restoreDialogFocus = true;
   dialog.dataset.instant = event?.detail === 0 ? "true" : "false";
   byId("intervention-reason").value = "";
   byId("intervention-reason").removeAttribute("aria-invalid");
@@ -548,9 +559,10 @@ function openIntervention(event) {
   requestAnimationFrame(() => byId("intervention-reason").focus());
 }
 
-function closeIntervention() {
+function closeIntervention({ restoreFocus = true } = {}) {
   const dialog = byId("intervention-dialog");
   if (dialog.open) {
+    restoreDialogFocus = restoreFocus;
     dialog.close();
   }
 }
@@ -583,7 +595,7 @@ function handleInterventionSubmit(event) {
     });
     state = result.state;
     persistSession();
-    closeIntervention();
+    closeIntervention({ restoreFocus: false });
     renderAll();
     navigate("audit", { focus: true });
     showToast(result.duplicate ? "Existing receipt returned; no duplicate applied." : "Command acknowledged. Revision advanced to 8.");
@@ -727,6 +739,18 @@ function bindEvents() {
   byId("intervention-dialog").addEventListener("click", (event) => {
     if (event.target === event.currentTarget) {
       closeIntervention();
+    }
+  });
+  byId("intervention-dialog").addEventListener("cancel", () => {
+    restoreDialogFocus = true;
+  });
+  byId("intervention-dialog").addEventListener("close", () => {
+    const target = dialogReturnFocus;
+    const shouldRestore = restoreDialogFocus;
+    dialogReturnFocus = null;
+    restoreDialogFocus = true;
+    if (shouldRestore && target?.isConnected) {
+      requestAnimationFrame(() => target.focus());
     }
   });
   byId("intervention-reason").addEventListener("input", (event) => {

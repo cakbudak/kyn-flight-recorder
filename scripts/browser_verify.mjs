@@ -372,10 +372,13 @@ async function main() {
     record("command preview is explicit and local-only", preview.dialogOpen && preview.externalEffect, preview);
     record("preview pins actor and revision", preview.actor === "build-week-judge" && preview.revision === "7 → 8", preview);
 
-    await evaluate(client, `(() => {
-      document.querySelector("#intervention-dialog").close();
-      document.querySelector("#open-intervention").focus();
-    })()`);
+    await pressKey(client, "Escape", "Escape");
+    await waitForExpression(client, `document.querySelector("#intervention-dialog").open === false`);
+    await waitForExpression(client, `document.activeElement?.id === "open-intervention"`);
+    record(
+      "closing the dialog restores its invoking control",
+      await evaluate(client, `document.activeElement?.id === "open-intervention"`)
+    );
     await pressKey(client, "Enter", "Enter");
     await waitForExpression(client, `document.querySelector("#intervention-dialog").open === true`);
     await waitForExpression(client, `document.activeElement?.id === "intervention-reason"`);
@@ -400,17 +403,30 @@ async function main() {
     );
     await pressKey(client, "Enter", "Enter");
     await waitForExpression(client, `document.body.dataset.runStatus === "completed"`);
-    const completed = await evaluate(client, `(() => ({
-      status: document.body.dataset.runStatus,
-      visiblePanel: document.querySelector("[data-view-panel]:not([hidden])")?.dataset.viewPanel,
-      ledgerRows: document.querySelectorAll("#audit-table-body tr").length,
-      receiptVisible: !document.querySelector("#receipt-content").hidden,
-      sessionStored: sessionStorage.getItem("kyn.flight-recorder.session.v1") !== null,
-      revision: [...document.querySelectorAll("#receipt-fields dd")].find((node) => node.textContent.includes("→"))?.textContent
-    }))()`);
+    const completed = await evaluate(client, `(() => {
+      const receipt = Object.fromEntries(
+        [...document.querySelectorAll("#receipt-fields > div")].map((row) => [
+          row.querySelector("dt")?.textContent,
+          row.querySelector("dd")?.textContent
+        ])
+      );
+      return {
+        status: document.body.dataset.runStatus,
+        visiblePanel: document.querySelector("[data-view-panel]:not([hidden])")?.dataset.viewPanel,
+        ledgerRows: document.querySelectorAll("#audit-table-body tr").length,
+        receiptVisible: !document.querySelector("#receipt-content").hidden,
+        sessionStored: sessionStorage.getItem("kyn.flight-recorder.session.v1") !== null,
+        receipt
+      };
+    })()`);
     record("authorized intervention completes the run", completed.status === "completed", completed);
     record("intervention appends four events and a receipt", completed.ledgerRows === 9 && completed.receiptVisible, completed);
-    record("receipt advances exactly one revision", completed.revision === "7 → 8", completed.revision);
+    record("receipt advances exactly one revision", completed.receipt.Revision === "7 → 8", completed.receipt.Revision);
+    record(
+      "receipt preserves run and correlation identity",
+      completed.receipt.Run === "run_01JY7KYN9X4N" && completed.receipt.Correlation === "corr_01JY7KYN7M2Q",
+      { run: completed.receipt.Run, correlation: completed.receipt.Correlation }
+    );
     record("session state is locally resumable", completed.sessionStored === true);
     if (options.artifacts) await capture(client, resolve(ROOT, options.artifacts, "02-command-receipt.png"));
 
@@ -450,13 +466,93 @@ async function main() {
       viewport: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
       navPosition: getComputedStyle(document.querySelector(".sidebar")).position,
-      inspectorWidth: Math.round(document.querySelector(".inspector").getBoundingClientRect().width),
-      dialogWidth: (() => { document.querySelector("#open-intervention").click(); return Math.round(document.querySelector("#intervention-dialog").getBoundingClientRect().width); })()
+      inspectorWidth: Math.round(document.querySelector(".inspector").getBoundingClientRect().width)
     }))()`);
     record("narrow viewport has no document-level overflow", mobile.viewport === 390 && mobile.scrollWidth === 390, mobile);
     record("mobile navigation remains fixed and reachable", mobile.navPosition === "fixed", mobile.navPosition);
-    record("mobile inspector and dialog stay within viewport", mobile.inspectorWidth <= 364 && mobile.dialogWidth <= 362, mobile);
-    await evaluate(client, `document.querySelector("#intervention-dialog").close()`);
+    record("mobile inspector stays within viewport", mobile.inspectorWidth <= 364, mobile.inspectorWidth);
+
+    await evaluate(client, `document.querySelector("#open-intervention").click()`);
+    await waitForExpression(client, `document.querySelector("#intervention-dialog").open === true`);
+    await waitForExpression(client, `document.activeElement?.id === "intervention-reason"`);
+    const mobileDialog = await evaluate(client, `(() => {
+      const dialog = document.querySelector("#intervention-dialog").getBoundingClientRect();
+      const body = document.querySelector(".dialog-body").getBoundingClientRect();
+      const footer = document.querySelector(".dialog-footer").getBoundingClientRect();
+      const reason = document.querySelector("#intervention-reason").getBoundingClientRect();
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      return {
+        width: Math.round(dialog.width),
+        dialogBottom: Math.round(dialog.bottom),
+        viewportHeight: Math.round(viewportHeight),
+        bodyBottom: Math.round(body.bottom),
+        footerTop: Math.round(footer.top),
+        reasonTop: Math.round(reason.top),
+        reasonBottom: Math.round(reason.bottom),
+        reasonVisible: reason.top >= body.top - 1 && reason.bottom <= body.bottom + 1,
+        focused: document.activeElement?.id
+      };
+    })()`);
+    record("mobile dialog stays within viewport", mobileDialog.width <= 362 && mobileDialog.dialogBottom <= mobileDialog.viewportHeight + 1, mobileDialog);
+    record(
+      "mobile dialog scroll body does not overlap its actions",
+      mobileDialog.bodyBottom <= mobileDialog.footerTop + 1 && mobileDialog.reasonVisible && mobileDialog.focused === "intervention-reason",
+      mobileDialog
+    );
+    await delay(120);
+    if (options.artifacts) await capture(client, resolve(ROOT, options.artifacts, "04-mobile-dialog.png"));
+
+    await client.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 520,
+      deviceScaleFactor: 1,
+      mobile: true
+    });
+    await waitForExpression(client, `(window.visualViewport?.height ?? window.innerHeight) <= 520`);
+    await pressKey(client, "Tab", "Tab");
+    await waitForExpression(client, `document.activeElement?.id === "simulation-acknowledgement"`);
+    const shortMobileDialog = await evaluate(client, `(() => {
+      const dialog = document.querySelector("#intervention-dialog").getBoundingClientRect();
+      const body = document.querySelector(".dialog-body").getBoundingClientRect();
+      const footer = document.querySelector(".dialog-footer").getBoundingClientRect();
+      const acknowledgement = document.querySelector("#simulation-acknowledgement").getBoundingClientRect();
+      const acknowledgementRow = document.querySelector(".check-row").getBoundingClientRect();
+      const visibleControl = document.querySelector(".custom-check").getBoundingClientRect();
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      return {
+        dialogBottom: Math.round(dialog.bottom),
+        viewportHeight: Math.round(viewportHeight),
+        bodyBottom: Math.round(body.bottom),
+        footerTop: Math.round(footer.top),
+        acknowledgementTop: Math.round(acknowledgement.top),
+        acknowledgementBottom: Math.round(acknowledgement.bottom),
+        rowTop: Math.round(acknowledgementRow.top),
+        rowBottom: Math.round(acknowledgementRow.bottom),
+        visibleControlTop: Math.round(visibleControl.top),
+        visibleControlBottom: Math.round(visibleControl.bottom),
+        acknowledgementVisible:
+          acknowledgement.top >= body.top - 1 && acknowledgement.bottom <= body.bottom + 1 &&
+          acknowledgementRow.top >= body.top - 1 && acknowledgementRow.bottom <= body.bottom + 1 &&
+          visibleControl.top >= body.top - 1 && visibleControl.bottom <= body.bottom + 1,
+        focused: document.activeElement?.id
+      };
+    })()`);
+    record(
+      "short mobile viewport keeps focused fields above dialog actions",
+      shortMobileDialog.dialogBottom <= shortMobileDialog.viewportHeight + 1 &&
+        shortMobileDialog.bodyBottom <= shortMobileDialog.footerTop + 1 &&
+        shortMobileDialog.acknowledgementVisible &&
+        shortMobileDialog.focused === "simulation-acknowledgement",
+      shortMobileDialog
+    );
+    await pressKey(client, "Escape", "Escape");
+    await waitForExpression(client, `document.querySelector("#intervention-dialog").open === false`);
+    await client.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true
+    });
     if (options.artifacts) await capture(client, resolve(ROOT, options.artifacts, "03-mobile-run.png"));
 
     await navigate(client, `${baseUrl}/app/?mode=empty#run`);
@@ -465,8 +561,36 @@ async function main() {
 
     await navigate(client, `${baseUrl}/app/?mode=error#run`);
     await waitForExpression(client, `document.querySelector("#error-state").hidden === false`);
-    const errorEvidence = await evaluate(client, `document.querySelectorAll("#error-list li").length`);
-    record("invalid trace fails closed with evidence", errorEvidence >= 1, errorEvidence);
+    const errorEvidence = await evaluate(client, `({
+      issues: document.querySelectorAll("#error-list li").length,
+      focused: document.activeElement === document.querySelector("#error-state h1")
+    })`);
+    record("invalid trace fails closed with evidence", errorEvidence.issues >= 1, errorEvidence);
+    record("failed trace load moves focus to the error heading", errorEvidence.focused, errorEvidence);
+
+    await navigate(client, `${baseUrl}/app/#run`);
+    await waitForExpression(client, `document.body.dataset.runStatus === "blocked"`);
+    await evaluate(client, `(async () => {
+      const fixture = await fetch("./data/demo-run.json", { cache: "no-store" }).then((response) => response.json());
+      fixture.run.agent.untrusted_override = true;
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([JSON.stringify(fixture)], "schema-invalid.json", { type: "application/json" }));
+      const input = document.querySelector("#trace-file");
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await waitForExpression(client, `document.querySelector("#error-state").hidden === false`);
+    const rejectedImport = await evaluate(client, `(() => ({
+      issue: [...document.querySelectorAll("#error-list li")].find((item) => item.textContent.includes("run.agent.untrusted_override"))?.textContent ?? null,
+      focused: document.activeElement === document.querySelector("#error-state h1"),
+      renderedPanels: document.querySelectorAll("[data-view-panel]:not([hidden])").length
+    }))()`);
+    record(
+      "schema-invalid local import fails closed before rendering",
+      rejectedImport.issue?.includes("is not allowed") && rejectedImport.renderedPanels === 0,
+      rejectedImport
+    );
+    record("rejected local import keeps focus on its error evidence", rejectedImport.focused, rejectedImport);
 
     const nonLocalRequests = requestedUrls.filter((url) => {
       try {
@@ -498,7 +622,7 @@ async function main() {
     runtime: {
       chromium: findChromium(),
       server: "Python standard library",
-      viewport_matrix: ["1440x1000", "390x844"]
+      viewport_matrix: ["1440x1000", "390x844", "390x520 dialog"]
     },
     summary: {
       checks: checks.length,

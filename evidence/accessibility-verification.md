@@ -19,6 +19,7 @@ Independent tooling from the existing review environment:
 | Intervention dialog | 1440 × 1000 | 0 | PASS |
 | Command receipt | 1440 × 1000 | 0 | PASS |
 | Blocked run | 390 × 844 | 0 | PASS |
+| Intervention dialog | 390 × 520 | 0 | PASS |
 
 axe marked gradient-backed contrast nodes as `incomplete`, which means manual
 evaluation is required rather than that a violation exists. The repository's
@@ -35,10 +36,12 @@ The dependency-free Chromium journey proves:
   remains on the newly rendered node;
 - keyboard activation opens the intervention with zero motion and places focus in
   the required reason field;
+- Escape closes the modal and restores focus to the exact invoking control;
 - `Tab` reaches the acknowledgement, Cancel, and Authorize controls in order;
 - Space checks the acknowledgement and Enter applies the legal command;
 - the completed receipt receives focus after navigation;
 - every button exposed in the Chromium accessibility tree has a non-empty name;
+- invalid fixture and local-import failures move focus to their error heading;
 - a skip link targets the main analysis surface;
 - `:focus-visible` is present globally with a high-contrast signal outline.
 
@@ -53,6 +56,9 @@ The detailed check results are in
   screens.
 - Mobile navigation remains fixed and reachable; inspector and modal remain inside
   the 390 px viewport.
+- At 390 × 520, the dialog has one bounded scroll body above a non-overlapping
+  action footer. Keyboard focus scrolls the visible acknowledgement control fully
+  into that body before the actions.
 - Interactive controls exceed the WCAG 2.2 24 × 24 CSS-pixel target minimum.
 - Pointer hover effects are gated behind fine-pointer/hover media queries.
 

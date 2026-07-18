@@ -380,7 +380,7 @@
       </main>
     </div>
 
-    <dialog id="intervention-dialog" aria-labelledby="dialog-title">
+    <dialog id="intervention-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-boundary">
       <form id="intervention-form">
         <header class="dialog-header">
           <div>
@@ -392,48 +392,52 @@
           </button>
         </header>
 
-        <div class="dialog-notice">
-          <span aria-hidden="true">i</span>
-          <p><strong>Local simulation.</strong> This command changes browser session state only. It sends no network request and performs no deployment.</p>
+        <div class="dialog-body">
+          <div class="dialog-notice">
+            <span aria-hidden="true">i</span>
+            <p id="dialog-boundary"><strong>Local simulation.</strong> This command changes browser session state only. It sends no network request and performs no deployment.</p>
+          </div>
+
+          <section class="dialog-section" aria-labelledby="preview-heading">
+            <div class="section-title-row">
+              <h3 id="preview-heading">Command preview</h3>
+              <span class="phase-chip">1 · Preview</span>
+            </div>
+            <dl id="dialog-preview" class="preview-fields"></dl>
+          </section>
+
+          <section class="dialog-section" aria-labelledby="authorization-heading">
+            <div class="section-title-row">
+              <h3 id="authorization-heading">Operator authorization</h3>
+              <span class="phase-chip">2 · Authorize</span>
+            </div>
+            <div class="actor-field">
+              <span>Actor</span>
+              <strong id="dialog-actor">build-week-judge</strong>
+              <small>Fixed by command preview</small>
+            </div>
+            <label class="field-label" for="intervention-reason">
+              Reason <span id="reason-constraints">12–280 characters</span>
+            </label>
+            <textarea
+              id="intervention-reason"
+              name="reason"
+              minlength="12"
+              maxlength="280"
+              rows="3"
+              required
+              aria-describedby="reason-constraints reason-error"
+              aria-errormessage="reason-error"
+              placeholder="Why is this intervention safe and necessary?"
+            ></textarea>
+            <p class="field-error" id="reason-error" role="alert" hidden></p>
+            <label class="check-row" for="simulation-acknowledgement">
+              <input id="simulation-acknowledgement" type="checkbox" required>
+              <span class="custom-check" aria-hidden="true"></span>
+              <span>I understand this applies only to the local synthetic trace.</span>
+            </label>
+          </section>
         </div>
-
-        <section class="dialog-section" aria-labelledby="preview-heading">
-          <div class="section-title-row">
-            <h3 id="preview-heading">Command preview</h3>
-            <span class="phase-chip">1 · Preview</span>
-          </div>
-          <dl id="dialog-preview" class="preview-fields"></dl>
-        </section>
-
-        <section class="dialog-section" aria-labelledby="authorization-heading">
-          <div class="section-title-row">
-            <h3 id="authorization-heading">Operator authorization</h3>
-            <span class="phase-chip">2 · Authorize</span>
-          </div>
-          <div class="actor-field">
-            <span>Actor</span>
-            <strong id="dialog-actor">build-week-judge</strong>
-            <small>Fixed by command preview</small>
-          </div>
-          <label class="field-label" for="intervention-reason">
-            Reason <span>12–280 characters</span>
-          </label>
-          <textarea
-            id="intervention-reason"
-            name="reason"
-            minlength="12"
-            maxlength="280"
-            rows="3"
-            required
-            placeholder="Why is this intervention safe and necessary?"
-          ></textarea>
-          <p class="field-error" id="reason-error" role="alert" hidden></p>
-          <label class="check-row" for="simulation-acknowledgement">
-            <input id="simulation-acknowledgement" type="checkbox" required>
-            <span class="custom-check" aria-hidden="true"></span>
-            <span>I understand this applies only to the local synthetic trace.</span>
-          </label>
-        </section>
 
         <footer class="dialog-footer">
           <div class="revision-fence">

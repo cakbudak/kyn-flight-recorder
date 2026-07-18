@@ -2,7 +2,8 @@
 
 Version: `1.0`  
 Classification supported by this cut: `synthetic_demo`  
-Runtime authority: `app/core.mjs::validateFixture`
+Structural authority: `schema/kyn-flight-trace-v1.schema.json`
+Semantic authority: `app/core.mjs::validateFixture`
 
 The portable trace is a declaration of evidence, graph causality, and one legal
 local transition. It is not a transport for executable code and it does not make
@@ -23,7 +24,9 @@ an imported claim true merely because the structure is valid.
 
 The interoperable structural envelope lives at
 [`schema/kyn-flight-trace-v1.schema.json`](../schema/kyn-flight-trace-v1.schema.json).
-JSON Schema covers field shape. The runtime validator additionally owns semantic
+The runtime imports that exact file and evaluates its local references, required
+fields, closed objects, types, constants/enums, formats, bounds, and collection
+constraints before semantic validation. The runtime validator additionally owns
 cross-field checks that JSON Schema alone does not express.
 
 ## Semantic invariants
@@ -44,6 +47,8 @@ Validation fails closed unless all of these hold:
 10. The resolution terminal becomes `completed`.
 11. Redaction includes authorization, password, secret, and token classes. The
     bundled fixture adds API key, claim token, credential, and cookie classes.
+12. No nested free-form evidence object may smuggle an `external_effect` value
+    other than `false`.
 
 ## Command contract
 
@@ -67,7 +72,8 @@ event. A terminal without an owned receipt rejects further commands.
 ## Import and rendering boundary
 
 - Maximum import size is 1 MiB.
-- The file is parsed as JSON, then semantically validated before state creation.
+- The file is parsed as JSON, structurally validated against the bundled schema,
+  then semantically validated before state creation.
 - Sensitive keys are redacted recursively before the accepted object reaches the
   renderer.
 - Dynamic values use `textContent`; HTML parsing sinks and dynamic code execution

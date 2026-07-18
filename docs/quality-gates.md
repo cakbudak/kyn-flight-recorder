@@ -6,16 +6,16 @@ Submission maturity: blocked only on publication and video/upload steps
 
 | Gate | Result | Proof | Honest boundary |
 | --- | --- | --- | --- |
-| G1 UX/accessibility | PASS | 30/30 Chromium checks; four axe states with zero violations; keyboard, focus, reduced motion, 390 px | physical screen-reader pass not run |
-| G2 contract | PASS | 22 pure state-machine assertions; v1 structural + semantic contract; invalid imports fail closed | arbitrary trace authenticity not proven |
+| G1 UX/accessibility | PASS | 38/38 Chromium checks; five axe states with zero violations; keyboard, focus, reduced motion, 390 × 520 dialog stress | physical screen-reader pass not run |
+| G2 contract | PASS | 25 schema/state-machine assertions; runtime imports the v1 JSON Schema, then enforces semantic invariants; invalid imports fail closed | arbitrary trace authenticity not proven |
 | G3 security | PASS for demo scope | CSP/headers, no HTML sinks, redaction, no writes, traversal/listing negatives, local network inventory | key-name redaction is not DLP |
 | G4 data/privacy | PASS | synthetic fixture; memory-only import; session-only receipt; visible reset; no telemetry | explicit GPT review is an external call |
 | G5 reliability | PASS | revision fence, exact transition, idempotency, terminal absorption, fixture-bound rehydrate | browser storage is not durable audit storage |
-| G6 performance | PASS on reference | first meaningful render 459.7 ms; no runtime package/build/network dependency | not a broad device benchmark |
+| G6 performance | PASS on reference | first meaningful render below 1 s; no runtime package/build/network dependency | not a broad device benchmark |
 | G7 operations | PASS | run/correlation/revision/source visible; append-only replay and receipt | local synthetic evidence only |
 | G8 agent boundary | PASS | effect boundary and model/tool/approval/queue causality explicit; no model/tool runtime | no claim of live Kynist integration |
-| G9 proof | PASS | 25 Python + 22 Node + 30 browser checks; screenshots, accessibility audit, and sanitized GPT-5.6 review | external review is bounded to the synthetic packet, not runtime proof |
-| G10 release | PASS locally | isolated clone: 25 Python + 22 Node + 30 browser checks; clean worktree; one-command entry | repeat from selected remote after publication |
+| G9 proof | PASS | 28 Python + 25 Node + 38 browser checks; screenshots, accessibility audit, and sanitized GPT-5.6 review | external review is bounded to the synthetic packet, not runtime proof |
+| G10 release | PASS locally | isolated-clone proof is refreshed after each stable fix commit; clean worktree; one-command entry | repeat from selected remote after publication |
 
 ## Reproduce
 

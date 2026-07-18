@@ -20,15 +20,15 @@ external tool authority. Those are exclusions, not silently assumed controls.
 
 | Threat | Attack path | Control | Evidence |
 | --- | --- | --- | --- |
-| Script injection | HTML/script strings in imported fields | JSON parse, fail-closed contract, dynamic DOM via `textContent`, CSP rejects inline/remote script | static sink tests + browser CSP check |
+| Script injection | HTML/script strings in imported fields | JSON parse, schema + semantic fail-closed contract, dynamic DOM via `textContent`, CSP rejects inline/remote script | static sink tests + browser CSP check |
 | Credential disclosure | Secret-like fields in fixture/import | recursive key-class redaction before state/render; allow-listed GPT packet | core redaction tests + GPT packet negative test |
 | Trace confusion | Dangling graph, foreign correlation, duplicate/gapped events | unique ids, endpoint checks, exact correlation, contiguous sequence validation | negative state-machine tests |
-| Confused deputy | Crafted trace requests a different command/effect | only `approve_tool_call`; blocked-only source; fixed actor; acknowledgement; standalone `external_effect=false` | command-contract tests |
+| Confused deputy | Crafted trace requests a different command/effect | closed JSON Schema; only `approve_tool_call`; blocked-only source; fixed actor; acknowledgement; recursive `external_effect=false` enforcement | schema + command-contract tests |
 | Lost update/replay | Stale revision or duplicate apply | compare expected/current revision; one-revision transition; idempotency receipt; terminal absorption | revision/idempotency tests |
 | Local persistence surprise | Receipt survives reload | session storage only, fixture-bound rehydration, visible Reset deletion | reload/reset browser journey |
 | Resource exhaustion | Very large import or recursive data | 1 MiB file cap; local browser only | browser import path; residual depth limit below |
-| Path traversal/listing | HTTP request escapes project root | stdlib path resolution, no listing, only static reads, missing/traversal 404 | server negative tests |
-| Unauthorized write | POST or app network call | server has no write handler; UI has no effect endpoint; browser network inventory must stay local | server + browser checks |
+| Path traversal/listing | HTTP request or symlink escapes project root | canonical path confinement, no listing, only static reads, direct missing/traversal/symlink 404 | server negative tests |
+| Unauthorized write | POST or app network call | explicit 405 for common write methods; GET/HEAD-only surface; UI has no effect endpoint; browser network inventory must stay local | server + browser checks |
 | Supply-chain execution | Package install/build fetches code | no runtime or test package install; remote assets absent | clean runtime contract + static tests |
 | API-key leakage | GPT evidence runner logs/persists key | environment-only key, fixed HTTPS endpoint, sanitized artifact, no raw request/response persistence | evidence-runner tests; code review |
 | Model authority escalation | GPT review authorizes a command | review runner is separate from app and output is evidence-only | architecture boundary + no import path from evidence result |

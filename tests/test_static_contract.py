@@ -148,6 +148,13 @@ class StaticContractTests(unittest.TestCase):
         self.assertEqual(set(self.schema["required"]), set(self.fixture))
         self.assertEqual(self.schema["$defs"]["run"]["properties"]["impact"]["properties"]["external_effect"]["const"], False)
 
+    def test_runtime_uses_the_machine_readable_schema_as_its_structural_authority(self) -> None:
+        self.assertIn(
+            'import TRACE_SCHEMA from "../schema/kyn-flight-trace-v1.schema.json"',
+            self.core,
+        )
+        self.assertIn("validateSchemaValue(input, TRACE_SCHEMA", self.core)
+
 
 if __name__ == "__main__":
     unittest.main()

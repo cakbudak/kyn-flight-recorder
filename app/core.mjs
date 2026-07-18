@@ -1,3 +1,5 @@
+import TRACE_SCHEMA from "../schema/kyn-flight-trace-v1.schema.json" with { type: "json" };
+
 const RUN_STATUSES = new Set(["blocked", "completed"]);
 const NODE_STATUSES = new Set(["blocked", "completed", "healthy", "pending", "waiting"]);
 const EDGE_STATUSES = new Set(["blocked", "healthy", "pending", "traversed"]);
@@ -38,6 +40,155 @@ function requireInteger(issues, value, path) {
 
 function hasUniqueValues(values) {
   return new Set(values).size === values.length;
+}
+
+function appendPath(path, key) {
+  return path ? `${path}.${key}` : key;
+}
+
+function schemaTypeMatches(value, type) {
+  if (type === "object") return isRecord(value);
+  if (type === "array") return Array.isArray(value);
+  if (type === "integer") return Number.isInteger(value);
+  if (type === "null") return value === null;
+  return typeof value === type;
+}
+
+function resolveSchemaReference(reference) {
+  if (typeof reference !== "string" || !reference.startsWith("#/")) {
+    throw new Error(`Unsupported schema reference: ${reference}`);
+  }
+  return reference
+    .slice(2)
+    .split("/")
+    .map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"))
+    .reduce((current, part) => current?.[part], TRACE_SCHEMA);
+}
+
+function isRfc3339DateTime(value) {
+  if (typeof value !== "string") return false;
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/
+  );
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, zoneHour, zoneMinute] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return (
+    month >= 1 && month <= 12 &&
+    day >= 1 && day <= daysInMonth &&
+    Number(hourText) <= 23 &&
+    Number(minuteText) <= 59 &&
+    Number(secondText) <= 59 &&
+    (zoneHour === undefined || (Number(zoneHour) <= 23 && Number(zoneMinute) <= 59)) &&
+    !Number.isNaN(Date.parse(value))
+  );
+}
+
+function validateSchemaValue(value, schema, path, issues) {
+  if (schema.$ref) {
+    const resolved = resolveSchemaReference(schema.$ref);
+    if (!resolved) {
+      throw new Error(`Schema reference does not resolve: ${schema.$ref}`);
+    }
+    validateSchemaValue(value, resolved, path, issues);
+    return;
+  }
+
+  if (Array.isArray(schema.oneOf)) {
+    const matches = schema.oneOf.filter((candidate) => {
+      const branchIssues = [];
+      validateSchemaValue(value, candidate, path, branchIssues);
+      return branchIssues.length === 0;
+    });
+    if (matches.length !== 1) {
+      addIssue(issues, path || "$", "must match exactly one allowed shape");
+    }
+    return;
+  }
+
+  if (Object.hasOwn(schema, "const") && !Object.is(value, schema.const)) {
+    addIssue(issues, path || "$", `must equal ${JSON.stringify(schema.const)}`);
+    return;
+  }
+  if (Array.isArray(schema.enum) && !schema.enum.some((entry) => Object.is(value, entry))) {
+    addIssue(issues, path || "$", "contains an unsupported value");
+    return;
+  }
+  if (schema.type && !schemaTypeMatches(value, schema.type)) {
+    addIssue(issues, path || "$", `must be ${schema.type}`);
+    return;
+  }
+
+  if (typeof value === "string") {
+    if (Number.isInteger(schema.minLength) && [...value].length < schema.minLength) {
+      addIssue(issues, path || "$", `must contain at least ${schema.minLength} character`);
+    }
+    if (schema.format === "date-time" && !isRfc3339DateTime(value)) {
+      addIssue(issues, path || "$", "must be an RFC 3339 date-time");
+    }
+  }
+
+  if (typeof value === "number" && Number.isFinite(schema.minimum) && value < schema.minimum) {
+    addIssue(issues, path || "$", `must be at least ${schema.minimum}`);
+  }
+
+  if (Array.isArray(value)) {
+    if (Number.isInteger(schema.minItems) && value.length < schema.minItems) {
+      addIssue(issues, path || "$", `must contain at least ${schema.minItems} item`);
+    }
+    if (schema.uniqueItems) {
+      const serialized = value.map((entry) => JSON.stringify(entry));
+      if (!hasUniqueValues(serialized)) {
+        addIssue(issues, path || "$", "items must be unique");
+      }
+    }
+    if (schema.items) {
+      value.forEach((entry, index) => {
+        validateSchemaValue(entry, schema.items, `${path}[${index}]`, issues);
+      });
+    }
+  }
+
+  if (isRecord(value)) {
+    const keys = Object.keys(value);
+    if (Number.isInteger(schema.minProperties) && keys.length < schema.minProperties) {
+      addIssue(issues, path || "$", `must contain at least ${schema.minProperties} property`);
+    }
+    for (const required of schema.required ?? []) {
+      if (!Object.hasOwn(value, required)) {
+        addIssue(issues, appendPath(path, required), "is required");
+      }
+    }
+    const declared = schema.properties ?? {};
+    for (const [key, entry] of Object.entries(value)) {
+      const entryPath = appendPath(path, key);
+      if (Object.hasOwn(declared, key)) {
+        validateSchemaValue(entry, declared[key], entryPath, issues);
+      } else if (schema.additionalProperties === false) {
+        addIssue(issues, entryPath, "is not allowed");
+      } else if (isRecord(schema.additionalProperties)) {
+        validateSchemaValue(entry, schema.additionalProperties, entryPath, issues);
+      }
+    }
+  }
+}
+
+function validateExternalEffectClaims(issues, value, path = "") {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => validateExternalEffectClaims(issues, entry, `${path}[${index}]`));
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, entry] of Object.entries(value)) {
+    const entryPath = appendPath(path, key);
+    if (key === "external_effect" && entry !== false) {
+      addIssue(issues, entryPath, "standalone evidence must declare false");
+    }
+    validateExternalEffectClaims(issues, entry, entryPath);
+  }
 }
 
 function validateEvents(issues, events, path, correlationId, minimumSequence = 1) {
@@ -82,10 +233,14 @@ function validateEvents(issues, events, path, correlationId, minimumSequence = 1
 }
 
 export function validateFixture(input) {
-  const issues = [];
-  if (!isRecord(input)) {
-    return { ok: false, issues: [{ path: "$", message: "fixture must be an object" }] };
+  const structuralIssues = [];
+  validateSchemaValue(input, TRACE_SCHEMA, "", structuralIssues);
+  if (structuralIssues.length > 0) {
+    return { ok: false, issues: structuralIssues };
   }
+
+  const issues = [];
+  validateExternalEffectClaims(issues, input);
 
   if (input.schema_version !== "1.0") {
     addIssue(issues, "schema_version", "unsupported schema version; expected 1.0");
@@ -369,6 +524,8 @@ export function applyCommand(state, authorization) {
     receipt_id: `receipt_${command.command_id.slice(4)}`,
     command_id: command.command_id,
     idempotency_key: command.idempotency_key,
+    run_id: state.run.id,
+    correlation_id: state.run.correlation_id,
     actor,
     reason,
     applied_at: resolution.completed_at,

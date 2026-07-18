@@ -65,8 +65,10 @@ The legal intervention is deliberately narrow:
 - duplicate apply returns the same receipt;
 - `completed` is absorbing until explicit demo reset.
 
-You can also import a local JSON trace up to 1 MiB. Invalid schema versions,
-dangling edges, correlation mismatches, event gaps, unsafe effect claims, and
+You can also import a local JSON trace up to 1 MiB. The runtime loads the bundled
+machine-readable JSON Schema and rejects missing, mistyped, or unknown fields
+before it evaluates cross-field invariants. Invalid schema versions, dangling
+edges, correlation mismatches, event gaps, nested unsafe effect claims, and
 broken command fences fail closed. Imported content remains in browser memory.
 See the [v1 trace contract](docs/trace-contract.md).
 
@@ -159,11 +161,13 @@ node scripts/browser_verify.mjs
 
 Current reproducible evidence:
 
-- 25 Python contract/server/static assertions;
-- 22 JavaScript state-machine assertions;
-- 30/30 Chromium journey checks at desktop and 390 px mobile;
-- zero axe-core violations in blocked, dialog, receipt, and mobile states;
-- first meaningful render measured at 459.7 ms on the reference environment;
+- 28 Python contract/server/static assertions;
+- 25 JavaScript schema and state-machine assertions;
+- 38/38 Chromium journey checks across desktop, 390 × 844 mobile, and a
+  390 × 520 short-dialog stress case;
+- zero axe-core violations in five blocked, dialog, receipt, and mobile states;
+- first meaningful render remains below the one-second gate on the reference
+  environment;
 - one bounded GPT-5.6 adversarial review completed with sanitized evidence;
 - no unexpected network request, console error, external effect, or secret in the
   tested browser journey.
