@@ -134,11 +134,14 @@ counts, and hashes—not the key or raw payloads. Its contract follows OpenAI's
 [GPT-5.6 model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-sol)
 and [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
 
-**Current evidence status:** the runner and seven negative/contract tests are
-complete, but the actual API call is not yet recorded because this environment
-has no `OPENAI_API_KEY`. This is an explicit submission blocker, tracked in
-[`evidence/gpt-5.6-review.pending.md`](evidence/gpt-5.6-review.pending.md); the
-project does not pretend that a model name in sample data is proof of use.
+**Current evidence status:** the bounded API call completed on 2026-07-18 with
+returned model `gpt-5.6-sol`. Its structured verdict was `partially_supported`
+at 99% confidence: the observed trace supports the healthy fenced lease and
+pending approval diagnosis, while the previewed revision-8 completion must stay
+labelled as simulation rather than observed history. The sanitized result is
+committed as [`evidence/gpt-5.6-review.json`](evidence/gpt-5.6-review.json), with
+an interpretation note in
+[`evidence/gpt-5.6-review.md`](evidence/gpt-5.6-review.md).
 
 ## Verification
 
@@ -161,6 +164,7 @@ Current reproducible evidence:
 - 30/30 Chromium journey checks at desktop and 390 px mobile;
 - zero axe-core violations in blocked, dialog, receipt, and mobile states;
 - first meaningful render measured at 459.7 ms on the reference environment;
+- one bounded GPT-5.6 adversarial review completed with sanitized evidence;
 - no unexpected network request, console error, external effect, or secret in the
   tested browser journey.
 

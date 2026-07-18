@@ -11,8 +11,10 @@ repository, not screenshots copied from the Kynist monorepo.
 - [`accessibility-verification.md`](accessibility-verification.md) — WCAG 2.2 AA
   audit scope, automated results, manual/mathematical checks, and the one residual
   physical-screen-reader limitation.
-- [`gpt-5.6-review.pending.md`](gpt-5.6-review.pending.md) — explicit status and
-  acceptance criteria for the one external GPT-5.6 evidence call.
+- [`gpt-5.6-review.json`](gpt-5.6-review.json) — sanitized result, model identity,
+  response identifier, hashes, and token usage from the bounded GPT-5.6 call.
+- [`gpt-5.6-review.md`](gpt-5.6-review.md) — exact verdict interpretation and the
+  line between observed evidence and simulated preview.
 - [`clean-clone-verification.md`](clean-clone-verification.md) — isolated clone,
   complete test/browser run, and clean-worktree result.
 

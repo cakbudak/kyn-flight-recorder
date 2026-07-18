@@ -2,8 +2,8 @@
 
 Date: 2026-07-18  
 Standalone maturity: verified demo  
-Submission maturity: blocked only on external GPT-5.6 execution, publication,
-Codex feedback ID, and video/upload steps
+Submission maturity: blocked only on publication, Codex feedback ID, and
+video/upload steps
 
 | Gate | Result | Proof | Honest boundary |
 | --- | --- | --- | --- |
@@ -15,7 +15,7 @@ Codex feedback ID, and video/upload steps
 | G6 performance | PASS on reference | first meaningful render 459.7 ms; no runtime package/build/network dependency | not a broad device benchmark |
 | G7 operations | PASS | run/correlation/revision/source visible; append-only replay and receipt | local synthetic evidence only |
 | G8 agent boundary | PASS | effect boundary and model/tool/approval/queue causality explicit; no model/tool runtime | no claim of live Kynist integration |
-| G9 proof | PASS | 25 Python + 22 Node + 30 browser checks; screenshots and accessibility audit | GPT API result pending |
+| G9 proof | PASS | 25 Python + 22 Node + 30 browser checks; screenshots, accessibility audit, and sanitized GPT-5.6 review | external review is bounded to the synthetic packet, not runtime proof |
 | G10 release | PASS locally | isolated clone: 25 Python + 22 Node + 30 browser checks; clean worktree; one-command entry | repeat from selected remote after publication |
 
 ## Reproduce
@@ -36,6 +36,7 @@ submission evidence gate and requires `OPENAI_API_KEY`.
 - `evidence/browser-verification.json`: named browser assertions and timing.
 - `evidence/screenshots/`: generated blocked, receipt, and mobile states.
 - `evidence/accessibility-verification.md`: tools, states, contrast math, residual.
-- `evidence/gpt-5.6-review.pending.md`: exact status of external model proof.
+- `evidence/gpt-5.6-review.json`: sanitized structured GPT-5.6 result and usage.
+- `evidence/gpt-5.6-review.md`: human-readable interpretation and boundary.
 - `evidence/clean-clone-verification.md`: isolated local-clone rehearsal.
 - Git history: new-work and Codex collaboration chronology.
