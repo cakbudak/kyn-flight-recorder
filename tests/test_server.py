@@ -52,7 +52,7 @@ class DemoServerTests(unittest.TestCase):
             )
 
     def test_security_headers_cover_html_and_json(self) -> None:
-        for path in ("/app/", "/app/data/demo-run.json", "/healthz"):
+        for path in ("/app/", "/app/app.mjs", "/app/state.mjs", "/healthz"):
             with self.subTest(path=path), self.open(path) as response:
                 for name, expected in SECURITY_HEADERS.items():
                     self.assertEqual(response.headers[name], expected)

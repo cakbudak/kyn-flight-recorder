@@ -1,355 +1,98 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
-  ContractError,
-  applyCommand,
-  createInitialState,
-  createSessionRecord,
-  eventsForSource,
-  findNode,
-  previewCommand,
-  redactForDisplay,
-  restoreSession,
-  selectNode,
-  validateFixture
-} from "../app/core.mjs";
+  PHASE_ORDER,
+  childRunFor,
+  phaseFor,
+  rootRunFor,
+  selectedRunFor
+} from "../app/state.mjs";
 
-const fixturePath = new URL("../app/data/demo-run.json", import.meta.url);
-
-function fixture() {
-  return JSON.parse(readFileSync(fixturePath, "utf8"));
-}
-
-function authorization(overrides = {}) {
+function run(overrides = {}) {
   return {
-    actor: "build-week-judge",
-    reason: "Evidence is verified and the synthetic scope is bounded.",
-    acknowledged: true,
+    id: "run_root",
+    parent_run_id: null,
+    status: "blocked",
+    diagnosis: null,
+    repair: null,
+    events: [],
     ...overrides
   };
 }
 
-function expectCode(code, operation) {
-  assert.throws(operation, (error) => {
-    assert.ok(error instanceof ContractError);
-    assert.equal(error.code, code);
-    return true;
+function snapshot(...runs) {
+  return { runs };
+}
+
+test("the UI phase contract starts with a composed flow", () => {
+  assert.equal(phaseFor(snapshot()), "ready");
+  assert.deepEqual(PHASE_ORDER, ["ready", "blocked", "diagnosed", "repair", "applied", "proven"]);
+});
+
+test("a blocked run advances only through evidence, proposal, and approval", () => {
+  const root = run();
+  const state = snapshot(root);
+  assert.equal(phaseFor(state), "blocked");
+
+  root.diagnosis = { id: "diag_1" };
+  assert.equal(phaseFor(state), "diagnosed");
+
+  root.repair = { id: "rpr_1", status: "proposed" };
+  assert.equal(phaseFor(state), "repair");
+
+  root.repair.status = "applied";
+  assert.equal(phaseFor(state), "applied");
+});
+
+test("only a completed linked child proves the changed outcome", () => {
+  const root = run({
+    repair: { id: "rpr_1", status: "applied" }
   });
-}
+  const unrelated = run({
+    id: "run_unrelated",
+    parent_run_id: "run_other",
+    status: "completed"
+  });
+  assert.equal(phaseFor(snapshot(unrelated, root)), "applied");
 
-function expectInvalidPath(candidate, path) {
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false, `expected invalid fixture at ${path}`);
-  assert.ok(
-    verdict.issues.some((issue) => issue.path === path),
-    `missing ${path} in ${JSON.stringify(verdict.issues)}`
-  );
-}
-
-test("the signed fixture satisfies the v1 contract", () => {
-  const verdict = validateFixture(fixture());
-  assert.deepEqual(verdict, { ok: true, issues: [] });
+  const child = run({
+    id: "run_child",
+    parent_run_id: root.id,
+    status: "completed"
+  });
+  assert.equal(childRunFor(snapshot(child, root), root), child);
+  assert.equal(phaseFor(snapshot(child, root)), "proven");
 });
 
-test("unsupported schema versions fail closed", () => {
-  const candidate = fixture();
-  candidate.schema_version = "2.0";
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(verdict.issues.some((issue) => issue.path === "schema_version"));
+test("provider failures never masquerade as policy failures", () => {
+  assert.equal(phaseFor(snapshot(run({ status: "failed" }))), "failed");
+  const root = run({ repair: { id: "rpr_1", status: "applied" } });
+  const failedChild = run({
+    id: "run_child",
+    parent_run_id: root.id,
+    status: "failed"
+  });
+  assert.equal(phaseFor(snapshot(failedChild, root)), "failed");
 });
 
-test("the runtime enforces required fields and rejects unknown properties", () => {
-  const cases = [
-    {
-      path: "fixture.title",
-      mutate(candidate) {
-        delete candidate.fixture.title;
-      }
-    },
-    {
-      path: "run.agent.untrusted_override",
-      mutate(candidate) {
-        candidate.run.agent.untrusted_override = true;
-      }
-    },
-    {
-      path: "nodes[0].subtitle",
-      mutate(candidate) {
-        delete candidate.nodes[0].subtitle;
-      }
-    },
-    {
-      path: "events[0].unexpected",
-      mutate(candidate) {
-        candidate.events[0].unexpected = "accepted by the old partial validator";
-      }
-    }
-  ];
-
-  for (const { path, mutate } of cases) {
-    const candidate = fixture();
-    mutate(candidate);
-    expectInvalidPath(candidate, path);
-  }
+test("run selection is explicit and otherwise prefers the linked child", () => {
+  const root = run();
+  const child = run({
+    id: "run_child",
+    parent_run_id: root.id,
+    status: "completed"
+  });
+  const state = snapshot(child, root);
+  assert.equal(rootRunFor(state), root);
+  assert.equal(selectedRunFor(state), child);
+  assert.equal(selectedRunFor(state, root.id), root);
+  assert.equal(selectedRunFor(state, "foreign"), child);
 });
 
-test("the runtime enforces schema types, bounds, formats, and collection constraints", () => {
-  const cases = [
-    {
-      path: "fixture.created_at",
-      mutate(candidate) {
-        candidate.fixture.created_at = "not-a-timestamp";
-      }
-    },
-    {
-      path: "run.duration_ms",
-      mutate(candidate) {
-        candidate.run.duration_ms = -1;
-      }
-    },
-    {
-      path: "nodes[0].fields",
-      mutate(candidate) {
-        candidate.nodes[0].fields = [];
-      }
-    },
-    {
-      path: "events[0].detail",
-      mutate(candidate) {
-        candidate.events[0].detail = [];
-      }
-    },
-    {
-      path: "intervention.preview",
-      mutate(candidate) {
-        candidate.intervention.preview = [];
-      }
-    },
-    {
-      path: "intervention.resolution.node_updates",
-      mutate(candidate) {
-        candidate.intervention.resolution.node_updates = {};
-      }
-    },
-    {
-      path: "intervention.resolution.edge_updates.edge_4",
-      mutate(candidate) {
-        candidate.intervention.resolution.edge_updates.edge_4 = "pending";
-      }
-    },
-    {
-      path: "redaction.keys",
-      mutate(candidate) {
-        candidate.redaction.keys[1] = candidate.redaction.keys[0];
-      }
-    }
-  ];
-
-  for (const { path, mutate } of cases) {
-    const candidate = fixture();
-    mutate(candidate);
-    expectInvalidPath(candidate, path);
-  }
-});
-
-test("unknown run and node states fail closed", () => {
-  const candidate = fixture();
-  candidate.run.status = "mysterious";
-  candidate.nodes[0].status = "maybe";
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(verdict.issues.some((issue) => issue.path === "run.status"));
-  assert.ok(verdict.issues.some((issue) => issue.path === "nodes[0].status"));
-});
-
-test("foreign correlation ids are rejected", () => {
-  const candidate = fixture();
-  candidate.events[2].correlation_id = "corr_foreign";
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(verdict.issues.some((issue) => issue.path === "events[2].correlation_id"));
-});
-
-test("dangling graph edges are rejected", () => {
-  const candidate = fixture();
-  candidate.edges[0].to = "missing_node";
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(verdict.issues.some((issue) => issue.path === "edges[0]"));
-});
-
-test("event sequence gaps and duplicate ids are rejected", () => {
-  const candidate = fixture();
-  candidate.events[1].sequence = 8;
-  candidate.events[1].id = candidate.events[0].id;
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(verdict.issues.some((issue) => issue.path === "events.*.id"));
-  assert.ok(verdict.issues.some((issue) => issue.path === "events.*.sequence"));
-});
-
-test("standalone traces cannot claim an external effect", () => {
-  const candidate = fixture();
-  candidate.run.impact.external_effect = true;
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(verdict.issues.some((issue) => issue.path === "run.impact.external_effect"));
-});
-
-test("nested trace evidence cannot smuggle an external-effect claim", () => {
-  const candidate = fixture();
-  candidate.intervention.resolution.events[1].detail.external_effect = true;
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(
-    verdict.issues.some(
-      (issue) => issue.path === "intervention.resolution.events[1].detail.external_effect"
-    )
-  );
-});
-
-test("required secret classes cannot be removed from redaction", () => {
-  const candidate = fixture();
-  candidate.redaction.keys = candidate.redaction.keys.filter((key) => key !== "token");
-  const verdict = validateFixture(candidate);
-  assert.equal(verdict.ok, false);
-  assert.ok(verdict.issues.some((issue) => issue.message.includes("token")));
-});
-
-test("secret-bearing keys are redacted recursively", () => {
-  const redacted = redactForDisplay(
-    {
-      token: "top-level",
-      nested: {
-        claim_token: "nested",
-        safe: "visible",
-        children: [{ api_key: "array-value" }]
-      }
-    },
-    fixture().redaction
-  );
-  assert.equal(redacted.token, "•••••••• (redacted)");
-  assert.equal(redacted.nested.claim_token, "•••••••• (redacted)");
-  assert.equal(redacted.nested.children[0].api_key, "•••••••• (redacted)");
-  assert.equal(redacted.nested.safe, "visible");
-});
-
-test("initial state never carries raw credential fixture values", () => {
-  const state = createInitialState(fixture());
-  const serialized = JSON.stringify(state);
-  assert.equal(serialized.includes("SYNTHETIC_VALUE"), false);
-  assert.equal(serialized.includes("REDACTED_BY_FIXTURE"), false);
-  assert.ok(serialized.includes("•••••••• (redacted)"));
-});
-
-test("initial state is isolated from later fixture mutations", () => {
-  const source = fixture();
-  const state = createInitialState(source);
-  source.run.goal = "mutated after validation";
-  source.nodes[0].title = "mutated";
-  assert.notEqual(state.run.goal, source.run.goal);
-  assert.notEqual(state.nodes[0].title, source.nodes[0].title);
-});
-
-test("preview is side-effect free and exposes no external effect", () => {
-  const state = createInitialState(fixture());
+test("phase derivation never mutates the server projection", () => {
+  const state = snapshot(run({ diagnosis: { id: "diag_1" } }));
   const before = JSON.stringify(state);
-  const preview = previewCommand(state);
-  assert.equal(preview.external_effect, false);
-  assert.equal(preview.expected_revision, 7);
+  assert.equal(phaseFor(state), "diagnosed");
   assert.equal(JSON.stringify(state), before);
-});
-
-test("authorization requires the pinned actor", () => {
-  const state = createInitialState(fixture());
-  expectCode("ACTOR_MISMATCH", () =>
-    applyCommand(state, authorization({ actor: "another-operator" }))
-  );
-});
-
-test("authorization requires a bounded reason", () => {
-  const state = createInitialState(fixture());
-  expectCode("INVALID_REASON", () => applyCommand(state, authorization({ reason: "too short" })));
-  expectCode("INVALID_REASON", () => applyCommand(state, authorization({ reason: "x".repeat(281) })));
-});
-
-test("authorization requires local-simulation acknowledgement", () => {
-  const state = createInitialState(fixture());
-  expectCode("ACK_REQUIRED", () =>
-    applyCommand(state, authorization({ acknowledged: false }))
-  );
-});
-
-test("revision conflicts fail before any transition", () => {
-  const state = createInitialState(fixture());
-  state.run.revision = 8;
-  const before = JSON.stringify(state);
-  expectCode("REVISION_CONFLICT", () => applyCommand(state, authorization()));
-  assert.equal(JSON.stringify(state), before);
-});
-
-test("the legal command advances exactly one revision and appends evidence", () => {
-  const initial = createInitialState(fixture());
-  const result = applyCommand(initial, authorization());
-  assert.equal(result.duplicate, false);
-  assert.equal(result.state.run.status, "completed");
-  assert.equal(result.state.run.revision, 8);
-  assert.equal(result.state.events.length, 9);
-  assert.deepEqual(result.state.events.map((event) => event.sequence), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
-  assert.equal(findNode(result.state, "approval").fields.decision, "approved");
-  assert.equal(findNode(result.state, "effect").fields.executed, true);
-  assert.equal(findNode(result.state, "terminal").status, "completed");
-  assert.equal(result.receipt.from_revision, 7);
-  assert.equal(result.receipt.to_revision, 8);
-  assert.equal(result.receipt.run_id, initial.run.id);
-  assert.equal(result.receipt.correlation_id, initial.run.correlation_id);
-  assert.equal(result.receipt.external_effect, false);
-  assert.equal(initial.run.status, "blocked", "the input state remains immutable");
-});
-
-test("a duplicate command returns the existing receipt without another event", () => {
-  const once = applyCommand(createInitialState(fixture()), authorization());
-  const twice = applyCommand(once.state, authorization({ reason: "A different duplicate reason is ignored." }));
-  assert.equal(twice.duplicate, true);
-  assert.equal(twice.state, once.state);
-  assert.deepEqual(twice.receipt, once.receipt);
-  assert.equal(twice.state.events.length, 9);
-});
-
-test("a terminal without an owned receipt absorbs new commands", () => {
-  const state = createInitialState(fixture());
-  state.run.status = "completed";
-  expectCode("TERMINAL_ABSORBS", () => applyCommand(state, authorization()));
-});
-
-test("session records rehydrate the one legal transition", () => {
-  const applied = applyCommand(createInitialState(fixture()), authorization()).state;
-  const record = createSessionRecord(applied);
-  const restored = restoreSession(fixture(), record);
-  assert.equal(restored.run.status, "completed");
-  assert.equal(restored.events.length, 9);
-  assert.deepEqual(restored.command.receipt, applied.command.receipt);
-});
-
-test("session records are fixture-bound", () => {
-  const initial = createInitialState(fixture());
-  const record = {
-    version: 1,
-    fixture_id: "another-fixture",
-    schema_version: initial.schema_version,
-    command_id: initial.intervention.command_id,
-    ...authorization()
-  };
-  expectCode("SESSION_MISMATCH", () => restoreSession(fixture(), record));
-});
-
-test("node selection and source filtering remain explicit", () => {
-  const initial = createInitialState(fixture());
-  const selected = selectNode(initial, "queue");
-  assert.equal(findNode(selected).id, "queue");
-  assert.equal(eventsForSource(selected, "queue_engine.lease").length, 1);
-  expectCode("UNKNOWN_NODE", () => selectNode(initial, "missing"));
 });

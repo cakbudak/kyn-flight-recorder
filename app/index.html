@@ -4,462 +4,361 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
-    <meta name="theme-color" content="#0b0d10">
+    <meta name="theme-color" content="#090b0d">
     <meta
       name="description"
-      content="A standalone, local-first flight recorder for autonomous agent runs."
+      content="A real closed-loop agent runtime: execute, record, diagnose, repair, approve, rerun, and prove."
     >
     <title>Kyn.ist Flight Recorder</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to run analysis</a>
+    <a class="skip-link" href="#main-content">Skip to the control loop</a>
 
-    <div class="app-shell">
-      <header class="topbar">
-        <a class="brand" href="#run" aria-label="Kyn.ist Flight Recorder home">
-          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M5 7.5h8.5V16H5zM18.5 7.5H27V16h-8.5zM5 21h8.5v3.5H5zM18.5 21H27v3.5h-8.5z"/>
-            <path class="brand-trace" d="M9.25 16v5M22.75 16v5M13.5 11.75h5"/>
-          </svg>
-          <span class="brand-copy">
-            <span class="brand-name">Kyn.ist</span>
-            <span class="brand-product">Flight Recorder</span>
-          </span>
+    <header class="topbar">
+      <a class="brand" href="#main-content" aria-label="Kyn.ist Flight Recorder home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>
+          <strong>Kyn.ist</strong>
+          <small>Flight Recorder</small>
+        </span>
+      </a>
+      <div class="topbar-status" id="runtime-health" aria-live="polite">
+        <span class="status-light is-loading" aria-hidden="true"></span>
+        <span>Checking runtime…</span>
+      </div>
+      <div class="topbar-actions">
+        <a
+          class="button button-quiet repo-link"
+          href="https://github.com/cakbudak/kyn-flight-recorder"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Source
+          <span aria-hidden="true">↗</span>
         </a>
+        <button class="button button-quiet" id="new-workspace" type="button" hidden>
+          New isolated lab
+        </button>
+      </div>
+    </header>
 
-        <div class="topbar-center" role="group" aria-label="Demo environment">
-          <span class="environment-dot" aria-hidden="true"></span>
-          <span>Synthetic trace</span>
-          <span class="topbar-separator" aria-hidden="true"></span>
-          <span>Local only</span>
-        </div>
-
-        <div class="topbar-actions">
-          <button class="button button-quiet file-button" id="load-trace" type="button" aria-label="Load a local Kyn Flight Trace JSON file">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M10 3v9m0-9 3 3m-3-3L7 6M4 11v4a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4"/>
-            </svg>
-            <span>Load trace</span>
-          </button>
-          <input id="trace-file" class="visually-hidden" type="file" accept="application/json,.json" aria-label="Choose a local Kyn Flight Trace JSON file">
-          <button class="button button-quiet" id="reset-demo" type="button" aria-label="Reset the current trace">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M4.2 7.2A6 6 0 1 1 4 12m.2-4.8V3.8m0 3.4h3.4"/>
-            </svg>
-            <span>Reset</span>
-          </button>
-        </div>
-      </header>
-
-      <aside class="sidebar" aria-label="Flight recorder navigation">
-        <nav class="primary-nav">
-          <button class="nav-item is-active" type="button" data-view="run" aria-current="page">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <circle cx="10" cy="10" r="6.5"/>
-              <path d="M10 6.5v3.8l2.5 1.4"/>
-            </svg>
-            <span>Run</span>
-            <span class="nav-count" id="run-count">1</span>
-          </button>
-          <button class="nav-item" type="button" data-view="replay">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 4.5h10M5 10h10M5 15.5h10"/>
-              <circle cx="5" cy="4.5" r="1.25"/>
-              <circle cx="10" cy="10" r="1.25"/>
-              <circle cx="15" cy="15.5" r="1.25"/>
-            </svg>
-            <span>Replay</span>
-          </button>
-          <button class="nav-item" type="button" data-view="audit">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M6 3.5h8v13H6zM8.5 7h3M8.5 10h3M8.5 13h2"/>
-            </svg>
-            <span>Audit</span>
-            <span class="nav-count" id="audit-count">5</span>
-          </button>
-          <button class="nav-item" type="button" data-view="about">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <circle cx="10" cy="10" r="6.5"/>
-              <path d="M10 9v4M10 6.5h.01"/>
-            </svg>
-            <span>About</span>
-          </button>
+    <div class="shell">
+      <aside class="rail" aria-label="Closed-loop sections">
+        <p class="rail-label">Control loop</p>
+        <nav>
+          <a href="#flow-section" class="rail-link is-active"><span>01</span> Flow</a>
+          <a href="#resources-section" class="rail-link"><span>02</span> Resources</a>
+          <a href="#runs-section" class="rail-link"><span>03</span> Runs</a>
+          <a href="#ledger-section" class="rail-link"><span>04</span> Evidence</a>
         </nav>
-
-        <div class="sidebar-context">
-          <p class="sidebar-label">Trace contract</p>
-          <div class="contract-chip">
-            <span class="contract-icon">K</span>
-            <span>
-              <strong>Kyn Flight Trace</strong>
-              <small>schema v1.0</small>
-            </span>
-          </div>
-        </div>
-
-        <div class="sidebar-foot">
-          <span class="scope-status"><i aria-hidden="true"></i> No network writes</span>
-          <span>Build Week edition</span>
+        <div class="rail-boundary">
+          <span class="boundary-icon" aria-hidden="true">K</span>
+          <p><strong>Safe boundary</strong><br>Local sandbox effects only</p>
         </div>
       </aside>
 
       <main id="main-content" class="main-content" tabindex="-1">
         <section id="loading-state" class="system-state" aria-live="polite">
-          <div class="loading-mark" aria-hidden="true"></div>
-          <p>Validating trace contract…</p>
+          <span class="spinner" aria-hidden="true"></span>
+          <p>Opening the runtime ledger…</p>
         </section>
 
-        <section id="empty-state" class="system-state" hidden>
-          <div class="state-icon" aria-hidden="true">∅</div>
-          <h1 tabindex="-1">No run in this trace</h1>
-          <p>Load a Kyn Flight Trace v1 JSON file or return to the deterministic judge fixture.</p>
-          <button class="button button-primary" id="restore-fixture-empty" type="button">Open judge fixture</button>
-        </section>
-
-        <section id="error-state" class="system-state system-state-error" hidden>
-          <div class="state-icon" aria-hidden="true">!</div>
-          <p class="eyebrow">Trace rejected</p>
-          <h1 tabindex="-1">The input failed closed.</h1>
-          <p id="error-summary">The trace does not satisfy the v1 contract.</p>
-          <details>
-            <summary>Validation evidence</summary>
-            <ol id="error-list"></ol>
-          </details>
-          <button class="button button-primary" id="restore-fixture-error" type="button">Open judge fixture</button>
-        </section>
-
-        <section class="view-panel run-view" data-view-panel="run" hidden>
-          <header class="page-header">
-            <div>
-              <div class="breadcrumb">
-                <span>Runs</span>
-                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg>
-                <span id="header-agent">release-sentinel</span>
-              </div>
-              <div class="title-row">
-                <h1 id="header-run-id">run_01JY7KYN9X4N</h1>
-                <span id="header-status" class="status-badge status-blocked">Blocked</span>
-              </div>
-              <p class="page-subtitle" id="header-goal"></p>
-            </div>
-            <div class="header-actions">
-              <button class="button button-quiet" id="copy-correlation" type="button">
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <rect x="7" y="7" width="9" height="9" rx="1.5"/>
-                  <path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v7A1.5 1.5 0 0 0 4.5 14H7"/>
-                </svg>
-                Copy correlation
+        <section id="onboarding" class="onboarding" hidden>
+          <div class="hero-copy">
+            <p class="eyebrow"><span></span> OpenAI Build Week · real runtime</p>
+            <h1>From agent failure<br>to <em>proven repair.</em></h1>
+            <p class="hero-lede">
+              Build a versioned agent flow, execute real function calls, identify the causal
+              fault from an authoritative ledger, approve one bounded repair, and rerun it.
+            </p>
+            <div class="hero-actions">
+              <button class="button button-primary button-large" id="create-lab" type="button">
+                Create live agent lab
+                <span aria-hidden="true">→</span>
               </button>
+              <span class="hero-note">Fresh SQLite workspace · expires in 24 hours</span>
             </div>
-          </header>
-
-          <div class="run-layout">
-            <div class="run-primary">
-              <section class="diagnosis-card" aria-labelledby="diagnosis-title">
-                <div class="diagnosis-signal" aria-hidden="true">
-                  <span></span><span></span><span></span>
-                </div>
-                <div class="diagnosis-copy">
-                  <p class="eyebrow" id="diagnosis-eyebrow">Causal diagnosis</p>
-                  <h2 id="diagnosis-title"></h2>
-                  <p id="diagnosis-summary"></p>
-                  <div class="diagnosis-meta">
-                    <span><i class="meta-dot" aria-hidden="true"></i><strong>Confidence:</strong> deterministic</span>
-                    <span id="diagnosis-next"></span>
-                  </div>
-                </div>
-                <div class="diagnosis-action">
-                  <span class="simulation-label">Local simulation</span>
-                  <button class="button button-accent" id="open-intervention" type="button">
-                    Review intervention
-                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg>
-                  </button>
-                </div>
-              </section>
-
-              <section class="panel graph-panel" aria-labelledby="graph-title">
-                <header class="panel-header">
-                  <div>
-                    <p class="eyebrow">Cross-system causality</p>
-                    <h2 id="graph-title">Why is this run stuck?</h2>
-                  </div>
-                  <div class="graph-legend" role="group" aria-label="Graph status legend">
-                    <span><i class="legend-dot legend-completed" aria-hidden="true"></i>Traversed</span>
-                    <span><i class="legend-dot legend-blocked" aria-hidden="true"></i>Blocking</span>
-                    <span><i class="legend-dot legend-pending" aria-hidden="true"></i>Pending</span>
-                  </div>
-                </header>
-                <div id="causal-graph" class="causal-graph" role="region" aria-label="Causal run graph"></div>
-                <footer class="graph-foot">
-                  <span class="graph-instruction">Select any node to inspect its evidence.</span>
-                  <span id="graph-correlation" class="mono"></span>
-                </footer>
-              </section>
-
-              <section class="panel event-preview" aria-labelledby="recent-events-title">
-                <header class="panel-header panel-header-compact">
-                  <div>
-                    <p class="eyebrow">Append-only evidence</p>
-                    <h2 id="recent-events-title">Latest observations</h2>
-                  </div>
-                  <button class="text-button" type="button" data-go-view="replay">
-                    Open full replay
-                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg>
-                  </button>
-                </header>
-                <ol id="recent-events" class="event-list event-list-compact"></ol>
-              </section>
+          </div>
+          <div class="hero-proof" aria-label="What the lab creates">
+            <div class="proof-head">
+              <span class="proof-index">7</span>
+              <p><strong>one causal loop</strong><br>with evidence at every boundary</p>
             </div>
-
-            <aside class="panel inspector" aria-labelledby="inspector-title">
-              <header class="inspector-header">
-                <div class="node-kind-icon" id="inspector-icon" aria-hidden="true"></div>
-                <div>
-                  <p class="eyebrow">Selected evidence</p>
-                  <h2 id="inspector-title">Approval required</h2>
-                </div>
-                <span id="inspector-status" class="status-badge status-blocked">Blocked</span>
-              </header>
-              <p id="inspector-evidence" class="inspector-evidence"></p>
-              <dl id="inspector-fields" class="evidence-fields"></dl>
-              <div class="source-block">
-                <span class="source-label">Source class</span>
-                <code id="inspector-source"></code>
-              </div>
-              <div class="source-block">
-                <span class="source-label">Observed</span>
-                <time id="inspector-time"></time>
-              </div>
-              <button class="button button-secondary inspector-command" id="inspector-action" type="button">
-                Preview legal command
-              </button>
-            </aside>
+            <ol>
+              <li><span>01</span><strong>Compose</strong><small>Agents · prompts · skills</small></li>
+              <li><span>02</span><strong>Execute</strong><small>OpenAI Responses + strict tools</small></li>
+              <li><span>03</span><strong>Record</strong><small>Hash-linked SQLite events</small></li>
+              <li><span>04</span><strong>Diagnose</strong><small>Cited evidence only</small></li>
+              <li><span>05</span><strong>Repair</strong><small>One allow-listed patch</small></li>
+              <li><span>06</span><strong>Approve</strong><small>Human revision fence</small></li>
+              <li><span>07</span><strong>Prove</strong><small>Child rerun + real receipt</small></li>
+            </ol>
+            <p class="honest-boundary">
+              The release tool writes a real row inside a safe sandbox. It never touches a
+              production deployment system.
+            </p>
           </div>
         </section>
 
-        <section class="view-panel replay-view" data-view-panel="replay" hidden>
+        <section id="runtime" hidden>
           <header class="page-header">
             <div>
-              <p class="eyebrow">Deterministic replay</p>
-              <h1>Every decision, in causal order.</h1>
-              <p class="page-subtitle">Events remain visible after the intervention; no earlier evidence is overwritten.</p>
+              <p class="eyebrow"><span></span> Closed-loop workspace</p>
+              <div class="title-line">
+                <h1 id="flow-name">Production release guard</h1>
+                <span class="pill" id="flow-version">Flow v1</span>
+              </div>
+              <p id="flow-goal" class="page-subtitle"></p>
             </div>
-            <span id="replay-event-count" class="count-badge"></span>
+            <dl class="header-facts">
+              <div><dt>Workspace</dt><dd id="workspace-id" class="mono"></dd></div>
+              <div><dt>Authority</dt><dd>SQLite ledger</dd></div>
+              <div><dt>Model</dt><dd id="flow-model">gpt-5.6</dd></div>
+            </dl>
           </header>
-          <div class="replay-layout">
-            <section class="panel replay-panel" aria-labelledby="replay-title">
-              <header class="panel-header panel-header-compact">
-                <div>
-                  <p class="eyebrow">Correlation thread</p>
-                  <h2 id="replay-title" class="mono"></h2>
-                </div>
-                <div class="replay-filter" role="group" aria-label="Replay event filter">
-                  <button class="filter-chip is-active" type="button" data-filter="all" aria-pressed="true">All</button>
-                  <button class="filter-chip" type="button" data-filter="decisions" aria-pressed="false">Decisions</button>
-                  <button class="filter-chip" type="button" data-filter="runtime" aria-pressed="false">Runtime</button>
-                </div>
-              </header>
-              <ol id="replay-events" class="replay-timeline"></ol>
-            </section>
-            <aside class="replay-aside">
-              <section class="panel fact-card">
-                <p class="eyebrow">Trace integrity</p>
-                <dl>
-                  <div><dt>Schema</dt><dd>v1.0</dd></div>
-                  <div><dt>Fixture</dt><dd id="replay-fixture-id"></dd></div>
-                  <div><dt>Redaction</dt><dd>Before DOM</dd></div>
-                  <div><dt>Ordering</dt><dd>Strict sequence</dd></div>
-                </dl>
-              </section>
-              <section class="panel callout-card">
-                <span class="callout-mark" aria-hidden="true">↳</span>
-                <h2>One correlation, seven source classes.</h2>
-                <p>The console composes runtime, agent, tool, approval, queue, connector, and command evidence without inventing a second execution path.</p>
-              </section>
-            </aside>
-          </div>
-        </section>
 
-        <section class="view-panel audit-view" data-view-panel="audit" hidden>
-          <header class="page-header">
-            <div>
-              <p class="eyebrow">Controlled intervention</p>
-              <h1>Preview, authorize, apply, acknowledge.</h1>
-              <p class="page-subtitle">The demo command is revision-fenced, reason-required, idempotent, and local-only.</p>
-            </div>
-          </header>
-          <div class="audit-layout">
-            <section class="panel command-contract" aria-labelledby="command-contract-title">
-              <header class="panel-header panel-header-compact">
-                <div>
-                  <p class="eyebrow">Command contract</p>
-                  <h2 id="command-contract-title">approve_tool_call</h2>
-                </div>
-                <span class="simulation-label">No external effect</span>
-              </header>
-              <dl id="audit-command-fields" class="contract-fields"></dl>
-              <button class="button button-accent" id="audit-action" type="button">Review intervention</button>
-            </section>
-            <section id="receipt-panel" class="panel receipt-panel" aria-labelledby="receipt-title">
-              <div class="receipt-empty" id="receipt-empty">
-                <span class="receipt-glyph" aria-hidden="true">⌁</span>
-                <p class="eyebrow">Receipt pending</p>
-                <h2 id="receipt-title">No intervention has been applied.</h2>
-                <p>Previewing is side-effect free. A receipt appears only after an authorized command is acknowledged.</p>
-              </div>
-              <div id="receipt-content" hidden>
-                <header class="receipt-success">
-                  <span class="receipt-check" aria-hidden="true">✓</span>
-                  <div>
-                    <p class="eyebrow">Command acknowledged</p>
-                    <h2>Revision advanced exactly once.</h2>
-                  </div>
-                </header>
-                <dl id="receipt-fields" class="receipt-fields"></dl>
-              </div>
-            </section>
-          </div>
-          <section class="panel audit-ledger" aria-labelledby="audit-ledger-title">
-            <header class="panel-header panel-header-compact">
+          <ol class="phase-strip" id="phase-strip" aria-label="Closed-loop progress">
+            <li data-phase="ready"><span>1</span><strong>Compose</strong></li>
+            <li data-phase="blocked"><span>2</span><strong>Execute</strong></li>
+            <li data-phase="diagnosed"><span>3</span><strong>Diagnose</strong></li>
+            <li data-phase="repair"><span>4</span><strong>Repair</strong></li>
+            <li data-phase="applied"><span>5</span><strong>Approve</strong></li>
+            <li data-phase="proven"><span>6</span><strong>Rerun + prove</strong></li>
+          </ol>
+
+          <section id="flow-section" class="section-block" aria-labelledby="flow-title">
+            <div class="section-heading">
               <div>
-                <p class="eyebrow">Audit ledger</p>
-                <h2 id="audit-ledger-title">Evidence receipts</h2>
+                <p class="section-kicker">Live control plane</p>
+                <h2 id="flow-title">One next legal action</h2>
               </div>
-              <span id="audit-ledger-count" class="count-badge"></span>
-            </header>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr><th scope="col">Seq</th><th scope="col">Time</th><th scope="col">Source</th><th scope="col">Event</th><th scope="col">State</th></tr>
-                </thead>
-                <tbody id="audit-table-body"></tbody>
-              </table>
+              <span id="phase-caption" class="phase-caption">Ready to execute</span>
+            </div>
+
+            <div class="control-grid">
+              <article class="panel flow-card">
+                <div class="panel-topline">
+                  <span class="panel-label">Pinned flow manifest</span>
+                  <span class="status-badge status-ready" id="run-status">Ready</span>
+                </div>
+                <div class="manifest-route" aria-label="Requested release route">
+                  <div>
+                    <small>Artifact</small>
+                    <strong id="artifact-name" class="mono"></strong>
+                  </div>
+                  <span class="route-arrow" aria-hidden="true">→</span>
+                  <div>
+                    <small>Requested</small>
+                    <strong id="requested-environment"></strong>
+                  </div>
+                </div>
+                <div class="policy-row">
+                  <div>
+                    <span class="field-label">Pinned allow-list</span>
+                    <div id="allowed-environments" class="token-list"></div>
+                  </div>
+                  <div>
+                    <span class="field-label">Expected first outcome</span>
+                    <strong id="expected-outcome" class="danger-text">Policy denial</strong>
+                  </div>
+                </div>
+                <div class="action-block">
+                  <button class="button button-primary button-full" id="primary-action" type="button">
+                    Run agent flow
+                    <span aria-hidden="true">→</span>
+                  </button>
+                  <p id="action-explainer">
+                    The executor will inspect policy and call the sandbox release tool.
+                  </p>
+                </div>
+              </article>
+
+              <article class="panel activity-card" aria-labelledby="activity-title">
+                <div class="panel-topline">
+                  <span class="panel-label">Agent activity</span>
+                  <span id="activity-count" class="mono">0 events</span>
+                </div>
+                <h3 id="activity-title">No run yet</h3>
+                <p id="activity-summary">
+                  The flow, three agents, three prompts, and three skills are immutable and pinned.
+                </p>
+                <ol class="activity-steps" id="activity-steps">
+                  <li data-activity="model"><i></i><span>Model response</span><small>waiting</small></li>
+                  <li data-activity="inspect"><i></i><span>Policy inspection</span><small>waiting</small></li>
+                  <li data-activity="stage"><i></i><span>Sandbox stage</span><small>waiting</small></li>
+                  <li data-activity="terminal"><i></i><span>Authoritative outcome</span><small>waiting</small></li>
+                </ol>
+                <div class="activity-foot">
+                  <span><i class="tiny-dot" aria-hidden="true"></i> No DB transaction during model I/O</span>
+                  <span>Strict tools</span>
+                </div>
+              </article>
+            </div>
+
+            <div id="diagnosis-panel" class="diagnosis-panel" hidden>
+              <div class="diagnosis-icon" aria-hidden="true">!</div>
+              <div>
+                <p class="section-kicker">Evidence-grounded diagnosis</p>
+                <h3 id="diagnosis-summary"></h3>
+                <p id="diagnosis-retry"></p>
+              </div>
+              <dl>
+                <div><dt>Fault class</dt><dd id="diagnosis-class"></dd></div>
+                <div><dt>Confidence</dt><dd id="diagnosis-confidence"></dd></div>
+                <div><dt>Citations</dt><dd id="diagnosis-citations"></dd></div>
+              </dl>
+            </div>
+
+            <div id="repair-panel" class="repair-panel" hidden>
+              <div>
+                <p class="section-kicker">Bounded repair proposal</p>
+                <h3 id="repair-summary"></h3>
+              </div>
+              <div class="patch-preview" aria-label="Proposed manifest patch">
+                <span class="patch-remove">− ["staging"]</span>
+                <span class="patch-add" id="patch-add">+ ["staging", "production"]</span>
+              </div>
+              <div class="repair-fence">
+                <span>Path <code id="repair-path"></code></span>
+                <span>Expected revision <strong id="repair-revision"></strong></span>
+                <span>Risk <strong id="repair-risk"></strong></span>
+              </div>
+            </div>
+          </section>
+
+          <section id="resources-section" class="section-block" aria-labelledby="resources-title">
+            <div class="section-heading">
+              <div>
+                <p class="section-kicker">First-class, versioned inputs</p>
+                <h2 id="resources-title">Agents, prompts, skills</h2>
+              </div>
+              <p>Every run pins these exact fingerprints.</p>
+            </div>
+            <div class="resource-columns">
+              <article class="resource-group">
+                <header><span class="resource-glyph">P</span><div><h3>Prompts</h3><p>Declared templates</p></div><strong id="prompt-count">0</strong></header>
+                <div id="prompt-list" class="resource-list"></div>
+              </article>
+              <article class="resource-group">
+                <header><span class="resource-glyph">S</span><div><h3>Skills</h3><p>Instructions + authority</p></div><strong id="skill-count">0</strong></header>
+                <div id="skill-list" class="resource-list"></div>
+              </article>
+              <article class="resource-group">
+                <header><span class="resource-glyph">A</span><div><h3>Agents</h3><p>Model + pinned resources</p></div><strong id="agent-count">0</strong></header>
+                <div id="agent-list" class="resource-list"></div>
+              </article>
+            </div>
+          </section>
+
+          <section id="runs-section" class="section-block" aria-labelledby="runs-title">
+            <div class="section-heading">
+              <div>
+                <p class="section-kicker">Before / after proof</p>
+                <h2 id="runs-title">Immutable run comparison</h2>
+              </div>
+              <p id="comparison-caption">Run the flow to create the first evidence set.</p>
+            </div>
+            <div class="comparison-grid">
+              <article class="run-card" id="before-run-card">
+                <div class="run-card-empty">
+                  <span>01</span>
+                  <p>Failed run will remain here<br>after the repair.</p>
+                </div>
+              </article>
+              <div class="comparison-arrow" aria-hidden="true"><span>→</span><small>new version</small></div>
+              <article class="run-card" id="after-run-card">
+                <div class="run-card-empty">
+                  <span>02</span>
+                  <p>Child rerun will prove<br>the changed outcome.</p>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="ledger-section" class="section-block ledger-section" aria-labelledby="ledger-title">
+            <div class="section-heading">
+              <div>
+                <p class="section-kicker">Authoritative evidence</p>
+                <h2 id="ledger-title">Hash-linked event ledger</h2>
+              </div>
+              <div class="ledger-controls" id="run-switcher" role="group" aria-label="Select run ledger"></div>
+            </div>
+            <div class="ledger-grid">
+              <div class="panel ledger-table-wrap">
+                <div class="ledger-head" aria-hidden="true">
+                  <span>Seq</span><span>Event</span><span>Actor</span><span>Hash</span>
+                </div>
+                <ol id="event-list" class="event-list">
+                  <li class="event-empty">No event exists until a real run begins.</li>
+                </ol>
+              </div>
+              <aside class="panel evidence-inspector" aria-labelledby="evidence-title">
+                <p class="panel-label">Selected evidence</p>
+                <h3 id="evidence-title">Choose an event</h3>
+                <dl>
+                  <div><dt>Event id</dt><dd id="evidence-id" class="mono">—</dd></div>
+                  <div><dt>Previous hash</dt><dd id="evidence-prev" class="mono">—</dd></div>
+                  <div><dt>Event hash</dt><dd id="evidence-hash" class="mono">—</dd></div>
+                </dl>
+                <span class="field-label">Safe payload</span>
+                <pre id="evidence-payload">Select a ledger row to inspect its committed payload.</pre>
+              </aside>
             </div>
           </section>
         </section>
 
-        <section class="view-panel about-view" data-view-panel="about" hidden>
-          <header class="page-header about-header">
-            <div>
-              <p class="eyebrow">Build Week cut</p>
-              <h1>A flight recorder you can judge in sixty seconds.</h1>
-              <p class="page-subtitle">No install graph, credentials, database, or hidden service. The product contract is visible in the repository and in the UI.</p>
-            </div>
-          </header>
-          <div class="about-grid">
-            <section class="panel about-card about-card-wide">
-              <p class="eyebrow">The one path</p>
-              <div class="architecture-flow" aria-label="Standalone architecture flow">
-                <span>Trace v1 JSON</span><i aria-hidden="true">→</i><span>Fail-closed validator</span><i aria-hidden="true">→</i><span>Local causal graph</span><i aria-hidden="true">→</i><span>Fenced command</span><i aria-hidden="true">→</i><span>Append-only receipt</span>
-              </div>
-            </section>
-            <section class="panel about-card">
-              <span class="about-number">01</span>
-              <h2>What is real</h2>
-              <p>The trace schema, validator, causal projection, redaction, command state machine, revision fence, idempotency, reset, and audit receipt all execute in this repository.</p>
-            </section>
-            <section class="panel about-card">
-              <span class="about-number">02</span>
-              <h2>What is simulated</h2>
-              <p>The sample agent run and deployment effect are synthetic. The demo never calls a model, tool, connector, database, or production Kynist service.</p>
-            </section>
-            <section class="panel about-card">
-              <span class="about-number">03</span>
-              <h2>Why Codex</h2>
-              <p>The standalone repository, its core functionality, tests, design pass, and submission evidence are built in one auditable Codex project thread during Build Week.</p>
-            </section>
-            <section class="panel about-card">
-              <span class="about-number">04</span>
-              <h2>Judge path</h2>
-              <p>Open the blocked run, select the approval node, inspect the healthy lease, authorize the local command, and verify the appended receipt. Then reset.</p>
-            </section>
-          </div>
+        <section id="error-panel" class="error-panel" aria-live="assertive" hidden>
+          <div aria-hidden="true">!</div>
+          <p><strong id="error-code">Request failed</strong><span id="error-message"></span></p>
+          <button class="button button-quiet" id="dismiss-error" type="button">Dismiss</button>
         </section>
       </main>
     </div>
 
-    <dialog id="intervention-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-boundary">
-      <form id="intervention-form">
-        <header class="dialog-header">
+    <dialog id="approval-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+      <form id="approval-form" method="dialog">
+        <header>
           <div>
-            <p class="eyebrow">Controlled intervention</p>
-            <h2 id="dialog-title">Authorize simulated deployment</h2>
+            <p class="section-kicker">Human authority boundary</p>
+            <h2 id="dialog-title">Approve one bounded repair</h2>
           </div>
-          <button class="icon-button" id="close-dialog" type="button" aria-label="Close intervention preview">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg>
-          </button>
+          <button class="icon-button" id="close-dialog" type="button" aria-label="Close approval dialog">×</button>
         </header>
-
-        <div class="dialog-body">
-          <div class="dialog-notice">
-            <span aria-hidden="true">i</span>
-            <p id="dialog-boundary"><strong>Local simulation.</strong> This command changes browser session state only. It sends no network request and performs no deployment.</p>
-          </div>
-
-          <section class="dialog-section" aria-labelledby="preview-heading">
-            <div class="section-title-row">
-              <h3 id="preview-heading">Command preview</h3>
-              <span class="phase-chip">1 · Preview</span>
-            </div>
-            <dl id="dialog-preview" class="preview-fields"></dl>
-          </section>
-
-          <section class="dialog-section" aria-labelledby="authorization-heading">
-            <div class="section-title-row">
-              <h3 id="authorization-heading">Operator authorization</h3>
-              <span class="phase-chip">2 · Authorize</span>
-            </div>
-            <div class="actor-field">
-              <span>Actor</span>
-              <strong id="dialog-actor">build-week-judge</strong>
-              <small>Fixed by command preview</small>
-            </div>
-            <label class="field-label" for="intervention-reason">
-              Reason <span id="reason-constraints">12–280 characters</span>
-            </label>
-            <textarea
-              id="intervention-reason"
-              name="reason"
-              minlength="12"
-              maxlength="280"
-              rows="3"
-              required
-              aria-describedby="reason-constraints reason-error"
-              aria-errormessage="reason-error"
-              placeholder="Why is this intervention safe and necessary?"
-            ></textarea>
-            <p class="field-error" id="reason-error" role="alert" hidden></p>
-            <label class="check-row" for="simulation-acknowledgement">
-              <input id="simulation-acknowledgement" type="checkbox" required>
-              <span class="custom-check" aria-hidden="true"></span>
-              <span>I understand this applies only to the local synthetic trace.</span>
-            </label>
-          </section>
+        <p id="dialog-description">
+          The agents may diagnose and propose. Only this human command can create flow v2.
+        </p>
+        <div class="dialog-patch">
+          <span>Flow revision</span><strong id="dialog-revision">1 → 2</strong>
+          <span>Proposal hash</span><code id="dialog-proposal-hash"></code>
+          <span>Allowed path</span><code>/policy/allowed_environments</code>
         </div>
-
-        <footer class="dialog-footer">
-          <div class="revision-fence">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9M5 9h10v8H5z"/></svg>
-            <span>Revision fence <strong id="dialog-revision">7 → 8</strong></span>
-          </div>
-          <div class="dialog-actions">
-            <button class="button button-quiet" id="cancel-intervention" type="button">Cancel</button>
-            <button class="button button-accent" id="apply-intervention" type="submit">
-              Authorize &amp; replay
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg>
-            </button>
-          </div>
+        <label>
+          Operator
+          <input id="approval-actor" name="actor" value="build-week-judge" maxlength="100" required>
+        </label>
+        <label>
+          Reason
+          <textarea id="approval-reason" name="reason" rows="3" minlength="12" maxlength="500" required>Approve the evidence-bound sandbox policy repair and preserve immutable history.</textarea>
+        </label>
+        <label class="acknowledgement">
+          <input id="approval-acknowledged" name="acknowledged" type="checkbox" required>
+          <span>I understand the rerun creates a real effect only inside the local sandbox.</span>
+        </label>
+        <footer>
+          <button class="button button-quiet" id="cancel-approval" type="button">Cancel</button>
+          <button class="button button-primary" id="submit-approval" type="submit">
+            Apply with revision fence
+            <span aria-hidden="true">→</span>
+          </button>
         </footer>
       </form>
     </dialog>
 
-    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <div id="live-region" class="visually-hidden" aria-live="polite"></div>
 
-    <noscript>
-      <div class="noscript-banner">JavaScript is required to validate and render the local trace.</div>
-    </noscript>
     <script type="module" src="./app.mjs"></script>
   </body>
 </html>
