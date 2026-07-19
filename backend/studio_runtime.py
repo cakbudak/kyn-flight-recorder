@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 from .contracts import (
     ActionBlocked,
     PLACEHOLDER_RE,
+    BrakeEngaged,
     Conflict,
     ContractViolation,
     ProviderFailure,
@@ -359,6 +360,7 @@ class StudioRuntime:
         validated_input = validate_json_schema(
             dict(input_data), context["version"]["input_schema"], "Run input"
         )
+        self._enforce_brake(workspace_id, context["version"])
         run_id, created = self.repository.create_run(
             workspace_id,
             flow_id,
@@ -381,6 +383,29 @@ class StudioRuntime:
             payload={"current_node_id": context["version"]["start_node_id"]},
         )
         return self.repository.get_run(workspace_id, run_id)
+
+    def _enforce_brake(
+        self, workspace_id: str, flow_version: Mapping[str, Any]
+    ) -> None:
+        """Refuse a candidate Run whose pinned path a canonical dead end VETOES.
+
+        The check runs after the Flow context resolves and before `create_run`,
+        so a refused Run leaves no Run row, no Step, no event, and no effect.
+        """
+
+        verdict = self.repository.check_brake(
+            workspace_id,
+            flow_version_id=flow_version["id"],
+            node_ids=[str(node["id"]) for node in flow_version["nodes"]],
+        )
+        if not verdict["refused"]:
+            return
+        match = verdict["matches"][0]
+        raise BrakeEngaged(
+            "A canonical dead end already proves this exact pinned path fails. "
+            "Repair the Flow to publish a successor version.",
+            detail={**match, "matches": verdict["matches"]},
+        )
 
     def continue_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         run = self.repository.get_run(workspace_id, run_id)
@@ -519,11 +544,16 @@ class StudioRuntime:
                     run_id,
                     "flow_traversal_exhausted",
                     "Flow traversal exceeded its pinned node count",
+                    node_id=node_id,
                 )
             node = nodes.get(node_id)
             if node is None:
                 return self._fail_run(
-                    workspace_id, run_id, "missing_node", "Pinned Flow node is missing"
+                    workspace_id,
+                    run_id,
+                    "missing_node",
+                    "Pinned Flow node is missing",
+                    node_id=node_id,
                 )
             step_id: str | None = None
             try:
@@ -543,6 +573,7 @@ class StudioRuntime:
                     error.code,
                     _public_error_message(error),
                     status="blocked" if isinstance(error, ActionBlocked) else "failed",
+                    node_id=node_id,
                 )
 
             settings = node.get(
@@ -653,6 +684,7 @@ class StudioRuntime:
                         error.code,
                         public_message,
                         status="blocked" if isinstance(error, ActionBlocked) else "failed",
+                        node_id=node_id,
                     )
                 if result.paused:
                     self.repository.finish_step(
@@ -773,6 +805,7 @@ class StudioRuntime:
         message: str,
         *,
         status: str = "failed",
+        node_id: str | None = None,
     ) -> dict[str, Any]:
         run = self.repository.get_run(workspace_id, run_id)
         if run["status"] not in {"running", "created"}:
@@ -786,6 +819,17 @@ class StudioRuntime:
             error_message=message[:500],
             outcome="error",
         )
+        if node_id is not None and status in {"failed", "blocked"}:
+            # The Run is terminal and its write transaction is closed. Mint the
+            # append-only evidence of the exact approach that just failed.
+            self.repository.record_dead_end(
+                workspace_id,
+                run_id,
+                flow_version_id=str(run["flow_version_id"]),
+                node_id=node_id,
+                error_code=code,
+                detail=message,
+            )
         return self.repository.get_run(workspace_id, run_id)
 
     @staticmethod
@@ -1005,6 +1049,7 @@ class StudioRuntime:
             child["error_code"] or "subflow_failure",
             message,
             status="blocked" if child["status"] == "blocked" else "failed",
+            node_id=str(step["node_id"]),
         )
 
     def _invoke_action(

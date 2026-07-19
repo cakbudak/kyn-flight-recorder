@@ -15,10 +15,13 @@ from .contracts import (
     NotFound,
     canonical_json,
     compute_event_hash,
+    dead_end_fingerprint,
     default_outcomes_for_kind,
     fingerprint,
     hash_text,
     new_id,
+    normalize_failure_detail,
+    ratification_state,
     redact,
     utc_now,
 )
@@ -1480,10 +1483,12 @@ class StudioStore:
                     (workspace_id,),
                 )
             ]
+            dead_ends = self._dead_end_records(connection, workspace_id)
         return {
             "actions": actions,
             "flows": flows,
             "triggers": triggers,
+            "dead_ends": dead_ends,
             "runs": [self.get_run(workspace_id, run_id) for run_id in run_ids],
             "action_kinds": [
                 "ai",
@@ -2989,6 +2994,173 @@ class StudioStore:
             ),
         }
 
+    # -- Dead end evidence and the ratification brake ------------------
+
+    @staticmethod
+    def _dead_end_records(
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        *,
+        flow_version_id: str | None = None,
+        node_ids: Sequence[str] | None = None,
+        run_id: str | None = None,
+        fingerprint_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Derive every `dead_end` by counting distinct citing Runs.
+
+        `ratification_state`, `distinct_runs`, and `citing_run_ids` are computed
+        here and never stored, so append-only evidence stays the single source of
+        truth and no row can be promoted without an independent Run.
+        """
+
+        clauses = ["workspace_id = ?"]
+        parameters: list[Any] = [workspace_id]
+        if flow_version_id is not None:
+            clauses.append("flow_version_id = ?")
+            parameters.append(flow_version_id)
+        if node_ids is not None:
+            unique = sorted({str(node) for node in node_ids})
+            if not unique:
+                return []
+            clauses.append(f"node_id IN ({', '.join('?' * len(unique))})")
+            parameters.extend(unique)
+        if fingerprint_filter is not None:
+            clauses.append("fingerprint = ?")
+            parameters.append(fingerprint_filter)
+        if run_id is not None:
+            clauses.append(
+                "fingerprint IN (SELECT fingerprint FROM automation_dead_end_evidence "
+                "WHERE workspace_id = ? AND run_id = ?)"
+            )
+            parameters.extend([workspace_id, run_id])
+        grouped = connection.execute(
+            "SELECT fingerprint, flow_version_id, node_id, error_code, normalized_detail, "
+            "COUNT(DISTINCT run_id) AS distinct_runs, MIN(created_at) AS first_cited_at, "
+            "MAX(created_at) AS last_cited_at "
+            "FROM automation_dead_end_evidence "
+            f"WHERE {' AND '.join(clauses)} "
+            "GROUP BY fingerprint "
+            "ORDER BY MIN(created_at), MIN(rowid)",
+            parameters,
+        ).fetchall()
+        records: list[dict[str, Any]] = []
+        for row in grouped:
+            citations = connection.execute(
+                "SELECT run_id FROM automation_dead_end_evidence "
+                "WHERE workspace_id = ? AND fingerprint = ? "
+                "GROUP BY run_id ORDER BY MIN(created_at), MIN(rowid)",
+                (workspace_id, row["fingerprint"]),
+            ).fetchall()
+            distinct_runs = int(row["distinct_runs"])
+            records.append(
+                {
+                    "fingerprint": row["fingerprint"],
+                    "flow_version_id": row["flow_version_id"],
+                    "node_id": row["node_id"],
+                    "error_code": row["error_code"],
+                    "normalized_detail": row["normalized_detail"],
+                    "distinct_runs": distinct_runs,
+                    "ratification_state": ratification_state(distinct_runs),
+                    "citing_run_ids": [item["run_id"] for item in citations],
+                    "first_cited_at": row["first_cited_at"],
+                    "last_cited_at": row["last_cited_at"],
+                }
+            )
+        return records
+
+    def record_dead_end(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        flow_version_id: str,
+        node_id: str,
+        error_code: str,
+        detail: str,
+    ) -> dict[str, Any]:
+        """Append one citation of the exact approach that just failed."""
+
+        normalized_detail = normalize_failure_detail(detail)
+        marker = dead_end_fingerprint(
+            flow_version_id=flow_version_id,
+            node_id=node_id,
+            error_code=error_code,
+            normalized_detail=normalized_detail,
+        )
+        with self.store.write() as connection:
+            # One Run may not inflate a count: `UNIQUE (fingerprint, run_id)`
+            # makes a repeated citation from the same Run a no-op.
+            connection.execute(
+                "INSERT OR IGNORE INTO automation_dead_end_evidence "
+                "(id, workspace_id, fingerprint, run_id, flow_version_id, node_id, "
+                "error_code, normalized_detail, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    new_id("ade"),
+                    workspace_id,
+                    marker,
+                    run_id,
+                    flow_version_id,
+                    str(node_id),
+                    str(error_code),
+                    normalized_detail,
+                    utc_now(),
+                ),
+            )
+        with self.store.read() as connection:
+            records = self._dead_end_records(
+                connection, workspace_id, fingerprint_filter=marker
+            )
+        return records[0]
+
+    def check_brake(
+        self,
+        workspace_id: str,
+        *,
+        flow_version_id: str,
+        node_ids: Sequence[str],
+    ) -> dict[str, Any]:
+        """Return a read-only verdict; only a canonical dead end refuses a Run.
+
+        This method must never write. A `proposed` or `confirmed` dead end is
+        observed and reported but never brakes, so one bad execution can never
+        stop an honest second attempt.
+        """
+
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            observed = self._dead_end_records(
+                connection,
+                workspace_id,
+                flow_version_id=flow_version_id,
+                node_ids=node_ids,
+            )
+        matches = [
+            record for record in observed if record["ratification_state"] == "canonical"
+        ]
+        return {
+            "flow_version_id": flow_version_id,
+            "refused": bool(matches),
+            "matches": matches,
+            "observed": observed,
+        }
+
+    def list_dead_ends(
+        self,
+        workspace_id: str,
+        *,
+        flow_version_id: str | None = None,
+        run_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            return self._dead_end_records(
+                connection,
+                workspace_id,
+                flow_version_id=flow_version_id,
+                run_id=run_id,
+            )
+
     def get_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         with self.store.read() as connection:
             row = connection.execute(
@@ -3069,6 +3241,9 @@ class StudioStore:
                     (run_id,),
                 )
             ]
+            dead_ends = self._dead_end_records(
+                connection, workspace_id, run_id=run_id
+            )
             pending = next(
                 (approval for approval in reversed(approvals) if approval["decision"] is None),
                 None,
@@ -3150,6 +3325,7 @@ class StudioStore:
                 "pending_approval": pending,
                 "effects": effects,
                 "children": children,
+                "dead_ends": dead_ends,
                 "diagnosis": diagnosis,
                 "repair": repair,
             }

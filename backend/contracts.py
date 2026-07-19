@@ -81,6 +81,13 @@ class ActionBlocked(RuntimeErrorBase):
     http_status = 409
 
 
+class BrakeEngaged(RuntimeErrorBase):
+    """A canonical dead end VETOES the exact pinned path a Run would traverse."""
+
+    code = "brake_engaged"
+    http_status = 409
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -99,6 +106,76 @@ def fingerprint(value: Any) -> str:
 
 def hash_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+# -- Dead end ratification ------------------------------------------------
+#
+# A `dead_end` is durable evidence that one exact approach failed. Its
+# `ratification_state` is never stored: it is derived from a count of distinct
+# citing Runs, so repetition — not a model's opinion — is what promotes it.
+
+RATIFICATION_STATES = ("proposed", "confirmed", "canonical")
+CONFIRMED_DISTINCT_RUNS = 2
+CANONICAL_DISTINCT_RUNS = 3
+
+_ISO_TIMESTAMP_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:?\d{2})?"
+)
+_UUID_RE = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+    re.IGNORECASE,
+)
+_PREFIXED_ID_RE = re.compile(r"\b[a-z][a-z0-9]*_[0-9a-f]{8,}\b", re.IGNORECASE)
+_HEX_BLOB_RE = re.compile(r"\b[0-9a-f]{16,}\b", re.IGNORECASE)
+_DIGIT_RUN_RE = re.compile(r"\d+")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def normalize_failure_detail(value: Any, *, maximum: int = 500) -> str:
+    """Strip volatile substrings so one recurring fault keeps one fingerprint.
+
+    Run ids, step ids, UUIDs, hashes, ISO timestamps, and bare digit runs differ
+    on every execution of the very same dead end. Replacing them with stable
+    placeholders is what lets a second and third independent Run ratify the
+    first instead of minting fresh, uncountable evidence.
+    """
+
+    text = _WHITESPACE_RE.sub(" ", str(value or "")).strip()
+    text = _ISO_TIMESTAMP_RE.sub("<time>", text)
+    text = _UUID_RE.sub("<id>", text)
+    text = _PREFIXED_ID_RE.sub("<id>", text)
+    text = _HEX_BLOB_RE.sub("<id>", text)
+    text = _DIGIT_RUN_RE.sub("<n>", text)
+    return text[:maximum].strip()
+
+
+def dead_end_fingerprint(
+    *,
+    flow_version_id: str,
+    node_id: str,
+    error_code: str,
+    normalized_detail: str,
+) -> str:
+    """Identify the exact failed approach a `dead_end` VETOES."""
+
+    return fingerprint(
+        {
+            "flow_version_id": str(flow_version_id),
+            "node_id": str(node_id),
+            "error_code": str(error_code),
+            "normalized_detail": str(normalized_detail),
+        }
+    )
+
+
+def ratification_state(distinct_runs: int) -> str:
+    """Derive ratification from repeated independent execution, never from state."""
+
+    if distinct_runs >= CANONICAL_DISTINCT_RUNS:
+        return "canonical"
+    if distinct_runs >= CONFIRMED_DISTINCT_RUNS:
+        return "confirmed"
+    return "proposed"
 
 
 JSON_SCHEMA_TYPES = frozenset(

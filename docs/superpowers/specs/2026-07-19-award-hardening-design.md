@@ -42,9 +42,32 @@ polls every 900 ms and reconstructs the node array each tick, so `fitView`
 computes bounds from unmeasured nodes and the viewport resolves empty.
 `FlowStudio.jsx:337` passes the handler and renders correctly.
 
-Confirmed symptom: `evidence/live/05-waiting-approval.png` and
-`06-run-evidence.png` both show an empty canvas and an empty MiniMap while the
-surrounding chrome renders.
+**Measured consequence (corrected after reproduction).** The initial reading of
+this defect overstated it. A controlled experiment on one page, same session,
+same five-node Flow, isolates the real blast radius:
+
+```text
+CONTROL[FlowStudio,    HAS onNodesChange]: rf_node=5, minimap_node=5
+SUBJECT[RunsWorkbench,  NO onNodesChange]: rf_node=5, minimap_node=0
+```
+
+The canvas keeps rendering: node screen positions come from the explicit
+`position` field of the pinned flow graph and need no measurement, and the
+viewport transform is computed once at mount while measurements briefly exist,
+then persists. The **MiniMap is deterministically broken** because it re-derives
+from live `measured` dimensions that each poll discards.
+
+`evidence/live/05-waiting-approval.png` and `06-run-evidence.png` are
+nonetheless genuinely blank. Those were generated against the deployed public
+HTTPS host with real model calls, where a Run sits in `waiting_approval` for
+many seconds under real network latency while polling. That is the condition
+under which the mount-timing race resolves to degenerate bounds, and it is the
+path a judge uses. It could not be induced locally in eight attempts including
+20x CPU throttling.
+
+**Assertion choice.** The regression guard asserts **MiniMap node count**, not
+canvas node count. Canvas count passes today and would guard nothing; MiniMap
+count fails before the fix and passes after, so the guard has teeth.
 
 **Fix.** Hold run graph nodes/edges in React Flow state, apply changes through
 the official handlers, and derive from the polled snapshot without discarding

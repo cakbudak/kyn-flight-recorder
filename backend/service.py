@@ -1249,6 +1249,20 @@ class ControlPlane:
     def studio_snapshot(self, workspace_id: str) -> dict[str, Any]:
         return self.studio.snapshot(workspace_id)
 
+    def check_brake(self, workspace_id: str, flow_id: str) -> dict[str, Any]:
+        """Report, without writing, whether a canonical dead end VETOES this Flow."""
+
+        context = self.studio.flow_context(workspace_id, flow_id)
+        version = context["version"]
+        return self.studio.check_brake(
+            workspace_id,
+            flow_version_id=version["id"],
+            node_ids=[str(node["id"]) for node in version["nodes"]],
+        )
+
+    def list_dead_ends(self, workspace_id: str) -> list[dict[str, Any]]:
+        return self.studio.list_dead_ends(workspace_id)
+
     def create_studio_trigger(
         self,
         workspace_id: str,

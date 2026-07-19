@@ -491,6 +491,19 @@ CREATE TABLE IF NOT EXISTS automation_repair_decisions (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS automation_dead_end_evidence (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    flow_version_id TEXT NOT NULL REFERENCES automation_flow_versions(id) ON DELETE RESTRICT,
+    node_id TEXT NOT NULL,
+    error_code TEXT NOT NULL,
+    normalized_detail TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (fingerprint, run_id)
+);
+
 CREATE INDEX IF NOT EXISTS ix_events_run_sequence ON events(run_id, sequence);
 CREATE INDEX IF NOT EXISTS ix_runs_workspace_created ON runs(workspace_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_one_child
@@ -508,6 +521,8 @@ CREATE INDEX IF NOT EXISTS ix_automation_events_run_sequence
 ON automation_events(run_id, sequence);
 CREATE INDEX IF NOT EXISTS ix_automation_triggers_due
 ON automation_trigger_bindings(enabled, trigger_type, next_fire_at);
+CREATE INDEX IF NOT EXISTS ix_automation_dead_ends_path
+ON automation_dead_end_evidence(workspace_id, flow_version_id, node_id, fingerprint);
 
 CREATE TRIGGER IF NOT EXISTS trg_prompt_versions_no_update
 BEFORE UPDATE ON prompt_versions BEGIN SELECT RAISE(ABORT, 'prompt version is immutable'); END;
@@ -589,6 +604,10 @@ CREATE TRIGGER IF NOT EXISTS trg_automation_repair_decisions_no_update
 BEFORE UPDATE ON automation_repair_decisions BEGIN SELECT RAISE(ABORT, 'automation repair decisions are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_automation_repair_decisions_no_delete
 BEFORE DELETE ON automation_repair_decisions BEGIN SELECT RAISE(ABORT, 'automation repair decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_dead_end_evidence_no_update
+BEFORE UPDATE ON automation_dead_end_evidence BEGIN SELECT RAISE(ABORT, 'dead end evidence is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_dead_end_evidence_no_delete
+BEFORE DELETE ON automation_dead_end_evidence BEGIN SELECT RAISE(ABORT, 'dead end evidence is append-only'); END;
 
 CREATE TRIGGER IF NOT EXISTS trg_runs_terminal_absorbing
 BEFORE UPDATE OF status ON runs
@@ -707,5 +726,6 @@ IMMUTABLE_TABLES = frozenset(
         "automation_effects",
         "automation_diagnoses",
         "automation_repair_decisions",
+        "automation_dead_end_evidence",
     }
 )
