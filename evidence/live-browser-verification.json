@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-19T08:41:29.285Z",
+  "generated_at": "2026-07-19T08:44:10.546Z",
   "surface": "Kyn.ist Flight Recorder standalone browser journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -17,7 +17,7 @@
     "failed": 0
   },
   "metrics": {
-    "first_render_ms": 219.90000009536743
+    "first_render_ms": 226.09999990463257
   },
   "checks": [
     {
@@ -31,7 +31,7 @@
         "rawCredentialInDom": false,
         "unnamedButtons": 0,
         "horizontalOverflow": 0,
-        "renderMark": 219.90000009536743
+        "renderMark": 226.09999990463257
       }
     },
     {
@@ -62,7 +62,7 @@
     {
       "name": "first render stays under one second on the tested origin",
       "status": "pass",
-      "detail": 219.90000009536743
+      "detail": 226.09999990463257
     },
     {
       "name": "accessibility tree exposes named controls",
@@ -240,13 +240,13 @@
       "name": "mobile dialog stays within viewport",
       "status": "pass",
       "detail": {
-        "width": 356,
+        "width": 349,
         "dialogBottom": 830,
         "viewportHeight": 844,
-        "bodyBottom": 714,
-        "footerTop": 714,
-        "reasonTop": 579,
-        "reasonBottom": 661,
+        "bodyBottom": 716,
+        "footerTop": 716,
+        "reasonTop": 583,
+        "reasonBottom": 664,
         "reasonVisible": true,
         "focused": "intervention-reason"
       }
@@ -255,13 +255,13 @@
       "name": "mobile dialog scroll body does not overlap its actions",
       "status": "pass",
       "detail": {
-        "width": 356,
+        "width": 349,
         "dialogBottom": 830,
         "viewportHeight": 844,
-        "bodyBottom": 714,
-        "footerTop": 714,
-        "reasonTop": 579,
-        "reasonBottom": 661,
+        "bodyBottom": 716,
+        "footerTop": 716,
+        "reasonTop": 583,
+        "reasonBottom": 664,
         "reasonVisible": true,
         "focused": "intervention-reason"
       }
@@ -272,8 +272,8 @@
       "detail": {
         "dialogBottom": 506,
         "viewportHeight": 520,
-        "bodyBottom": 388,
-        "footerTop": 388,
+        "bodyBottom": 390,
+        "footerTop": 390,
         "acknowledgementTop": 355,
         "acknowledgementBottom": 372,
         "rowTop": 355,
@@ -344,7 +344,7 @@
       ""
     ],
     "browser_output": [
-      "DevTools listening on ws://127.0.0.1:39165/devtools/browser/37d24358-74f8-4710-87d6-ae9cd066ec37"
+      "DevTools listening on ws://127.0.0.1:35901/devtools/browser/71d18573-2417-47bc-bf7d-c97b5636519f"
     ]
   }
 }

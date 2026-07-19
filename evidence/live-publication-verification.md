@@ -3,7 +3,7 @@
 Date: 2026-07-19  
 Public origin: <https://buildweek.kyn.ist/app/>  
 Repository: <https://github.com/cakbudak/kyn-flight-recorder>  
-Candidate commit under test: `e967202d47837b7f7ad97cb1d250e46b46124414`
+Candidate commit under test: `7f700acb65de90c3c57e193597eeee18229d0543`
 
 ## Delivery boundary
 
@@ -28,8 +28,15 @@ HTML document.
 The forward correction pins the redirect to HTTPS and declares
 `application/javascript` for the app's `.mjs` files. After nginx config validation
 and reload, the identical browser command completed **38/38 checks** with first
-meaningful render at **219.9 ms**. The generated report is
+meaningful render at **226.1 ms**. The generated report is
 [`live-browser-verification.json`](live-browser-verification.json).
+
+An independent Playwright 1.60.0 run then exercised the visible UI controls on the
+same public origin: queue and approval evidence, acknowledgement, authorized
+transition, receipt, reload persistence, reset, and the 390 × 520 dialog all
+passed. It observed one request origin, no failed requests, and no console errors.
+The captured result is [`live-playwright-verification.json`](live-playwright-verification.json).
+Playwright was an external verification tool, not a project dependency.
 
 ## Reproducible checks
 
@@ -54,6 +61,7 @@ curl https://buildweek.kyn.ist/healthz
 | Hidden/source paths | `/README.md`, `/.git/config`, `/docs/`, missing paths, and normalized traversal: `404` |
 | Write-like methods | POST, PUT, PATCH, and DELETE on `/healthz`: `405` |
 | Full Chromium journey | `38/38 PASS`; desktop, mobile, short dialog, keyboard, reload, reset, empty/error, invalid import |
+| Independent Playwright journey | `PASS`; visible controls, receipt, reload, reset, short-mobile dialog |
 | Browser network inventory | no cross-origin request, failed request, console error, or page exception |
 
 ## Remote artifact proof

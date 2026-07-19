@@ -20,6 +20,9 @@ repository, not screenshots copied from the Kynist monorepo.
   complete test/browser run, and clean-worktree result.
 - [`live-browser-verification.json`](live-browser-verification.json) — the same
   38-check journey executed against the public HTTPS origin.
+- [`live-playwright-verification.json`](live-playwright-verification.json) — an
+  independent visible-control Playwright journey against the public HTTPS origin;
+  Playwright remains an external verification tool, not a project dependency.
 - [`live-publication-verification.md`](live-publication-verification.md) — remote,
   TLS, headers, negative-path, deployment, and publication evidence.
 

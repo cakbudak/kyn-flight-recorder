@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-07-19T08:49:20Z",
+  "surface": "Kyn.ist Flight Recorder public HTTPS journey",
+  "runtime": {
+    "runner": "Playwright 1.60.0",
+    "browser": "/usr/bin/chromium",
+    "base_url": "https://buildweek.kyn.ist",
+    "viewport_matrix": [
+      "1440x1000",
+      "390x520 dialog"
+    ],
+    "project_dependency": false
+  },
+  "summary": {
+    "status": "pass",
+    "failed_requests": 0,
+    "console_errors": 0,
+    "request_origins": [
+      "https://buildweek.kyn.ist"
+    ]
+  },
+  "proof": {
+    "title": "Run · Kyn.ist Flight Recorder",
+    "initial_status": "blocked",
+    "graph_nodes": 7,
+    "diagnosis": "The run is healthy. It is waiting for one human decision.",
+    "queue_evidence": "Queue lease healthy",
+    "approval_evidence": "Approval required",
+    "visible_acknowledgement_checked": true,
+    "completed_status": "completed",
+    "receipt_revision": "7 → 8",
+    "audit_rows_after_command": 9,
+    "audit_rows_after_reload": 9,
+    "audit_rows_after_reset": 5,
+    "short_mobile_dialog_within_viewport": true
+  },
+  "boundary": "Independent deployment cross-check using an existing external Playwright installation; Playwright is not a project runtime or repository dependency."
+}
