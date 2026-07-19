@@ -296,10 +296,15 @@ Run the maximum supported 64-node release-host and Chromium load gates:
 The committed load proof executes twenty complete 64-node Runs (197
 hash-linked events each), snapshots the accumulated workspace thirty times,
 renders the same 64-node/63-edge graph in Chromium, and exercises Fit View. On
-the release host, complete deterministic Runs measured 241.096 ms p95,
-snapshots 111.806 ms p95, initial graph rendering 198.185 ms, and Fit View
-131.81 ms—each below its declared threshold and without model calls, overflow,
-failed requests, or page errors. See
+the release host, complete deterministic Runs measured 316.623 ms p95 and
+snapshots 164.751 ms p95—each below its declared threshold (2000 ms and 250 ms)
+and without model calls, overflow, failed requests, or page errors.
+
+Both figures rose from the previous release (241.096 ms and 111.806 ms). Every
+Run projection now recomputes its full event chain from event material, which is
+197 SHA-256 hashes on the maximum graph. That is the cost of the ledger verdict
+being authoritative rather than a link check the browser could be fooled into
+trusting, and it is paid well inside the gate. See
 [`evidence/performance-report.json`](evidence/performance-report.json) and
 [`evidence/editor-performance-report.json`](evidence/editor-performance-report.json).
 
@@ -307,14 +312,32 @@ The browser verifier exercises the real same-origin HTTP and SQLite stack throug
 workspace creation; Action, Prompt, Skill, and Agent authoring; multi-output Flow
 composition; deterministic execution; canvas successor publication; reusable
 subflow execution; webhook activation; asynchronous AI execution;
-approval/resume; live graph evidence; and integrated maintenance.
+approval/resume; live graph evidence; dead-end ratification and brake refusal;
+and integrated maintenance.
 Provider-shaped deterministic responses are used locally; the same journey can be
-run against the deployed OpenAI-backed service. The committed
-[`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json)
-and [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
-are generated from one runner. The current local journey passes 30/30 checks; the public HTTPS report is
-also 30/30 against the deployed official-SDK runtime and is archived with eight
-screenshots under `evidence/live/`.
+run against the deployed OpenAI-backed service. The current local journey passes
+**34/34** checks; see
+[`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
+
+`evidence/live/` is archived from the previous release and is **stale**: the
+deployed host still serves the pre-ratification build. Those artefacts are
+superseded and must be regenerated against a redeployed host before they are
+cited again. See [`submission/checklist.md`](submission/checklist.md).
+
+Prove the guards are load-bearing rather than taking the green suite on trust:
+
+```bash
+.venv/bin/python scripts/verify.py --ablation
+```
+
+Each ablation takes a product function's own source, deletes exactly one named
+guard, and asserts a documented product-level violation becomes reachable. Seven
+of eight guards are load-bearing. The eighth—the terminal-absorption trigger—is
+reported **redundant**, because the transition-shape trigger already forbids
+everything it forbids. The suite reports that rather than dressing it up.
+
+Ablation is test-local. No path reachable from `serve.py` or the HTTP API can
+disable a guard; a public deployment ships no switch for its own authority gate.
 
 ## Codex provenance
 

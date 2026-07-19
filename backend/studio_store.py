@@ -25,6 +25,7 @@ from .contracts import (
     ratification_state,
     redact,
     utc_now,
+    verify_event_chain,
 )
 from .repair_policy import ResolvedRepair, resolve_repair
 from .store import Store
@@ -3444,6 +3445,10 @@ class StudioStore:
                 "finished_at": row["finished_at"],
                 "steps": steps,
                 "events": events,
+                # The server recomputes every event hash from its material. The
+                # browser can only see that the links join up, which a rewritten
+                # payload would survive.
+                "ledger_verified": verify_event_chain(events),
                 "model_calls": calls,
                 "action_receipts": receipts,
                 "approvals": approvals,

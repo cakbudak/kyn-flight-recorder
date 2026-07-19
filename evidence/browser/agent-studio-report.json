@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-07-19T18:24:47.263Z",
+  "generated_at": "2026-07-19T21:36:12.388Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:45933",
+    "base_url": "http://127.0.0.1:43491",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
     ]
   },
   "summary": {
-    "checks": 30,
-    "passed": 30,
+    "checks": 34,
+    "passed": 34,
     "failed": 0
   },
   "checks": [
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_ee2defcdf3e942d78f6b248648d86369",
+        "prompt": "prmv_eefe1a1aee1a412f97379810197915a6",
         "skills": [
-          "sklv_2fcba1f097c44f77b556d23297ebc0b7"
+          "sklv_dbd98a0d36304daba333d8bdcea71219"
         ],
         "actions": [
-          "actv_39c981bc24be441381cd07f9b1bcb345"
+          "actv_3f9503dda69d4d70a2aa684426af4193"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_39c981bc24be441381cd07f9b1bcb345"
+          "version_id": "actv_3f9503dda69d4d70a2aa684426af4193"
         }
       }
     },
@@ -189,7 +189,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_f1a174c5227f4189b7dfb711e7d1aa22",
+        "id": "arun_3186bf20f06d4d39945edcea65c005a5",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -227,15 +227,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_a785942c8e6a4923ba2daadbe6de4107"
+        "version_id": "aflowv_5ee60843176b4ef988e1b6b7cecc6e11"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_c52f5c2de3ac47e0a5c378cb61255425",
-        "child": "arun_69d346213be741a4902d0a740ec9fba2",
+        "parent": "arun_64980279d8234284973f36508ab35bc1",
+        "child": "arun_c2e7df66ff2b46e3a326398ff7f11ee0",
         "outcome": "standard"
       }
     },
@@ -243,8 +243,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_bf66b4a0331c4cfa815f33c047e49455",
-        "run": "arun_192f12054e0b4ae7b5afee5ceb15e847",
+        "trigger": "atrg_de666618fe1c40d99346f6464d28c945",
+        "run": "arun_38896730f07345bfac4fb6c37c711793",
         "outcome": "priority"
       }
     },
@@ -259,7 +259,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_46d006f5069c4f3c826ce98d68b40748",
+        "run": "arun_df8e64160a1544ebbb66cf71265e3d7e",
         "calls": 1,
         "steps": [
           "completed",
@@ -270,11 +270,42 @@
       }
     },
     {
+      "name": "Run graph renders every pinned node and propagates node measurements, probed through the MiniMap because it alone re-derives from live measured dimensions while the canvas keeps drawing from static positions",
+      "status": "pass",
+      "detail": {
+        "pinned_nodes": 5,
+        "rendered_nodes": 5,
+        "minimap_nodes": 5
+      }
+    },
+    {
       "name": "human decision resumes the exact pinned graph into one attributable idempotent effect",
       "status": "pass",
       "detail": {
         "effects": 1,
         "actor": "build-week-operator"
+      }
+    },
+    {
+      "name": "Run detail surfaces the derived dead end as canonical with its distinct-Run count and citing Run links",
+      "status": "pass",
+      "detail": {
+        "state": "Canonical",
+        "count": "3 distinct Runs",
+        "citations": 3,
+        "derived_state": "canonical",
+        "derived_distinct_runs": 3,
+        "node": "recovery-evidence-store"
+      }
+    },
+    {
+      "name": "the next Run on the canonical path is refused before creation and the refusal cites the three prior Runs",
+      "status": "pass",
+      "detail": {
+        "root_runs": 3,
+        "modals": 0,
+        "cited_runs": 3,
+        "characters": 666
       }
     },
     {
@@ -340,32 +371,42 @@
       "name": "browser journey has no console or page error",
       "status": "pass",
       "detail": []
+    },
+    {
+      "name": "the only refused HTTP response in the journey is the one asserted brake 409",
+      "status": "pass",
+      "detail": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)"
+      ]
     }
   ],
   "diagnostics": {
     "server_output": [
-      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:41 127.0.0.1 \"POST /api/v1/studio/repairs/arep_26604354a40e406c88e5461ec9c40a5d/apply HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:45 127.0.0.1 \"POST /api/v1/studio/repairs/arep_26604354a40e406c88e5461ec9c40a5d/proof HTTP/1.1\" 201 -",
-      "19/Jul/2026 20:24:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-BEMf5NJG.js HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-nFJ5q2j8.css HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      "19/Jul/2026 23:36:05 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:05 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:06 127.0.0.1 \"POST /api/v1/studio/repairs/arep_3fa34f38a29a400b8158f65f7efd5e07/apply HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:06 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:06 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:10 127.0.0.1 \"POST /api/v1/studio/repairs/arep_3fa34f38a29a400b8158f65f7efd5e07/proof HTTP/1.1\" 201 -",
+      "19/Jul/2026 23:36:10 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:10 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/studio-Dki6D8Wx.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/studio-Bw0TxSTN.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:11 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 23:36:12 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
     ],
     "page_errors": [],
-    "failed_requests": []
+    "failed_requests": [],
+    "brake_refusals": [
+      "Failed to load resource: the server responded with a status of 409 (Conflict)"
+    ]
   }
 }

@@ -196,8 +196,11 @@ function RunGraphNode({ data }) {
 }
 
 function LedgerState({ run }) {
-  const valid = run.events.every((event, index) => index === 0 || event.prev_hash === run.events[index - 1].event_hash) && run.events.every((event, index) => event.sequence === index + 1);
-  return <Badge tone={valid ? "success" : "danger"}><Icon name={valid ? "check" : "warning"} size={12} />{valid ? `${run.events.length} hash-linked events` : "Ledger mismatch"}</Badge>;
+  // The server recomputes every event hash from its material; the browser can
+  // only see that the links join up, which a rewritten payload would survive.
+  const linked = run.events.every((event, index) => (index === 0 || event.prev_hash === run.events[index - 1].event_hash) && event.sequence === index + 1);
+  const valid = run.ledger_verified === undefined ? linked : run.ledger_verified && linked;
+  return <Badge tone={valid ? "success" : "danger"} title={valid ? "Every event hash recomputed from its material and re-linked" : "The recorded chain does not match its material"}><Icon name={valid ? "check" : "warning"} size={12} />{valid ? `${run.events.length} verified events` : "Ledger mismatch"}</Badge>;
 }
 
 function ApprovalCallout({ run, onDecision }) {
