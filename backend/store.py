@@ -989,7 +989,7 @@ class Store:
         flow_version: int | None = None,
         parent_run_id: str | None = None,
         correlation_id: str | None = None,
-    ) -> str:
+    ) -> tuple[str, bool]:
         with self.write() as connection:
             self._require_workspace(connection, workspace_id)
             flow = connection.execute(
@@ -1014,6 +1014,12 @@ class Store:
                 ).fetchone()
                 if parent is None:
                     raise ContractViolation("parent run does not belong to this flow and workspace")
+                existing_child = connection.execute(
+                    "SELECT id FROM runs WHERE parent_run_id = ? AND workspace_id = ?",
+                    (parent_run_id, workspace_id),
+                ).fetchone()
+                if existing_child is not None:
+                    return str(existing_child["id"]), False
 
             request = _decode(version["request_json"])
             run_id = new_id("run")
@@ -1068,7 +1074,7 @@ class Store:
                     "repairer_agent_version_id": version["repairer_agent_version_id"],
                 },
             )
-        return run_id
+        return run_id, True
 
     def _append_event(
         self,
@@ -1975,6 +1981,16 @@ class Store:
                 "parent_run_id": run_id,
                 "correlation_id": run["correlation_id"],
             }
+
+    def existing_child_run(self, workspace_id: str, parent_run_id: str) -> dict[str, Any] | None:
+        with self.read() as connection:
+            child = connection.execute(
+                "SELECT id FROM runs WHERE parent_run_id = ? AND workspace_id = ?",
+                (parent_run_id, workspace_id),
+            ).fetchone()
+        if child is None:
+            return None
+        return self.get_run(workspace_id, str(child["id"]))
 
     # -- projections ------------------------------------------------------
 

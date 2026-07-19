@@ -109,13 +109,15 @@ class AgentRuntime:
     ) -> dict[str, Any]:
         initial_context = self.store.flow_runtime_context(workspace_id, flow_id, flow_version)
         selected_version = int(initial_context["version"]["version"])
-        run_id = self.store.create_run(
+        run_id, created = self.store.create_run(
             workspace_id,
             flow_id,
             flow_version=selected_version,
             parent_run_id=parent_run_id,
             correlation_id=correlation_id,
         )
+        if not created:
+            return self.store.get_run(workspace_id, run_id)
         context = self.store.flow_runtime_context(workspace_id, flow_id, selected_version)
         executor = context["agents"]["executor"]
         self.store.append_event(

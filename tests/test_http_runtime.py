@@ -170,6 +170,27 @@ class RuntimeHttpTest(unittest.TestCase):
         self.assertEqual(rerun["parent_run_id"], blocked["id"])
         self.assertEqual(len(rerun["sandbox_effects"]), 1)
 
+        model_calls_before_retry = self.client.store.count_rows("model_calls")
+        releases_before_retry = self.client.store.count_rows("sandbox_releases")
+        original_limit = self.server.api.workspace_model_call_limit
+        self.server.api.workspace_model_call_limit = model_calls_before_retry
+        try:
+            status, _headers, payload = self.request(
+                "POST",
+                f"/api/v1/runs/{blocked['id']}/rerun",
+                body={},
+                cookie=cookie,
+                origin=self.base_url,
+            )
+        finally:
+            self.server.api.workspace_model_call_limit = original_limit
+        self.assertEqual(status, 201)
+        self.assertEqual(payload["data"]["id"], rerun["id"])
+        self.assertEqual(self.client.store.count_rows("model_calls"), model_calls_before_retry)
+        self.assertEqual(
+            self.client.store.count_rows("sandbox_releases"), releases_before_retry
+        )
+
     def test_mutations_reject_cross_origin_missing_cookie_and_oversize_body(self) -> None:
         status, _headers, payload = self.request(
             "POST", "/api/v1/workspaces", body={}, origin="https://attacker.invalid"

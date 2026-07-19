@@ -236,6 +236,8 @@ CREATE TABLE IF NOT EXISTS sandbox_releases (
 
 CREATE INDEX IF NOT EXISTS ix_events_run_sequence ON events(run_id, sequence);
 CREATE INDEX IF NOT EXISTS ix_runs_workspace_created ON runs(workspace_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_one_child
+ON runs(parent_run_id) WHERE parent_run_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_receipts_run ON tool_receipts(run_id, created_at);
 CREATE INDEX IF NOT EXISTS ix_model_calls_run ON model_calls(run_id, created_at);
 

@@ -202,12 +202,16 @@ class ApiApplication:
         match = re.fullmatch(rf"/api/v1/runs/{RESOURCE_ID}/rerun", request.path)
         if match:
             self._require_exact_keys(body, set())
+            run_id = match.group(1)
+            existing = self.control_plane.existing_rerun(workspace_id, run_id)
+            if existing is not None:
+                return self._ok(existing, status=HTTPStatus.CREATED)
             return self._model_action(
                 request,
                 workspace_id,
                 forecast_calls=3,
                 status=HTTPStatus.CREATED,
-                operation=lambda: self.control_plane.rerun(workspace_id, match.group(1)),
+                operation=lambda: self.control_plane.rerun(workspace_id, run_id),
             )
         if request.path == "/api/v1/prompts":
             self._require_exact_keys(body, {"name", "slug", "template", "variables"})

@@ -291,6 +291,12 @@ class RuntimeContractTest(unittest.TestCase):
         self.assertEqual(len(rerun["sandbox_effects"]), 1)
         self.assertTrue(verify_event_chain(rerun["events"]))
 
+        model_calls_before_retry = self.store.count_rows("model_calls")
+        repeated_rerun = self.plane.rerun(self.workspace_id, blocked["id"])
+        self.assertEqual(repeated_rerun["id"], rerun["id"])
+        self.assertEqual(self.store.count_rows("model_calls"), model_calls_before_retry)
+        self.assertEqual(self.store.count_rows("sandbox_releases"), 1)
+
         still_blocked = self.plane.get_run(self.workspace_id, blocked["id"])
         self.assertEqual(still_blocked["status"], "blocked")
         self.assertEqual(still_blocked["flow_version"], 1)

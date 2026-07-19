@@ -196,6 +196,9 @@ runtime:
 | `88612fb` | real-loop UI with Agents, Prompts, and Skills |
 | `2e664a3` | full Chromium closed-loop proof |
 | `502836e` | sanitized real gpt-5.6 browser proof |
+| `02be363` | concurrent-workspace execution fence |
+| `c0433dc` | persistent bridge-bound deployment service |
+| `2523c91` | public HTTPS gpt-5.6 closed-loop proof |
 
 ## Honest limits
 

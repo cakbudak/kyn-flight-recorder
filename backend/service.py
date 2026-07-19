@@ -277,6 +277,9 @@ class ControlPlane:
         target = self.store.rerun_target(workspace_id, run_id)
         return self.runtime.execute(workspace_id, **target)
 
+    def existing_rerun(self, workspace_id: str, run_id: str) -> dict[str, Any] | None:
+        return self.store.existing_child_run(workspace_id, run_id)
+
     def get_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         return self.store.get_run(workspace_id, run_id)
 

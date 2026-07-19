@@ -97,6 +97,7 @@ The seeded `Release Sentinel` lab intentionally contains one policy defect:
 - A stale expected revision fails without a partial write.
 - Repeated application of the same authorized proposal returns the original result.
 - A rerun is a new run with `parent_run_id`; history is never rewritten.
+- Repeating a rerun command returns that same child run without another model call or effect.
 - Secrets are absent from model evidence packets, SQLite rows, logs, and API responses.
 
 ## Quality gates

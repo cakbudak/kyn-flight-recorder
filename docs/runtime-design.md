@@ -136,6 +136,11 @@ advances the stable flow row, marks the proposal applied, and appends the approv
 A repeated identical application returns the prior result. Any stale or altered request fails
 without partial state.
 
+The repair loop permits exactly one child per blocked parent. Child creation checks for an
+existing row inside `BEGIN IMMEDIATE`, and a partial unique index on non-null `parent_run_id`
+enforces the same invariant in SQLite. A repeated rerun returns the existing child before
+model I/O, so retries cannot duplicate model calls or sandbox effects.
+
 ## 8. Workspace and HTTP boundary
 
 The browser obtains an opaque workspace cookie when it creates a lab. Every row is scoped by
