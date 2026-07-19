@@ -5,7 +5,7 @@ import { shortId } from "./lib.js";
 import { Badge, Button, IconButton, Spinner } from "./components/ui.jsx";
 import FlowStudio from "./components/FlowStudio.jsx";
 import ResourceWorkbench from "./components/ResourceWorkbench.jsx";
-import RunsWorkbench from "./components/RunsWorkbench.jsx";
+import RunsWorkbench, { BrakeRefusal } from "./components/RunsWorkbench.jsx";
 import Overview from "./components/Overview.jsx";
 import Documentation from "./components/Documentation.jsx";
 import Settings from "./components/Settings.jsx";
@@ -75,6 +75,7 @@ export default function App() {
       if (success) setToast(success);
       return result;
     } catch (caught) {
+      setToast("");
       setError({ code: caught.code ?? "operation_failed", message: caught.message, detail: caught.detail });
       if (caught.code === "openai_key_required") setView("settings");
       return null;
@@ -142,7 +143,9 @@ export default function App() {
       <div className="shell-body">
         <Sidebar snapshot={snapshot} view={view} setView={setView} />
         <main id="main-content" className="workspace-main" tabIndex="-1">
-          {error ? (
+          {error?.code === "brake_engaged" ? (
+            <BrakeRefusal detail={error.detail} onDismiss={() => setError(null)} />
+          ) : error ? (
             <div className="error-banner" role="alert">
               <Icon name="warning" size={18} />
               <div><strong>{error.code.replaceAll("_", " ")}</strong><span>{error.message}</span></div>

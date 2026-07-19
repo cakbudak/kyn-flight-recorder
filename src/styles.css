@@ -448,6 +448,45 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .approval-callout h3 { margin: 2px 0; font-size: 13px; }
 .approval-callout p:not(.panel-kicker) { margin: 0; color: var(--muted); font-size: 9px; }
 .approval-callout > div:last-child { display: flex; gap: 7px; }
+
+/* ratification brake: derived dead-end evidence and the refusal it produces */
+.dead-end-callout { margin: 14px 17px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-1); }
+.dead-end-callout.tone-warning { border-color: rgba(246,202,106,.25); background: rgba(246,202,106,.06); }
+.dead-end-callout.tone-danger { border-color: rgba(255,141,114,.25); background: rgba(255,141,114,.06); }
+.dead-end-callout > header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 15px; padding: 14px; border-bottom: 1px solid var(--line); }
+.dead-end-callout.tone-warning > header { border-bottom-color: rgba(246,202,106,.25); }
+.dead-end-callout.tone-danger > header { border-bottom-color: rgba(255,141,114,.25); }
+.dead-end-icon, .brake-icon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--text-soft); }
+.tone-warning .dead-end-icon { border-color: rgba(246,202,106,.25); color: var(--warning); }
+.tone-danger .dead-end-icon, .brake-icon { border-color: rgba(255,141,114,.25); color: var(--danger); }
+.dead-end-callout h3 { margin: 3px 0; font-size: 14px; }
+.dead-end-callout > header p:not(.panel-kicker), .brake-refusal > header p:not(.panel-kicker) { max-width: 84ch; margin: 0; color: var(--text-soft); font-size: 11px; }
+.dead-end-callout > header em { color: var(--text); font-style: normal; font-weight: 700; }
+.dead-end-list { display: grid; gap: 10px; margin: 0; padding: 12px; list-style: none; }
+.dead-end-list > li, .brake-refusal article { display: grid; gap: 9px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-0); }
+.dead-end-list > li > header, .brake-refusal article > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dead-end-list > li > header strong, .brake-refusal article > header strong { font-size: 12px; }
+.dead-end-list > li > header > code, .brake-refusal article > header > code { padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--text-soft); font-size: 10px; }
+.dead-end-count { color: var(--muted); font-size: 11px; }
+.dead-end-count b { color: var(--text); font-weight: 800; }
+.dead-end-list > li > p, .brake-refusal article > p { max-width: 86ch; margin: 0; color: var(--text-soft); font-size: 11px; }
+.dead-end-list > li > p strong, .brake-refusal article > p strong { color: var(--text); }
+.definition-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(168px,1fr)); gap: 9px 14px; margin: 0; }
+.definition-list > div { display: grid; gap: 3px; min-width: 0; }
+.definition-list dt { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.definition-list dd { overflow: hidden; margin: 0; color: var(--text-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.dead-end-citations { display: grid; gap: 6px; }
+.dead-end-citations ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dead-end-citations code { font-size: 11px; }
+.dead-end-citations li > code { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text-soft); background: var(--surface-1); }
+.dead-end-citations button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 9px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); background: var(--surface-2); cursor: pointer; transition: border-color 140ms ease, background 140ms ease, color 140ms ease; }
+.dead-end-citations button:hover { border-color: #596575; background: var(--surface-3); }
+.dead-end-citations button[aria-current="true"] { border-color: rgba(201,255,115,.25); color: var(--accent); background: rgba(201,255,115,.06); }
+.brake-refusal { position: absolute; z-index: 35; top: 10px; left: 50%; width: min(760px, calc(100% - 28px)); max-height: calc(100% - 20px); overflow: auto; border: 1px solid rgba(255,141,114,.25); border-radius: var(--radius); background: #1a1113; box-shadow: var(--shadow); transform: translateX(-50%); }
+.brake-refusal > header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 15px; padding: 15px; }
+.brake-refusal h2 { margin: 3px 0; font-size: 17px; }
+.brake-refusal > header p strong { color: var(--text); }
+.brake-refusal article { margin: 0 15px 15px; border-color: rgba(255,141,114,.25); }
 .segmented { display: flex; gap: 2px; padding: 8px 17px 0; border-bottom: 1px solid var(--line); background: var(--surface-0); overflow-x: auto; }
 .segmented button { display: flex; align-items: center; gap: 6px; padding: 8px 10px 10px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; cursor: pointer; font-size: 9px; font-weight: 750; white-space: nowrap; }
 .segmented button.is-active { border-bottom-color: var(--accent); color: var(--text); }
@@ -801,6 +840,9 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
   .run-graph { height: 430px; }
   .approval-callout { grid-template-columns: auto 1fr; }
   .approval-callout > div:last-child { grid-column: 1 / -1; justify-content: flex-end; }
+  .dead-end-callout > header { grid-template-columns: auto 1fr; }
+  .dead-end-callout > header > .badge { grid-column: 2; justify-self: start; }
+  .brake-refusal { position: static; width: auto; max-height: none; margin: 10px 16px; transform: none; }
   .segmented { padding-left: 8px; }
   .run-tab-content { padding: 12px; }
   .evidence-card.span-two { grid-column: auto; }
@@ -850,7 +892,8 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
   .editor-actions .button span { display: none; }
   .editor-actions .button { width: 36px; padding: 0; }
   .run-meta { flex-wrap: wrap; }
-  .approval-callout { margin: 9px; }
+  .approval-callout, .dead-end-callout { margin: 9px; }
+  .definition-list { grid-template-columns: 1fr; }
   .evidence-card dl { grid-template-columns: 1fr; }
   .evidence-metrics { grid-template-columns: repeat(2,1fr); }
   .step-body > dl { flex-wrap: wrap; gap: 10px; }

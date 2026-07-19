@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -29,6 +29,7 @@ import {
 import {
   Badge,
   Button,
+  DefinitionList,
   EmptyState,
   Field,
   IconButton,
@@ -41,6 +42,13 @@ import {
 } from "./ui.jsx";
 
 const RUN_NODE_TYPES = { runNode: RunGraphNode };
+const RATIFICATION_ORDER = ["proposed", "confirmed", "canonical"];
+const RATIFICATION_TONE = { proposed: "neutral", confirmed: "warning", canonical: "danger" };
+const RATIFICATION_MEANING = {
+  proposed: "One Run reproduced this exact approach. It is recorded and it does not brake — an honest second attempt is never refused.",
+  confirmed: "Two independent Runs reproduced it. It still does not brake; one further independent reproduction ratifies it.",
+  canonical: "Three independent Runs reproduced it. This exact pinned path is now refused before any Run row exists. Publishing a successor Flow version changes the fingerprint and clears the brake."
+};
 
 export default function RunsWorkbench({ snapshot, refresh, mutate, busy }) {
   const runs = snapshot.studio.runs;
@@ -104,6 +112,7 @@ export default function RunsWorkbench({ snapshot, refresh, mutate, busy }) {
             </header>
             <RunGraph snapshot={snapshot} run={selected} onSelectChild={selectRun} />
             {selected.pending_approval ? <ApprovalCallout run={selected} onDecision={(approved) => setApproval({ request: selected.pending_approval, approved })} /> : null}
+            {selected.dead_ends?.length ? <DeadEndCallout run={selected} onSelectRun={selectRun} /> : null}
             <Segmented value={tab} onChange={setTab} label="Run evidence sections" items={[
               { value: "summary", label: "Summary" },
               { value: "steps", label: "Steps", count: selected.steps.length },
@@ -196,6 +205,45 @@ function ApprovalCallout({ run, onDecision }) {
   return <section className="approval-callout"><span className="approval-icon"><Icon name="lock" size={22} /></span><div><p className="panel-kicker">Human gate · Step {shortId(request.step_id)}</p><h3>{request.message}</h3><p>The Run is durably paused. No downstream capability or effect runs until a named human records a reason.</p></div><div><Button tone="danger" onClick={() => onDecision(false)}>Reject</Button><Button tone="primary" icon="check" onClick={() => onDecision(true)}>Approve and resume</Button></div></section>;
 }
 
+function deadEndTone(state) { return RATIFICATION_TONE[state] ?? "neutral"; }
+
+function CitedRuns({ label, ids, currentRunId, onSelectRun }) {
+  const headingId = useId();
+  return <div className="dead-end-citations"><p className="panel-kicker" id={headingId}>{label}</p><ul aria-labelledby={headingId}>{ids.map((id) => <li key={id}>{onSelectRun ? <button type="button" onClick={() => onSelectRun(id)} aria-label={`Open citing Run ${shortId(id, 14)}`} aria-current={id === currentRunId ? "true" : undefined}><Icon name="run" size={12} /><code>{shortId(id, 14)}</code></button> : <code>{shortId(id, 14)}</code>}</li>)}</ul></div>;
+}
+
+function DeadEndCallout({ run, onSelectRun }) {
+  const records = run.dead_ends;
+  const strongest = RATIFICATION_ORDER[records.reduce((worst, record) => Math.max(worst, RATIFICATION_ORDER.indexOf(record.ratification_state)), 0)];
+  return <section className={`dead-end-callout tone-${deadEndTone(strongest)}`} aria-labelledby="dead-end-title">
+    <header><span className="dead-end-icon"><Icon name="warning" size={22} /></span><div><p className="panel-kicker">Ratification brake · derived evidence</p><h3 id="dead-end-title">{records.length} dead end{records.length === 1 ? "" : "s"} cite{records.length === 1 ? "s" : ""} this Run</h3><p>A dead end is not a log line. It is a fingerprint over one exact failed approach — pinned Flow version, node, error code, normalized detail — and it VETOES that path. Its ratification state is never stored: it is recomputed by counting the <em>distinct</em> Runs that independently reproduced it, so repetition ratifies it and nothing else can.</p></div><Badge tone={deadEndTone(strongest)} dot>{titleCase(strongest)}</Badge></header>
+    <ol className="dead-end-list">{records.map((record) => <li key={record.fingerprint}>
+      <header><Badge tone={deadEndTone(record.ratification_state)} dot>{titleCase(record.ratification_state)}</Badge><strong>{record.node_id}</strong><code>{record.error_code}</code><span className="dead-end-count"><b>{record.distinct_runs}</b> distinct Run{record.distinct_runs === 1 ? "" : "s"}</span></header>
+      <p>{RATIFICATION_MEANING[record.ratification_state]}</p>
+      <DefinitionList items={[
+        ["Fingerprint", <code key="fingerprint">{record.fingerprint.slice(0, 24)}…</code>],
+        ["Pinned Flow version", <code key="flow-version">{shortId(record.flow_version_id, 14)}</code>],
+        ["Normalized detail", record.normalized_detail],
+        ["First cited", formatTime(record.first_cited_at)],
+        ["Last cited", formatTime(record.last_cited_at)]
+      ]} />
+      <CitedRuns label={`Citing Runs · ${record.citing_run_ids.length}`} ids={record.citing_run_ids} currentRunId={run.id} onSelectRun={onSelectRun} />
+    </li>)}</ol>
+  </section>;
+}
+
+export function BrakeRefusal({ detail, onDismiss }) {
+  const matches = detail?.matches?.length ? detail.matches : [detail].filter((item) => item?.node_id);
+  return <section className="brake-refusal" role="alert" aria-labelledby="brake-refusal-title">
+    <header><span className="brake-icon"><Icon name="lock" size={22} /></span><div><p className="panel-kicker">Ratification brake engaged · HTTP 409</p><h2 id="brake-refusal-title">The Run was refused before it was created</h2><p><strong>No Run, no Step, no effect was created.</strong> The brake is a read-only verdict evaluated before enqueue, so nothing was written and there is nothing to roll back.</p></div>{onDismiss ? <IconButton icon="close" label="Dismiss the brake refusal" onClick={onDismiss} /> : null}</header>
+    {matches.map((match) => <article key={match.fingerprint}>
+      <header><Badge tone={deadEndTone(match.ratification_state)} dot>{titleCase(match.ratification_state ?? "canonical")}</Badge><strong>{match.node_id}</strong><code>{match.error_code}</code><span className="dead-end-count"><b>{match.distinct_runs}</b> distinct Run{match.distinct_runs === 1 ? "" : "s"}</span></header>
+      <p>A <strong>{match.ratification_state}</strong> dead end already proves node <strong>{match.node_id}</strong> fails this way on the pinned Flow version <code>{shortId(match.flow_version_id, 14)}</code>. Publishing a successor Flow version produces a new fingerprint and clears the brake; repeating this identical approach does not.</p>
+      <CitedRuns label={`Refused on the evidence of ${match.citing_run_ids?.length ?? 0} prior Runs`} ids={match.citing_run_ids ?? []} />
+    </article>)}
+  </section>;
+}
+
 function RunSummary({ snapshot, run, onSelectRun }) {
   const flow = snapshot.studio.flows.find((item) => item.id === run.flow_id);
   return <div className="run-summary-grid"><section className="evidence-card"><header><h3>Execution contract</h3><Badge tone="neutral">immutable</Badge></header><dl><div><dt>Flow</dt><dd>{flow?.name ?? run.flow_id}</dd></div><div><dt>Version</dt><dd>v{run.flow_version}</dd></div><div><dt>Fingerprint</dt><dd><code>{run.flow_fingerprint.slice(0, 24)}…</code></dd></div><div><dt>Outcome</dt><dd>{run.outcome ?? "pending"}</dd></div><div><dt>Correlation</dt><dd><code>{shortId(run.correlation_id, 14)}</code></dd></div><div><dt>Relation</dt><dd>{titleCase(run.relation_kind)}</dd></div></dl></section><section className="evidence-card"><header><h3>Evidence inventory</h3><Badge tone="success">durable</Badge></header><div className="evidence-metrics"><article><strong>{run.steps.length}</strong><span>Steps</span></article><article><strong>{run.events.length}</strong><span>Events</span></article><article><strong>{run.model_calls.length}</strong><span>Model calls</span></article><article><strong>{run.action_receipts.length}</strong><span>Receipts</span></article><article><strong>{run.effects.length}</strong><span>Effects</span></article><article><strong>{run.children.length}</strong><span>Children</span></article></div></section><section className="evidence-card span-two"><header><h3>Input and output</h3><span>{run.finished_at ? `Finished ${formatTime(run.finished_at)}` : `Started ${formatTime(run.started_at ?? run.created_at)}`}</span></header><div className="io-grid"><div><p className="panel-kicker">Validated input</p><KeyValue data={run.input} /></div><div><p className="panel-kicker">Current output</p><KeyValue data={run.output ?? { status: run.status }} /></div></div></section>{run.error_code ? <section className="evidence-card error-card span-two"><header><h3><Icon name="warning" size={17} />Run failure</h3><Badge tone="danger">{run.error_code}</Badge></header><p>{run.error_message}</p></section> : null}{run.parent_run_id || run.children.length ? <section className="evidence-card span-two"><header><h3>Run lineage</h3><Badge tone="ai">{run.relation_kind}</Badge></header><div className="lineage-list">{run.parent_run_id ? <button type="button" onClick={() => onSelectRun(run.parent_run_id)}><Icon name="undo" size={16} /><span><strong>Parent Run</strong><small>{shortId(run.parent_run_id, 14)}</small></span><Badge tone="neutral">open</Badge></button> : null}{run.children.map((child) => <button key={child.id} type="button" onClick={() => onSelectRun(child.id)}><Icon name="redo" size={16} /><span><strong>{titleCase(child.relation_kind)} child</strong><small>{shortId(child.id, 14)}</small></span><StatusBadge status={child.status} /></button>)}</div></section> : null}</div>;
@@ -253,8 +301,10 @@ function StartRunModal({ snapshot, mutate, onClose, onStarted }) {
     event.preventDefault();
     let payload;
     try { payload = parseJson(input, "Run input"); } catch (error) { await mutate(() => Promise.reject(error), { refreshAfter: false, success: "" }); return; }
-    const run = await mutate(() => api(`/api/v1/studio/flows/${flow.id}/runs:enqueue`, { method: "POST", keyMode: flow.version.requires_model ? "required" : "optional", body: { input: payload, idempotency_key: commandId("manual-run") } }), { success: "Run pinned and queued" });
+    let refused = false;
+    const run = await mutate(() => api(`/api/v1/studio/flows/${flow.id}/runs:enqueue`, { method: "POST", keyMode: flow.version.requires_model ? "required" : "optional", body: { input: payload, idempotency_key: commandId("manual-run") } }).catch((error) => { refused = error.code === "brake_engaged"; throw error; }), { success: "Run pinned and queued" });
     if (run) onStarted(run);
+    else if (refused) onClose();
   };
   return <Modal title="Start a Run" description="Choose a published Flow. The runtime pins the complete transitive definition before any provider call." onClose={onClose}><form className="modal-form" onSubmit={submit}><Field label="Flow"><select value={flowId} onChange={(event) => setFlowId(event.target.value)}>{flows.map((item) => <option key={item.id} value={item.id}>{item.name} · v{item.current_version}{item.version.requires_model ? " · OpenAI" : " · deterministic"}</option>)}</select></Field>{flow ? <div className="flow-run-summary"><span><strong>{flow.version.nodes.length}</strong> nodes</span><span><strong>{flow.version.routes.length}</strong> routes</span><span><strong>{flow.version.outcomes.length}</strong> outcomes</span><span><strong>{flow.version.requires_model ? "OpenAI" : "None"}</strong> model transport</span></div> : null}<JsonField label="Run input" value={input} onChange={setInput} rows={12} hint="Validated against the published Flow input schema." /><div className="modal-actions"><Button tone="quiet" type="button" onClick={onClose}>Cancel</Button><Button tone="primary" icon="play" type="submit">Pin and start</Button></div></form></Modal>;
 }

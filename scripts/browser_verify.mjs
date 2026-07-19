@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { APPROVAL_DEMO_BRIEF } from "../src/lib.js";
+import { APPROVAL_DEMO_BRIEF, shortId } from "../src/lib.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT_MS = Number(process.env.BROWSER_TIMEOUT_MS ?? 180_000);
@@ -172,6 +172,7 @@ async function main() {
   const pageErrors = [];
   const failedRequests = [];
   const requestedUrls = [];
+  const brakeRefusals = [];
   let server = null;
   let browser = null;
   let fatalError = null;
@@ -223,7 +224,9 @@ async function main() {
     page.on("console", (message) => {
       const text = message.text();
       const expectedBootstrapMiss = message.type() === "error" && text.includes("401");
-      if (message.type() === "error" && !expectedBootstrapMiss) pageErrors.push(text);
+      const expectedBrakeRefusal = message.type() === "error" && text.includes("409");
+      if (expectedBrakeRefusal) brakeRefusals.push(text);
+      if (message.type() === "error" && !expectedBootstrapMiss && !expectedBrakeRefusal) pageErrors.push(text);
     });
     page.on("request", (request) => requestedUrls.push(request.url()));
     page.on("requestfailed", (request) => failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? "failed"}`));
@@ -551,6 +554,55 @@ async function main() {
     await page.locator(".runs-page").waitFor({ state: "visible" });
     snapshot = await waitForSnapshot(page, (value) => value.studio.runs.some((run) => run.flow_id === recoveryFlow.id && run.status === "blocked"), "blocked recovery Run");
     const recoveryRoot = snapshot.studio.runs.find((run) => run.flow_id === recoveryFlow.id && !run.parent_run_id);
+
+    progress("ratifying a dead end over repeated independent Runs and proving the brake refuses the next one");
+    const startRecoveryRun = async () => {
+      await navigate(page, "Flow Studio");
+      await page.locator("#flow-select").selectOption(recoveryFlow.id);
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      await clickAndWait(page, page.getByRole("button", { name: "Pin and start Run" }));
+    };
+    const blockedRoots = (value) => value.studio.runs.filter((run) => run.flow_id === recoveryFlow.id && !run.parent_run_id && run.status === "blocked");
+    for (const attempt of [2, 3]) {
+      await startRecoveryRun();
+      await page.locator(".runs-page").waitFor({ state: "visible" });
+      snapshot = await waitForSnapshot(page, (value) => blockedRoots(value).length >= attempt, `blocked recovery Run ${attempt}`);
+    }
+    const ratified = snapshot.studio.runs.find((run) => run.flow_id === recoveryFlow.id && !run.parent_run_id).dead_ends[0];
+    await page.locator(".dead-end-callout").waitFor({ state: "visible" });
+    const deadEndPanel = {
+      state: (await page.locator(".dead-end-list > li .badge").first().innerText()).trim(),
+      count: (await page.locator(".dead-end-list > li .dead-end-count").first().innerText()).trim(),
+      citations: await page.locator(".dead-end-list > li .dead-end-citations button").count()
+    };
+    record(
+      "Run detail surfaces the derived dead end as canonical with its distinct-Run count and citing Run links",
+      ratified.ratification_state === "canonical" && ratified.distinct_runs === 3 && ratified.citing_run_ids.length === 3 &&
+        deadEndPanel.state.toLowerCase() === "canonical" && deadEndPanel.count === "3 distinct Runs" && deadEndPanel.citations === 3,
+      { ...deadEndPanel, derived_state: ratified.ratification_state, derived_distinct_runs: ratified.distinct_runs, node: ratified.node_id }
+    );
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "09-dead-end-panel.png"));
+
+    await startRecoveryRun();
+    await page.locator(".brake-refusal").waitFor({ state: "visible" });
+    const refusal = {
+      text: await page.locator(".brake-refusal").innerText(),
+      modals: await page.locator(".modal").count(),
+      root_runs: blockedRoots(await workspaceSnapshot(page)).length
+    };
+    record(
+      "the next Run on the canonical path is refused before creation and the refusal cites the three prior Runs",
+      refusal.root_runs === 3 && refusal.modals === 0 &&
+        refusal.text.includes("refused before it was created") &&
+        refusal.text.includes("No Run, no Step, no effect was created") &&
+        ratified.citing_run_ids.every((id) => refusal.text.includes(shortId(id, 14))),
+      { root_runs: refusal.root_runs, modals: refusal.modals, cited_runs: ratified.citing_run_ids.length, characters: refusal.text.length }
+    );
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "10-brake-refusal.png"));
+    await clickAndWait(page, page.getByRole("button", { name: "Dismiss the brake refusal" }));
+
+    await navigate(page, "Runs");
+    await page.locator(".run-list-item").filter({ hasText: shortId(recoveryRoot.id) }).first().click();
     await page.getByRole("tab", { name: /^Maintenance/ }).click();
     await clickAndWait(page, page.getByRole("button", { name: "Diagnose Run" }));
     snapshot = await waitForSnapshot(page, (value) => value.studio.runs.some((run) => run.id === recoveryRoot.id && run.diagnosis), "evidence diagnosis");
@@ -587,7 +639,7 @@ async function main() {
       }
     );
     if (options.artifacts) {
-      await page.locator(".run-list-item").filter({ hasText: "Blocked" }).first().click();
+      await page.locator(".run-list-item").filter({ hasText: shortId(recoveryRoot.id) }).first().click();
       await page.getByRole("tab", { name: /^Maintenance/ }).click();
       await capture(page, resolve(ROOT, options.artifacts, "07-maintenance-proof.png"));
     }
@@ -640,6 +692,7 @@ async function main() {
     record("browser makes no cross-origin runtime request", nonLocalRequests.length === 0, nonLocalRequests);
     record("browser journey has no failed request", failedRequests.length === 0, failedRequests);
     record("browser journey has no console or page error", pageErrors.length === 0, pageErrors);
+    record("the only refused HTTP response in the journey is the one asserted brake 409", brakeRefusals.length === 1, brakeRefusals);
   } catch (error) {
     fatalError = error;
     if (!checks.some((check) => check.status === "fail")) checks.push({ name: "Playwright verification completed", status: "fail", detail: error.message });
@@ -665,7 +718,8 @@ async function main() {
     diagnostics: {
       server_output: serverOutput.join("").trim().split("\n").slice(-20),
       page_errors: pageErrors,
-      failed_requests: failedRequests
+      failed_requests: failedRequests,
+      brake_refusals: brakeRefusals
     }
   };
   if (options.report) {

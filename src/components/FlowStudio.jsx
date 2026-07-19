@@ -734,16 +734,18 @@ function StartFlowModal({ flow, mutate, onClose, onStarted }) {
   const [input, setInput] = useState(JSON.stringify(exampleForSchema(flow.version.input_schema), null, 2));
   const submit = async (event) => {
     event.preventDefault();
+    let refused = false;
     try {
       const result = await mutate(
         () => api(`/api/v1/studio/flows/${flow.id}/runs:enqueue`, {
           method: "POST",
           keyMode: flow.version.requires_model ? "required" : "optional",
           body: { input: parseJson(input, "Run input"), idempotency_key: commandId("manual-run") }
-        }),
+        }).catch((error) => { refused = error.code === "brake_engaged"; throw error; }),
         { success: "Run pinned and queued" }
       );
       if (result) onStarted(result);
+      else if (refused) onClose();
     } catch { /* mutate renders the bounded error */ }
   };
   return <Modal title={`Run ${flow.name}`} description={`The Run will pin Flow v${flow.current_version} and all transitive resource versions.`} onClose={onClose}><form className="modal-form" onSubmit={submit}><JsonField label="Run input" value={input} onChange={setInput} rows={12} hint={flow.version.requires_model ? "This Flow will use the OpenAI key held in this tab." : "This Flow is deterministic and does not need an OpenAI key."} /><div className="modal-actions"><Button tone="quiet" type="button" onClick={onClose}>Cancel</Button><Button tone="primary" icon="play" type="submit">Pin and start Run</Button></div></form></Modal>;
