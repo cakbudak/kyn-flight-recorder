@@ -1,0 +1,216 @@
+{
+  "generated_at": "2026-07-19T13:20:31.359Z",
+  "surface": "Kyn.ist Agent Studio full Playwright journey",
+  "runtime": {
+    "chromium": "/usr/bin/chromium",
+    "provider": "deterministic provider-shaped seam",
+    "base_url": "http://127.0.0.1:41641",
+    "viewport_matrix": [
+      "1440x1000",
+      "390x844"
+    ]
+  },
+  "summary": {
+    "checks": 21,
+    "passed": 21,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "name": "runtime exposes SQLite plus browser-session BYOK and official SDK transport",
+      "status": "pass",
+      "detail": {
+        "status": "ok",
+        "mode": "closed-loop-agent-runtime",
+        "sqlite": "ready",
+        "credential_mode": "browser-session-byok",
+        "openai_transport": "official-python-sdk"
+      }
+    },
+    {
+      "name": "onboarding presents a configurable agent builder rather than a scripted demo",
+      "status": "pass",
+      "detail": {
+        "title": "Build agent systems.\nSee what they actually did.",
+        "previewNodes": 4,
+        "overflow": 0
+      }
+    },
+    {
+      "name": "desktop onboarding has no document overflow",
+      "status": "pass",
+      "detail": 0
+    },
+    {
+      "name": "workspace seeds five Action kinds and one editable Flow",
+      "status": "pass",
+      "detail": {
+        "actions": 5,
+        "flows": 1,
+        "kinds": [
+          "approval",
+          "sandbox",
+          "ai",
+          "condition",
+          "template"
+        ]
+      }
+    },
+    {
+      "name": "browser can define a typed immutable Action",
+      "status": "pass",
+      "detail": {
+        "id": "act_d4c0223f0133412d9fdceed6a6d9ae02",
+        "version": "actv_e00e564ea3b3492baccbfad12c6068b2"
+      }
+    },
+    {
+      "name": "browser composes a user-defined version-pinned Flow",
+      "status": "pass",
+      "detail": {
+        "id": "aflow_40330052db684514ab5e69b1dd69d8a6",
+        "nodes": 1
+      }
+    },
+    {
+      "name": "deterministic Flow executes without a credential and emits authoritative evidence",
+      "status": "pass",
+      "detail": {
+        "id": "arun_870653fc0dab4bb7a554999ea65c6b31",
+        "status": "completed",
+        "model_calls": 0,
+        "receipts": 1
+      }
+    },
+    {
+      "name": "configuration keeps the key in this tab and exposes no key text in the page",
+      "status": "pass",
+      "detail": {
+        "configured": true
+      }
+    },
+    {
+      "name": "AI Flow uses pinned Agent stack and pauses at a real Human approval",
+      "status": "pass",
+      "detail": {
+        "id": "arun_d0008ad06b9d4b79a0a86f5fc364204b",
+        "steps": [
+          "completed",
+          "completed",
+          "waiting_approval"
+        ],
+        "model_calls": 1,
+        "effects": 0
+      }
+    },
+    {
+      "name": "approval resumes the pinned graph into exactly one bounded sandbox effect",
+      "status": "pass",
+      "detail": {
+        "status": "completed",
+        "effects": 1,
+        "decision": true
+      }
+    },
+    {
+      "name": "rerun creates a linked child against the same immutable Flow version",
+      "status": "pass",
+      "detail": {
+        "id": "arun_5e4b4f9869974f578eab6263462b515f",
+        "parent": "arun_d0008ad06b9d4b79a0a86f5fc364204b",
+        "flow_version_id": "aflowv_fd03216f7caa4d288cddc6d0dec87b0e"
+      }
+    },
+    {
+      "name": "linked child completes independently with its own valid event chain",
+      "status": "pass",
+      "detail": {
+        "status": "completed",
+        "effects": 1,
+        "events": 22
+      }
+    },
+    {
+      "name": "Prompt Skill and Agent creation are first-class browser workflows",
+      "status": "pass",
+      "detail": {
+        "prompts": 5,
+        "skills": 5,
+        "agents": 5
+      }
+    },
+    {
+      "name": "Repair Lab proves evidence-owned diagnosis bounded repair and linked changed outcome",
+      "status": "pass",
+      "detail": {
+        "parent_status": "blocked",
+        "child_status": "completed",
+        "citations": 2,
+        "parent_effects": 0,
+        "child_effects": 1
+      }
+    },
+    {
+      "name": "every browser button has an accessible name",
+      "status": "pass",
+      "detail": {
+        "buttons": 71
+      }
+    },
+    {
+      "name": "reduced motion collapses interaction transitions",
+      "status": "pass",
+      "detail": "0.001s"
+    },
+    {
+      "name": "390px reload preserves the workspace without document overflow",
+      "status": "pass",
+      "detail": {
+        "viewport": 390,
+        "scrollWidth": 390,
+        "sidebarHeight": 51,
+        "errorHidden": true
+      }
+    },
+    {
+      "name": "server sends restrictive security and no-store headers",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "browser makes no cross-origin runtime request",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no failed request",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no console or page error",
+      "status": "pass",
+      "detail": []
+    }
+  ],
+  "diagnostics": {
+    "server_output": [
+      "19/Jul/2026 15:20:29 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:29 127.0.0.1 \"POST /api/v1/repairs/rpr_c2478506e5bc460984ce589b6716efb5/apply HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"POST /api/v1/runs/run_0f77ac024db84ba6a930953725d12375/rerun HTTP/1.1\" 201 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /app/state.mjs HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 15:20:31 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+    ],
+    "page_errors": [],
+    "failed_requests": []
+  }
+}

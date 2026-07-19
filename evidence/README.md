@@ -1,70 +1,69 @@
 # Verification evidence
 
-The active evidence set proves the real closed-loop runtime, not the superseded static demo.
+The active evidence set proves **Kyn.ist Agent Studio**: user-defined Actions and
+Flows, version-pinned Agent resources, executable Runs, Human approval, linked
+reruns, and the bounded Repair Lab. Superseded Recorder artifacts are removed
+from the active tree and remain recoverable in Git history.
 
 ## Deterministic full-stack browser proof
 
-[`browser/closed-loop-report.json`](browser/closed-loop-report.json) records 21/21 passing
-checks. It starts the real Python HTTP server, API, control plane, flat SQLite store, strict
-tools, and UI. Only the provider responses are supplied by a deterministic provider-shaped
-test seam.
+`browser/agent-studio-report.json` records the 21-check Chromium journey against
+the real Python server, same-origin HTTP API, control plane, flat SQLite stores,
+Action dispatcher, approvals, Repair Lab, and browser UI. Only provider responses
+come from a deterministic provider-shaped seam.
 
-Screenshots:
+Expected screenshots:
 
-- [`browser/01-compose.png`](browser/01-compose.png)
-- [`browser/02-blocked.png`](browser/02-blocked.png)
-- [`browser/03-proven-repair.png`](browser/03-proven-repair.png)
-- [`browser/04-mobile-proof.png`](browser/04-mobile-proof.png)
+- `browser/01-agent-studio.png`
+- `browser/02-waiting-approval.png`
+- `browser/03-run-evidence.png`
+- `browser/04-repair-proven.png`
+- `browser/05-mobile-studio.png`
 
-## Real gpt-5.6 proof
+## Real-model proof
 
-[`real-model/closed-loop-report.json`](real-model/closed-loop-report.json) is the identical
-21-check Chromium journey against a server configured with the OpenAI Responses API and
-gpt-5.6. It proves provider compatibility plus the complete result:
+`real-model/agent-studio-report.json` runs the same browser journey against an
+actual service that has no operator key. The verifier enters the key through the
+Configuration UI, and Chromium itself is launched without `OPENAI_API_KEY` in its
+environment.
 
-- root run: `blocked`, flow v1, zero effects;
-- diagnosis: exact two owned evidence events;
-- repair: one allow-listed patch at expected revision 1;
-- approval: acknowledged human command;
-- child run: `completed`, flow v2, one sandbox effect;
-- both predecessor chains valid in the safe API projection;
-- no console error, failed browser request, cross-origin browser runtime request, or mobile
-  document overflow.
+The expected proof is:
 
-Screenshots:
-
-- [`real-model/01-compose.png`](real-model/01-compose.png)
-- [`real-model/02-blocked.png`](real-model/02-blocked.png)
-- [`real-model/03-proven-repair.png`](real-model/03-proven-repair.png)
-- [`real-model/04-mobile-proof.png`](real-model/04-mobile-proof.png)
+- a user-defined deterministic Flow runs without a key;
+- a real GPT‑5.6 AI Action emits strict typed output;
+- the graph pauses at Human approval with zero effects;
+- approval resumes to exactly one sandbox effect;
+- a linked child Run owns an independent valid event chain;
+- Prompt, Skill, and Agent creation work in the browser;
+- Repair Lab proves its before/after outcome.
 
 ## Public HTTPS proof
 
-[`live/closed-loop-report.json`](live/closed-loop-report.json) repeats the same 21 checks
-through `https://buildweek.kyn.ist`: Cloudflare, Traefik, nginx, the persistent user service,
-SQLite, and real gpt-5.6. It passed 21/21 with a Secure/HttpOnly/SameSite workspace cookie,
-no browser cross-origin runtime request, and the same blocked-v1/completed-v2 effect proof.
-
-- [`live/01-compose.png`](live/01-compose.png)
-- [`live/02-blocked.png`](live/02-blocked.png)
-- [`live/03-proven-repair.png`](live/03-proven-repair.png)
-- [`live/04-mobile-proof.png`](live/04-mobile-proof.png)
+`live/agent-studio-report.json` repeats the same checks through
+`https://buildweek.kyn.ist`, including the edge proxy, nginx, persistent service,
+Secure/HttpOnly workspace cookie, SQLite, and official OpenAI SDK.
 
 ## Reproduce
 
 ```bash
-python3 scripts/verify.py --browser
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python scripts/verify.py
+npm ci
+node scripts/browser_verify.mjs \
+  --report evidence/browser/agent-studio-report.json \
+  --artifacts evidence/browser
 
-# Configured deployment; invokes OpenAI and creates a new isolated lab:
-node scripts/browser_verify.mjs --base-url https://buildweek.kyn.ist
+# Configured external service; the key is entered through the browser UI:
+OPENAI_API_KEY=... node scripts/browser_verify.mjs \
+  --base-url https://buildweek.kyn.ist \
+  --report evidence/live/agent-studio-report.json \
+  --artifacts evidence/live
 ```
 
 ## Sanitization
 
-The committed reports contain safe UI assertions, ids, hashes, counts, statuses, and limited
-Chromium diagnostics. They do not contain the OpenAI API key, cookies, raw provider request or
-response bodies, full prompts, authorization headers, database token hashes, or hidden
-reasoning.
-
-The old static-fixture evidence was removed in a forward commit because it no longer
-represented the submission architecture.
+Committed reports contain statuses, safe IDs, counts, model usage metadata, and
+limited browser/server diagnostics. They must not contain the API key, cookies,
+authorization headers, raw model requests/responses, full prompts, database token
+hashes, provider raw errors, or hidden reasoning.

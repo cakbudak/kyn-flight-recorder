@@ -1,24 +1,30 @@
 # Clean-clone verification contract
 
-A clean clone requires Python 3.11+, a modern browser, and `OPENAI_API_KEY` only for real
-model actions.
+The standalone runtime requires Python 3.11+ and the official OpenAI SDK. A key is
+optional: deterministic Actions and Flows work without one; model commands take a
+visitor-supplied key through the browser Configuration view.
 
 ```bash
-git clone https://github.com/cakbudak/kyn-flight-recorder.git
-cd kyn-flight-recorder
-cp .env.example .env
-# set OPENAI_API_KEY in .env
-python3 scripts/verify.py
-python3 serve.py
+git clone https://github.com/cakbudak/kyn-agent-studio.git
+cd kyn-agent-studio
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python scripts/verify.py
+.venv/bin/python serve.py
 ```
 
-No `pip`, `npm`, compiler, migration command, Kyn package, external database, or build step is
-required. `Store.initialize()` creates the flat SQLite schema on first start.
+Open <http://127.0.0.1:4173/app/>. Do **not** put `OPENAI_API_KEY` in the server
+environment: the composition root deliberately ignores operator keys.
+`Store.initialize()` creates the flat SQLite schema on first start; no private Kyn
+package, external database, compiler, migration command, or frontend build is
+required.
 
-The deterministic browser proof additionally requires Node 20+ and Chromium:
+The full Chromium proof additionally requires Node 20+, npm, and system Chromium:
 
 ```bash
-python3 scripts/verify.py --browser
+npm ci
+node scripts/browser_verify.mjs
 ```
 
-The real-model gate is intentionally separate because it consumes API calls.
+The default browser proof is deterministic. A real-model run is intentionally
+separate because it consumes the visitor's API quota.

@@ -2,39 +2,62 @@
 
 Date: 2026-07-19
 
+The active gate set belongs to **Kyn.ist Agent Studio**. Earlier prototype
+reports are superseded and are not accepted as evidence for this product surface.
+
 | Gate | Evidence | Status |
 | --- | --- | --- |
-| compose | seeded workspace contains 3 prompts, 3 skills, 3 agents, and 1 pinned flow | PASS |
-| execute | real gpt-5.6 emits strict `inspect_release_policy` and `stage_release` calls | PASS |
-| record | model summaries, receipts, effects, ordered events, and hashes persist in SQLite | PASS |
-| diagnose | exact two-event ownership/candidate checks; foreign evidence negative test | PASS |
-| repair | one allow-listed replace; unsafe path negative test | PASS |
-| approve | proposal hash + revision + actor + reason + acknowledgement; stale/altered tests | PASS |
-| rerun | linked v2 child completes; v1 stays blocked; effect counts are 0 → 1 | PASS |
-| database | flat explicit tables; no Parts/Entities/Bricks/Frames/nodes/edges; immutable triggers | PASS |
-| tool safety | static registry, exact arguments, unknown-tool rejection, idempotent sandbox effect | PASS |
-| isolation | HttpOnly workspace cookie, same-origin mutation, cross-workspace 404, body limit | PASS |
-| cost | turn/tool/output, per-workspace/address/global, and model concurrency bounds | PASS |
-| browser | desktop + 390 px, reduced motion, named AX controls, no overflow/console/request failure | PASS |
-| real model | identical 21-check Chromium journey against configured gpt-5.6 runtime | PASS |
-| public HTTPS | Cloudflare → Traefik → nginx → service; real gpt-5.6 full-loop 21/21 | PASS |
+| define | browser creates a strict-schema Action and immutable version | PASS |
+| compose | browser creates a Flow with a pinned Action version and explicit input mapping | PASS |
+| execute | user-defined deterministic Flow completes without an OpenAI credential | PASS |
+| AI contract | AI Action pins Agent → Prompt + Skills; strict final schema and exact Action tools share one Responses request | PASS |
+| stateless tools | `store:false` tool turns preserve provider reasoning items and encrypted reasoning context | PASS |
+| observe | Steps, model attempts, receipts, approvals, effects, and hash-linked events persist in SQLite | PASS |
+| approve | Run pauses before effect; attributable human decision resumes the same pinned graph | PASS |
+| rerun | terminal parent remains immutable; linked child pins the same Flow version and owns its evidence | PASS |
+| repair | Repair Lab proves owned diagnosis → bounded proposal → human revision fence → linked changed outcome | PASS |
+| provider failure | failed OpenAI attempt is append-only evidence with safe code/parameter/request ID, never raw provider text | PASS |
+| database | flat explicit product tables, immutable version/evidence triggers, legal transition and revision fences | PASS |
+| authority | Skill grants exact Action-version IDs; model prose cannot widen authority or create effects | PASS |
+| isolation | opaque HttpOnly workspace cookie, same-origin mutations, cross-workspace 404, bounded bodies and usage | PASS |
+| credential | browser-tab `sessionStorage` only; server has no operator-key fallback and never persists the key | PASS |
+| browser | desktop + 390 px, reduced motion, named controls, no overflow, failed request, or console error | PASS |
+| real model | real GPT-5.6 analysis pauses, approves, and commits exactly one bounded SQLite effect | PASS |
+| public HTTPS | full Studio journey through the deployed origin | PENDING REDEPLOY |
 | assistive tech | physical screen-reader pass | NOT RUN |
+
+## Current verification
+
+```text
+61 Python runtime/database/HTTP/security/UI contract tests: PASS
+ 6 pure browser-state tests:                              PASS
+21 Chromium full-stack Studio checks:                    PASS
+ 1 real GPT-5.6 end-to-end Studio Run:                   PASS
+```
+
+The real-model proof executed the official Python SDK with a per-operation key,
+produced a strict typed analysis, crossed a deterministic condition, stopped at
+Human approval with zero effects, then resumed to exactly one idempotent SQLite
+sandbox effect. A separate forced two-turn SDK check proved function-call output
+round-tripping with `store:false`, strict final Structured Output, and the same
+tool definitions on both turns.
 
 ## Reproduction
 
 ```bash
-python3 scripts/verify.py
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python scripts/verify.py
+npm ci
 node scripts/browser_verify.mjs
 ```
 
-The deterministic browser run uses a provider-shaped test seam but the real HTTP API,
-control plane, SQLite store, tools, UI, and Chromium. The separate
-[`evidence/real-model/closed-loop-report.json`](../evidence/real-model/closed-loop-report.json)
-was produced by the same runner against live gpt-5.6 calls.
+The local browser run uses provider-shaped deterministic responses while keeping
+the real HTTP API, control plane, SQLite stores, Action dispatcher, approvals,
+Repair Lab, and Chromium UI. The real-model and public reports are generated by
+the same browser runner against a configured service; they will be committed only
+after the renamed deployment passes again.
 
-[`evidence/live/closed-loop-report.json`](../evidence/live/closed-loop-report.json) proves the
-identical path through the public HTTPS deployment.
-
-Green UI checks alone are not accepted as runtime proof. Database invariants, negative
-contract tests, authoritative receipts, real-model compatibility, and the linked effect
-comparison are all required.
+Green UI checks alone are not runtime proof. Database invariants, negative
+authority tests, provider-shaped multi-turn tests, authoritative receipts, a real
+OpenAI call, and before/after linked-Run evidence are required together.
