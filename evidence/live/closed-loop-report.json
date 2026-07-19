@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-19T10:17:02.203Z",
+  "generated_at": "2026-07-19T10:25:49.326Z",
   "surface": "Kyn.ist Flight Recorder closed-loop browser journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -101,7 +101,7 @@
       "detail": {
         "focused": "approval-actor",
         "revision": "1 → 2",
-        "proposalHash": "c7123af9ab64bbb2e5d874b3805dc5bc83a43a0e0581f46f898a205bad083aa6",
+        "proposalHash": "3c33858c09e4a3d7e17958ed3589b2b1569cbe7401ef9b5e9b9b69d28f20bdbf",
         "acknowledged": false
       }
     },
@@ -222,12 +222,11 @@
       ""
     ],
     "browser_output": [
-      "DevTools listening on ws://127.0.0.1:33269/devtools/browser/d9fc47f5-a2db-4f34-9f0c-876ef3a3c4cc",
-      "[1586105:1586236:0719/121641.748636:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
-      "[1586105:1586236:0719/121641.772492:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
-      "[1586105:1586236:0719/121641.774357:ERROR:google_apis/gcm/engine/mcs_client.cc:700]   Error code: 401  Error message: Authentication Failed: wrong_secret",
-      "[1586105:1586236:0719/121641.774372:ERROR:google_apis/gcm/engine/mcs_client.cc:702] Failed to log in to GCM, resetting connection.",
-      "[1586105:1586236:0719/121641.775272:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR"
+      "DevTools listening on ws://127.0.0.1:33475/devtools/browser/a7bd706c-4dda-4424-bbd2-fd7518825ee4",
+      "[1654418:1654451:0719/122524.783099:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT",
+      "[1654418:1654451:0719/122524.849833:ERROR:google_apis/gcm/engine/mcs_client.cc:700]   Error code: 401  Error message: Authentication Failed: wrong_secret",
+      "[1654418:1654451:0719/122524.849877:ERROR:google_apis/gcm/engine/mcs_client.cc:702] Failed to log in to GCM, resetting connection.",
+      "[1654418:1654451:0719/122547.428198:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT"
     ]
   }
 }

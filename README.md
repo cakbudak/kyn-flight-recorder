@@ -199,6 +199,7 @@ runtime:
 | `02be363` | concurrent-workspace execution fence |
 | `c0433dc` | persistent bridge-bound deployment service |
 | `2523c91` | public HTTPS gpt-5.6 closed-loop proof |
+| `a529bb3` | exactly-once child rerun fence |
 
 ## Honest limits
 
