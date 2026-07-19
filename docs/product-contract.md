@@ -1,7 +1,7 @@
 # Product contract
 
 Date frozen: 2026-07-19  
-Maturity: `backend rebuild in progress; previous static demo is not submission-ready`
+Maturity: `implemented and locally verified; public backend deployment pending`
 
 ## Promise
 

@@ -1,33 +1,24 @@
-# Clean-clone verification
+# Clean-clone verification contract
 
-Date: 2026-07-18  
-Commit under test: `108b031`
-Source: local Git clone with `--no-local` into a temporary directory outside the workspace
+A clean clone requires Python 3.11+, a modern browser, and `OPENAI_API_KEY` only for real
+model actions.
 
-## Procedure
+```bash
+git clone https://github.com/cakbudak/kyn-flight-recorder.git
+cd kyn-flight-recorder
+cp .env.example .env
+# set OPENAI_API_KEY in .env
+python3 scripts/verify.py
+python3 serve.py
+```
 
-1. Clone the committed repository without hard-linking local objects.
-2. Run `python3 scripts/verify.py` inside the clone.
-3. Run `node scripts/browser_verify.mjs` inside the clone.
-4. Require an empty `git status --short` after verification.
+No `pip`, `npm`, compiler, migration command, Kyn package, external database, or build step is
+required. `Store.initialize()` creates the flat SQLite schema on first start.
 
-## Result
+The deterministic browser proof additionally requires Node 20+ and Chromium:
 
-| Gate | Result |
-| --- | --- |
-| Python server/static/GPT evidence contract tests | 28/28 PASS |
-| JavaScript schema/state-machine tests | 25/25 PASS |
-| Chromium desktop/mobile journey | 38/38 PASS |
-| First meaningful render in rehearsal | 138.2 ms |
-| Clone worktree after verification | clean |
+```bash
+python3 scripts/verify.py --browser
+```
 
-Verdict: **PASS**. The committed project can be cloned, verified, and exercised
-without package installation, build, migration, account, secret, or the parent
-Kynist repository.
-
-An earlier rehearsal of the preceding fix commit exposed an intermittent delayed
-mobile viewport reflow. That failed proof was corrected forward in `108b031`; the
-table above records the clean rerun of that exact correction commit.
-
-This proves the local Git artifact. The final submission checklist separately
-requires the same rehearsal from the selected remote URL after publication.
+The real-model gate is intentionally separate because it consumes API calls.

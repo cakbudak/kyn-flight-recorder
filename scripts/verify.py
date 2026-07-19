@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Run all dependency-free verification gates for the standalone cut."""
+"""Run the standalone runtime's reproducible verification gates."""
 
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -14,19 +15,52 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def run(label: str, command: list[str]) -> None:
     print(f"\n[{label}] {' '.join(command)}", flush=True)
-    subprocess.run(command, cwd=ROOT, check=True)  # noqa: S603 - fixed repository commands
+    subprocess.run(command, cwd=ROOT, check=True)  # noqa: S603 - repository-owned commands
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--browser",
+        action="store_true",
+        help="also execute the complete deterministic Chromium journey",
+    )
+    return parser.parse_args()
 
 
 def main() -> int:
-    run("python", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"])
+    args = parse_args()
+    run(
+        "python",
+        [
+            sys.executable,
+            "-W",
+            "error::ResourceWarning",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-p",
+            "test_*.py",
+            "-v",
+        ],
+    )
 
     node = shutil.which("node")
     if node is None:
-        print("\n[node] required for the JavaScript contract tests but not found", file=sys.stderr)
+        print("\n[node] required for browser-state tests but not found", file=sys.stderr)
         return 2
-    run("node", [node, "--test", "tests/core.test.mjs"])
+    run("node-state", [node, "--test", "tests/core.test.mjs"])
 
-    print("\nPASS: Python server/static gates and JavaScript state-machine gates are green.")
+    if args.browser:
+        chromium = shutil.which("chromium") or shutil.which("chromium-browser")
+        if chromium is None:
+            print("\n[browser] Chromium was requested but not found", file=sys.stderr)
+            return 2
+        run("chromium", [node, "scripts/browser_verify.mjs"])
+
+    print("\nPASS: runtime, database, HTTP, security, server, and UI contracts are green.")
     return 0
 
 

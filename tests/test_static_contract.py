@@ -38,6 +38,10 @@ class StaticContractTests(unittest.TestCase):
         cls.client = (APP / "app.mjs").read_text(encoding="utf-8")
         cls.state = (APP / "state.mjs").read_text(encoding="utf-8")
         cls.styles = (APP / "styles.css").read_text(encoding="utf-8")
+        cls.nginx = (ROOT / "deploy" / "nginx-buildweek.conf").read_text(encoding="utf-8")
+        cls.service = (ROOT / "deploy" / "kyn-flight-recorder.service").read_text(
+            encoding="utf-8"
+        )
 
     def test_application_has_no_remote_executable_or_style_dependency(self) -> None:
         parser = SurfaceParser()
@@ -164,6 +168,30 @@ class StaticContractTests(unittest.TestCase):
         combined = f"{self.index}\n{self.client}\n{self.state}\n{self.styles}"
         self.assertNotIn("OPENAI_API_KEY", combined)
         self.assertNotRegex(combined, r"sk-[A-Za-z0-9_-]{12,}")
+
+    def test_deployment_proxies_the_same_origin_api_to_a_hardened_service(self) -> None:
+        self.assertIn("proxy_pass http://host.docker.internal:4173", self.nginx)
+        self.assertIn("proxy_set_header X-Forwarded-Proto", self.nginx)
+        self.assertIn("client_max_body_size 32k", self.nginx)
+        self.assertNotIn("GET|HEAD", self.nginx)
+        for directive in (
+            "NoNewPrivileges=true",
+            "ProtectSystem=strict",
+            "StateDirectory=kyn-flight-recorder",
+            "UMask=0077",
+        ):
+            with self.subTest(directive=directive):
+                self.assertIn(directive, self.service)
+
+    def test_superseded_static_runtime_files_are_absent(self) -> None:
+        for relative in (
+            "app/core.mjs",
+            "app/data/demo-run.json",
+            "schema/kyn-flight-trace-v1.schema.json",
+            "scripts/gpt56_review.py",
+        ):
+            with self.subTest(relative=relative):
+                self.assertFalse((ROOT / relative).exists())
 
 
 if __name__ == "__main__":

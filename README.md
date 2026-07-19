@@ -1,221 +1,222 @@
 # Kyn.ist Flight Recorder
 
-**See where an autonomous agent run is stuck, prove why, and rehearse the one
-controlled move that can advance it.**
+**A real closed-loop agent runtime that turns a recorded failure into a bounded,
+human-approved repair—and proves the changed outcome with a linked rerun.**
 
-![Kyn.ist Flight Recorder showing a blocked approval boundary](evidence/screenshots/01-blocked-run.png)
+![Kyn.ist Flight Recorder showing an authoritative blocked agent run](evidence/real-model/02-blocked.png)
 
-**[Open the live demo](https://buildweek.kyn.ist/app/)** ·
-**[View the source on GitHub](https://github.com/cakbudak/kyn-flight-recorder)**
+**[Open the live project](https://buildweek.kyn.ist/app/)** ·
+**[Inspect the source](https://github.com/cakbudak/kyn-flight-recorder)**
 
-Kyn.ist Flight Recorder is a standalone, local-first developer tool built for
-OpenAI Build Week 2026. It turns one portable agent trace into a causal graph,
-a deterministic replay, and a revision-fenced intervention receipt—without
-requiring the Kynist stack, a database, credentials, package installation, or a
-build step.
+Kyn.ist Flight Recorder is a standalone OpenAI Build Week 2026 cut of Kyn's
+agent control loop. It composes versioned agents, prompts, skills, and flows;
+executes real OpenAI Responses function calls; records authoritative evidence;
+diagnoses a causal fault; proposes one bounded repair; requires human approval;
+and reruns against a new immutable flow version.
 
-## Judge path: 60 seconds
+This is not a JavaScript simulation. The HTTP API, orchestration, tool dispatch,
+SQLite ledger, diagnosis validation, repair fence, and sandbox effect are real.
 
-1. Open <https://buildweek.kyn.ist/app/>, or run `python3 serve.py` and open
-   <http://127.0.0.1:4173/app/>.
-2. Read the diagnosis, then select **Queue lease healthy**. This is the evidence
-   that an infrastructure retry would be the wrong intervention.
-3. Select **Approval required**, then choose **Preview controlled intervention**.
-4. Enter a 12+ character reason, acknowledge the local-only scope, and authorize.
-5. Inspect the revision `7 → 8` receipt and switch to **Replay** for the append-only
-   evidence trail.
-6. Choose **Reset demo** to restore the exact signed fixture state.
+## Three-minute judge path
 
-Nothing in that journey can call a tool, deploy software, or create an external
-effect. The transition is a browser-local rehearsal.
+1. Open <https://buildweek.kyn.ist/app/> and choose **Create live agent lab**.
+2. Inspect the three versioned **Agents**, **Prompts**, and **Skills** pinned by flow v1.
+3. Choose **Run real agent flow**. The executor uses OpenAI and two strict local tools.
+4. Inspect the blocked run: production was requested, but the pinned policy permits staging.
+5. Choose **Diagnose from evidence**. The forensic agent must cite exactly the two owned
+   policy/denial events accepted by code.
+6. Choose **Propose bounded repair**. The repair agent may replace only
+   `/policy/allowed_environments` and cannot apply its proposal.
+7. Open the human fence, inspect proposal hash and expected revision, acknowledge the safe
+   sandbox effect, then approve.
+8. Choose **Rerun against flow v2**. The linked child run completes and creates exactly one
+   durable `sandbox_releases` row.
+9. Compare v1/v2 and switch between both hash-linked event ledgers.
 
-## Run it
+The public tool never deploys software. Its only write-capable operation creates a row in a
+local sandbox table. That effect is real, durable, idempotent, and deliberately harmless.
 
-Requirements: Python 3.10+ and a modern browser.
+## Run locally
+
+Requirements: Python 3.11+, a modern browser, and an OpenAI API key.
 
 ```bash
+cp .env.example .env
+# Add OPENAI_API_KEY to the ignored .env file.
 python3 serve.py
 ```
 
-The server prints the local URL. It exposes only the static application,
-`/healthz`, and the local fixture; directory listing and write methods are
-disabled.
+Open <http://127.0.0.1:4173/app/>. There is no package install, build step, framework, or
+external database. Without a key the UI still loads and reports the missing model transport,
+but model actions terminate as failed rather than pretending to run.
 
-| Platform | Runtime path | Tested in this cut |
+Optional environment variables:
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| Linux | Python 3.10+; Chrome/Chromium, Firefox, or Edge | Python 3.13 + Chromium 147 |
-| macOS | Python 3.10+; Safari, Chrome, or Firefox | Contract-compatible; not physically tested |
-| Windows | Python 3.10+; Edge, Chrome, or Firefox | Contract-compatible; not physically tested |
+| `OPENAI_API_KEY` | none | server-side Responses API credential |
+| `OPENAI_MODEL` | `gpt-5.6` | allow-listed model used by seeded agent versions |
+| `KYN_DATABASE_PATH` | `var/kyn-flight-recorder.sqlite3` | SQLite database path |
+| `KYN_WORKSPACE_MODEL_CALL_LIMIT` | `12` | maximum recorded model calls per workspace |
 
-There is no install, compilation, migration, account, or secret. The hosted demo
-is the same static application behind Kyn.ist's HTTPS delivery path; the bundled
-sample trace loads automatically and every simulated transition remains in the
-browser. A judge can also test the complete project from a clean clone without
-rebuilding anything.
+## What is actually agentic
 
-## What the trace proves
+The seeded flow pins three distinct agent versions:
 
-The sample run has reached a write-capable deployment request. The effect has not
-executed because policy requires a named operator decision. At the same time, a
-healthy fenced queue lease proves that restarting infrastructure is not the
-remedy. The deterministic diagnosis joins those facts across agent, tool,
-approval, queue, effect, and terminal evidence.
+| Agent | Prompt | Skill | Authority |
+| --- | --- | --- | --- |
+| Release Sentinel | execution prompt | policy-aware release | `inspect_release_policy`, `stage_release` |
+| Run Forensicist | diagnosis prompt | evidence forensics | no tools; structured diagnosis only |
+| Manifest Repairer | repair prompt | bounded manifest repair | no tools; one structured proposal only |
 
-The legal intervention is deliberately narrow:
+Prompts are immutable templates with declared variables. Skills combine instructions with a
+tool allow-list. Agent versions pin model, instructions, one prompt version, and skill
+versions. Flow versions pin all three agents plus request, policy, and repair bounds. Every
+run records those exact version ids and fingerprints before external I/O.
 
-- it is available only from `blocked`;
-- it must match run revision `7` and the pinned actor;
-- preview is side-effect free;
-- authorization requires a bounded reason and local-simulation acknowledgement;
-- apply advances exactly one revision and appends a receipt;
-- duplicate apply returns the same receipt;
-- `completed` is absorbing until explicit demo reset.
+OpenAI is model transport, not authority. Kyn owns the state machine, handoffs, strict tool
+validation, effects, evidence, diagnosis acceptance, repair validation, approval, and rerun.
+Model prose cannot create a tool effect or approve a repair.
 
-You can also import a local JSON trace up to 1 MiB. The runtime loads the bundled
-machine-readable JSON Schema and rejects missing, mistyped, or unknown fields
-before it evaluates cross-field invariants. Invalid schema versions, dangling
-edges, correlation mismatches, event gaps, nested unsafe effect claims, and
-broken command fences fail closed. Imported content remains in browser memory.
-See the [v1 trace contract](docs/trace-contract.md).
+## Closed-loop contract
 
-## Architecture and trust boundary
-
-| Layer | Responsibility | Dependency |
-| --- | --- | --- |
-| `serve.py` | Read-only static serving, health, CSP and security headers | Python standard library |
-| `app/core.mjs` | Trace validation, redaction, deterministic state machine | Browser platform |
-| `app/app.mjs` | Accessible rendering, import, focus, reset, session receipt | Browser platform |
-| `app/data/demo-run.json` | Versioned synthetic sample and legal transition | Repository fixture |
-| `scripts/gpt56_review.py` | Optional submission-time adversarial evidence review | Python stdlib + explicit OpenAI API call |
-| `deploy/nginx-buildweek.conf` | Read-only public static origin contract | Existing Kyn.ist nginx delivery path |
-
-There is one UI entry, one fixture, one graph model, and one mutation path. All
-dynamic values enter the DOM through text nodes. Sensitive-key redaction happens
-before state reaches rendering. Session storage can retain only the fixture-bound
-command receipt so a reload demonstrates idempotency; **Reset demo** deletes it.
-
-The full security assumptions and residual risks are in the
-[threat model](docs/threat-model.md), and the data lifecycle is in
-[PRIVACY.md](PRIVACY.md).
-
-## OpenAI Build Week: Codex and GPT-5.6
-
-### Codex
-
-The majority of the project was built in one Codex session from an empty,
-standalone repository. Codex was used to:
-
-- inspect the source system and freeze a truthful standalone boundary;
-- design and implement the causal trace contract and intervention state machine;
-- build the responsive, keyboard-complete UI;
-- adversarially test contract, security, error, accessibility, and browser paths;
-- generate reproducible evidence and submission material;
-- keep a forward-only commit chronology.
-
-| Commit | Build Week increment |
-| --- | --- |
-| `84e6c53` | Standalone repository and product contract |
-| `5ddd48a` | Causal flight recorder and guarded intervention |
-| `0065258` | Browser, accessibility, and intervention proof |
-| `94c1261` | Bounded GPT-5.6 evidence-review path |
-| `e967202` | Verified private GitHub release candidate |
-| `7f700ac` | Versioned public origin and live browser proof |
-| `de9d0b6` | Independent Playwright and publication evidence |
-
-Primary Codex build thread: `019f7621-5200-7400-9242-920cb718d09a`.
-
-### GPT-5.6
-
-GPT-5.6 has a bounded review role, not authority over runtime state. The optional
-evidence runner sends an allow-listed subset of the synthetic trace to the
-Responses API and asks GPT-5.6 to challenge whether the deterministic diagnosis
-is actually supported. Structured Outputs constrain the result; the response can
-suggest copy but cannot authorize or mutate the demo.
-
-```bash
-python3 scripts/gpt56_review.py --dry-run
-
-# After setting OPENAI_API_KEY in your environment:
-python3 scripts/gpt56_review.py
+```text
+compose → execute → record → diagnose → propose → human approve → rerun → prove
+             │          │                    │                    │
+        strict tools   owned evidence   hash + revision fence   linked child
 ```
 
-The runner uses `model: gpt-5.6`, low reasoning effort, `store: false`, and one
-bounded request. It persists only a sanitized result, response identifier, token
-counts, and hashes—not the key or raw payloads. Its contract follows OpenAI's
-[GPT-5.6 model documentation](https://developers.openai.com/api/docs/models/gpt-5.6-sol)
-and [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+The first run intentionally requests `production` under a `staging`-only policy. The tool
+denial is authoritative and produces no effect. Code derives a deterministic diagnosis
+candidate from the successful policy inspection and denied stage receipt. The diagnostician
+may explain that candidate, but its structured output is rejected unless the class, path, and
+complete evidence-id set match.
 
-**Current evidence status:** the bounded API call completed on 2026-07-18 with
-returned model `gpt-5.6-sol`. Its structured verdict was `partially_supported`
-at 99% confidence: the observed trace supports the healthy fenced lease and
-pending approval diagnosis, while the previewed revision-8 completion must stay
-labelled as simulation rather than observed history. The sanitized result is
-committed as [`evidence/gpt-5.6-review.json`](evidence/gpt-5.6-review.json), with
-an interpretation note in
-[`evidence/gpt-5.6-review.md`](evidence/gpt-5.6-review.md).
+The repairer gets the accepted diagnosis and a bounded manifest. Code accepts exactly one
+`replace` operation on the pinned allow-listed path and verifies the value preserves staging
+while adding only the requested environment. Application requires the proposal hash, current
+flow revision, human actor, reason, and acknowledgement in one SQLite compare-and-swap.
 
-## Verification
+The old flow version and failed run are never edited. The rerun is a new child run against
+flow v2; success is proven by its tool receipt and one corresponding sandbox-effect row.
 
-Run every dependency-free server, security, schema, and state-machine test:
+## Flat SQLite—not Kyn's internal ontology
+
+This standalone database is an explicit tabular product projection. It does **not** reproduce
+Parts, Entities, Bricks, Frames, graph nodes/edges, or the production Kynist schema.
+
+```text
+workspaces
+prompts → prompt_versions
+skills → skill_versions
+agents → agent_versions
+flows → flow_versions
+runs → events | model_calls | tool_receipts | diagnoses → repairs → repair_approvals
+                                                        └→ sandbox_releases (child run)
+```
+
+Version rows and events are database-immutable. Terminal run states are absorbing. Events
+form a per-run SHA-256 chain. SQLite WAL and short `BEGIN IMMEDIATE` transactions serialize
+mutations; no transaction remains open during OpenAI I/O.
+
+See the [runtime design](docs/runtime-design.md), [ledger contract](docs/trace-contract.md),
+[threat model](docs/threat-model.md), and [privacy lifecycle](PRIVACY.md).
+
+## API and trust boundary
+
+`serve.py` is the composition root and serves both the application and `/api/v1` on one
+origin. `backend.service.ControlPlane` is the only product mutation path.
+
+Public workspaces use an opaque, hashed, 24-hour token in an `HttpOnly`, `SameSite=Strict`,
+`Secure`-on-HTTPS cookie. Mutations require a matching origin. Request size, tool turns,
+workspace model calls, address/global model calls, and concurrent model actions are bounded.
+The API key remains server-side and is never written to SQLite, logs, events, or responses.
+
+The static tool registry exposes only two schemas. A skill stored in SQLite can grant a known
+tool to an agent but can never register code, shell access, filesystem access, arbitrary
+network access, MCP access, or a production connector.
+
+## Verification and evidence
+
+Run all backend, HTTP, database-invariant, resource, server, and UI contract tests:
 
 ```bash
 python3 scripts/verify.py
 ```
 
-Run the real-browser journey if Node 20+ and Chromium are installed:
+Run the complete UI journey in a real local Chromium process against the real HTTP/SQLite
+stack and deterministic provider-shaped responses:
 
 ```bash
-node scripts/browser_verify.mjs
-
-# Exercise the same 38 checks against the public HTTPS origin:
-node scripts/browser_verify.mjs --base-url https://buildweek.kyn.ist
+node scripts/browser_verify.mjs \
+  --report evidence/browser/closed-loop-report.json \
+  --artifacts evidence/browser
 ```
 
-Current reproducible evidence:
+Run the identical browser journey against a configured deployment (this invokes OpenAI):
 
-- 28 Python contract/server/static assertions;
-- 25 JavaScript schema and state-machine assertions;
-- 38/38 Chromium journey checks across desktop, 390 × 844 mobile, and a
-  390 × 520 short-dialog stress case;
-- zero axe-core violations in five blocked, dialog, receipt, and mobile states;
-- first meaningful render remains below the one-second gate on the reference
-  environment;
-- one bounded GPT-5.6 adversarial review completed with sanitized evidence;
-- no unexpected network request, console error, external effect, or secret in the
-  tested browser journey.
+```bash
+node scripts/browser_verify.mjs \
+  --base-url https://buildweek.kyn.ist \
+  --report evidence/live/closed-loop-report.json \
+  --artifacts evidence/live
+```
 
-See [evidence/README.md](evidence/README.md) and the
-[quality-gate matrix](docs/quality-gates.md). A physical screen-reader pass was
-not available and is named as a residual verification gap rather than counted as
-proof.
+Current committed proof:
 
-## Deliberate limits
+- 40 Python tests across positive, negative, boundary, isolation, revision, and database
+  invariants;
+- 6 pure browser-state contract tests;
+- 21/21 real Chromium checks across desktop and 390 px mobile;
+- 21/21 of the same checks completed against real `gpt-5.6` Responses calls;
+- a blocked v1 run with zero effects and completed linked v2 run with one effect;
+- owned diagnosis citations, human approval, two valid event chains, no browser console error,
+  no failed browser request, and no cross-origin browser runtime request.
 
-This Build Week cut is a hermetic developer-tool demo, not the entire Kynist
-production stack. It does not connect to live agents, execute real tools, provide
-multi-tenant authentication, replace production telemetry, or prove that an
-arbitrary imported trace is truthful. It proves that a declared trace can be
-validated, explained, replayed, and advanced under explicit local invariants.
+The real-model report and screenshots are in [`evidence/real-model/`](evidence/real-model/).
+They retain safe ids, hashes, statuses, and UI state—not keys, cookies, prompts, raw provider
+bodies, or hidden reasoning.
+
+## Codex provenance
+
+Codex built and reviewed the majority of this project in one forward-only Build Week thread:
+`019f7621-5200-7400-9242-920cb718d09a`.
+
+The immutable Git history shows the transition from the rejected static cut to the real
+runtime:
+
+| Commit | Increment |
+| --- | --- |
+| `f1ae8b8` | real closed-loop product and runtime contract |
+| `abc6f2e` | deliberately RED runtime tests |
+| `9f01775` | authoritative flat SQLite agent runtime |
+| `287de1f` | deliberately RED HTTP isolation tests |
+| `d838434` | same-origin runtime API |
+| `88612fb` | real-loop UI with Agents, Prompts, and Skills |
+| `2e664a3` | full Chromium closed-loop proof |
+| `502836e` | sanitized real gpt-5.6 browser proof |
+
+## Honest limits
+
+This is not the complete Kynist production stack and does not claim universal framework
+superiority. It does not expose arbitrary user tools, production deployment authority,
+durable multi-tenant identity, the production queue/MCP/connectors, or Kyn's internal data
+model. It demonstrates one narrower differentiator end to end: authoritative execution
+evidence, evidence-bound diagnosis, bounded repair, revision-fenced human authority, and a
+linked rerun that proves the outcome changed.
 
 ## Repository map
 
 ```text
-app/          static application, pure state machine, synthetic fixture
-deploy/       versioned read-only public-origin configuration
-docs/         product, trace, threat, and quality contracts
-evidence/     reproducible reports and browser screenshots
-schema/       machine-readable v1 structural envelope
-scripts/      server/test runners and bounded GPT-5.6 review
-submission/   paste-ready Devpost copy, video script, final checklist
-tests/        dependency-free positive, negative, and boundary tests
+app/          dependency-free browser control plane
+backend/      resources, runtime, tools, SQLite store, and HTTP API
+deploy/       nginx reverse proxy and systemd service contracts
+docs/         product, runtime, ledger, threat, and quality contracts
+evidence/     sanitized deterministic and real-model browser proof
+scripts/      verification runners
+submission/   paste-ready Build Week submission material
+tests/        runtime, HTTP, database, security, and UI contracts
+serve.py      single composition root
 ```
-
-## Provenance and license
-
-This repository and its core functionality are new work created during OpenAI
-Build Week 2026. The forward-only Git history is the timestamped chronology.
-Event references: [Build Week](https://openai.com/build-week/),
-[Devpost](https://openai.devpost.com/), and
-[official rules](https://openai.devpost.com/rules).
 
 MIT — see [LICENSE](LICENSE).

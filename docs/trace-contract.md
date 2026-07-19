@@ -1,90 +1,83 @@
-# Kyn Flight Trace v1 contract
+# Authoritative ledger contract
 
-Version: `1.0`  
-Classification supported by this cut: `synthetic_demo`  
-Structural authority: `schema/kyn-flight-trace-v1.schema.json`
-Semantic authority: `app/core.mjs::validateFixture`
+The standalone Flight Recorder does not accept a client-authored graph or trace fixture.
+Runtime evidence is created by the control plane and committed to flat SQLite rows as work
+happens.
 
-The portable trace is a declaration of evidence, graph causality, and one legal
-local transition. It is not a transport for executable code and it does not make
-an imported claim true merely because the structure is valid.
+## Run envelope
 
-## Structural envelope
+A run pins these fields before model I/O:
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `schema_version` | yes | Exact supported version, currently `1.0` |
-| `fixture` | yes | Stable sample identity, timestamp, and `synthetic_demo` classification |
-| `run` | yes | Run identity, revision, state, diagnosis, goal, and effect declaration |
-| `nodes[]` | yes | Ordered causal evidence in `main` or `guardrail` lanes |
-| `edges[]` | yes | Directed, named relations between node ids |
-| `events[]` | yes | Correlated, contiguous, append-only observed events |
-| `intervention` | yes | The single revision-fenced command and deterministic resolution |
-| `redaction` | yes | Sensitive key classes and display replacement |
+- workspace, flow, immutable flow-version id/version/fingerprint;
+- optional parent run id and stable correlation id;
+- starting revision and `running` state;
+- timestamps and bounded terminal error code.
 
-The interoperable structural envelope lives at
-[`schema/kyn-flight-trace-v1.schema.json`](../schema/kyn-flight-trace-v1.schema.json).
-The runtime imports that exact file and evaluates its local references, required
-fields, closed objects, types, constants/enums, formats, bounds, and collection
-constraints before semantic validation. The runtime validator additionally owns
-cross-field checks that JSON Schema alone does not express.
+A rerun is a new row with `parent_run_id`. It never edits the failed run. Only
+`running → blocked|completed|failed` is legal; terminal states are absorbing in a database
+trigger.
 
-## Semantic invariants
+## Event chain
 
-Validation fails closed unless all of these hold:
+Events are ordered by `(run_id, sequence)` with a unique constraint. Sequence starts at 1.
+Each event contains:
 
-1. The schema version is exactly `1.0` and classification is `synthetic_demo`.
-2. Run status is `blocked` or `completed`; standalone impact declares
-   `external_effect: false`.
-3. Node and edge ids are unique, and every edge endpoint exists.
-4. The diagnosis cause references an existing node.
-5. Every event correlation id equals `run.correlation_id`.
-6. Event ids and sequences are unique; sequences are contiguous from `1`.
-7. Only `approve_tool_call` is accepted, from `blocked`.
-8. `intervention.expected_revision` equals `run.revision`.
-9. The resolution advances exactly one revision and its event sequence continues
-   directly after observed events.
-10. The resolution terminal becomes `completed`.
-11. Redaction includes authorization, password, secret, and token classes. The
-    bundled fixture adds API key, claim token, credential, and cookie classes.
-12. No nested free-form evidence object may smuggle an `external_effect` value
-    other than `false`.
+| Field | Contract |
+| --- | --- |
+| `id` | server-generated stable event id |
+| `run_id` | owning run; cross-run citations are invalid |
+| `sequence` | contiguous per-run integer |
+| `type` | bounded runtime vocabulary such as `agent.started` or `tool.denied` |
+| `actor_type` / `actor_id` | runtime, agent version, tool, or human actor |
+| `payload` | bounded canonical JSON after secret-key redaction |
+| `prev_hash` | fixed genesis marker or prior event hash |
+| `event_hash` | SHA-256 commitment to all material event fields and `prev_hash` |
+| `created_at` | server UTC timestamp included in the commitment |
 
-## Command contract
+Database triggers reject update and delete on events. `verify_event_chain` recomputes
+sequence, predecessor, and event hashes independently from API projections.
 
-Preview takes current state and returns a command projection without changing
-state. Authorization requires the fixture-pinned actor, a trimmed reason from 12
-through 280 characters, and explicit acknowledgement that the effect is a local
-simulation. Apply rechecks the source state and revision before it changes any
-state.
+## Material evidence rows
 
-The receipt binds:
+Events are the readable ordered ledger. The following explicit tables carry the material
+receipts that events reference:
 
-- command and idempotency ids;
-- run and correlation ids;
-- actor and reason;
-- previous and new revisions;
-- completion timestamp and external-effect declaration.
+- `model_calls`: agent version, role, provider response id, model, status, safe usage, and
+  request/response hashes—never raw prompts or provider bodies;
+- `tool_receipts`: call id, validated/redacted arguments, outcome/error, result, effect kind,
+  event id, and idempotency key;
+- `diagnoses`: deterministic fault class, accepted explanation, exact owned evidence ids,
+  confidence, retry argument, and supported repair path;
+- `repairs`: one canonical patch, risk, proposal hash, expected revision, and status;
+- `repair_approvals`: proposal hash, expected revision, actor, reason, acknowledgement, and
+  applied flow-version id;
+- `sandbox_releases`: successful local effect linked to run and flow version.
 
-A duplicate command id returns the existing receipt and cannot append another
-event. A terminal without an owned receipt rejects further commands.
+An event cannot truthfully claim a sandbox effect without the corresponding receipt/effect
+row committed by the same tool transaction.
 
-## Import and rendering boundary
+## Diagnosis evidence rule
 
-- Maximum import size is 1 MiB.
-- The file is parsed as JSON, structurally validated against the bundled schema,
-  then semantically validated before state creation.
-- Sensitive keys are redacted recursively before the accepted object reaches the
-  renderer.
-- Dynamic values use `textContent`; HTML parsing sinks and dynamic code execution
-  are absent.
-- Imported traces live in page memory only. Only the fixture-bound local command
-  receipt may enter session storage.
-- Reset deletes the receipt and reloads the canonical bundled fixture.
+Code derives the supported candidate from receipts before a model is asked to explain it.
+For the seeded failure, the only accepted evidence is:
 
-## Evolution
+1. the successful `inspect_release_policy` receipt event; and
+2. the `stage_release` denial with `error_code=policy_mismatch`.
 
-Breaking semantics require a new `schema_version` and a new validator path. A v1
-consumer must reject, not guess at, an unknown version. New optional presentation
-metadata may be introduced only when it cannot change graph identity, event
-ordering, effect claims, or command authorization.
+The structured diagnosis must return that exact evidence-id set. Missing, additional,
+foreign-run, or invented ids fail closed.
+
+## Repair evidence rule
+
+The proposal hash commits to diagnosis id, flow id, expected revision, and patch. Apply
+requires the exact hash and revision plus human actor, reason, and acknowledgement. One
+transaction inserts the approval, inserts flow v2, advances the flow revision, marks the
+repair applied, and appends approval/version events. A stale or altered command has no
+partial effect.
+
+## Public projection
+
+The same-origin API returns safe nested projections for UI inspection; it does not expose
+workspace token hashes, raw secrets, raw OpenAI requests/responses, authorization headers,
+or unrestricted SQL access. API nesting is a presentation convenience, not an internal
+Parts/Entities/Bricks/Frames or graph storage model.

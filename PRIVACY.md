@@ -1,32 +1,35 @@
 # Privacy and data lifecycle
 
-Kyn.ist Flight Recorder is local-first and contains no application telemetry.
-The bundled trace is synthetic. The demo makes no application request beyond
-loading static files from its own origin, either `serve.py` or
-`buildweek.kyn.ist`.
+Kyn.ist Flight Recorder has no analytics, advertising, remote fonts, third-party browser
+scripts, or application telemetry. The browser talks only to its own origin. OpenAI access
+occurs from the server.
 
-| Data | Source | Location | Lifetime | Deletion |
-| --- | --- | --- | --- | --- |
-| Bundled sample | repository | `app/data/demo-run.json` | repository lifetime | remove repository |
-| Imported trace | user-selected JSON | browser memory | current page | reload, close, or Reset demo |
-| Command receipt | local demo action | browser `sessionStorage` | current tab session | Reset demo or close tab |
-| Local HTTP access line | local request | `serve.py` process stdout | terminal/session policy | stop/clear terminal |
-| Hosted HTTP metadata | request for public static files | Cloudflare, Traefik, and nginx operational logs | hosting-provider/operator policy | hosting-provider/operator controls |
-| GPT-5.6 review packet | explicit script invocation | OpenAI API transit | OpenAI API policy | governed by API account; request uses `store: false` |
-| GPT-5.6 evidence | model response subset | `evidence/gpt-5.6-review.json` | repository lifetime | forward change removing artifact |
+| Data | Stored where | Purpose | Lifetime / deletion |
+| --- | --- | --- | --- |
+| Workspace token | browser `HttpOnly` cookie; SHA-256 hash in SQLite | isolate one anonymous lab | cookie and access expire after 24 hours |
+| Agent resources and runs | local SQLite | execute and inspect the closed loop | operator-controlled demo database retention |
+| Safe event payloads | local SQLite | authoritative replay evidence | same as workspace rows |
+| Model-call metadata | local SQLite | response id, model, status, usage, input/output hashes | same as workspace rows |
+| Tool arguments/results | local SQLite after recursive secret-key redaction | receipt and effect proof | same as workspace rows |
+| Sandbox release | local SQLite | prove one safe local effect | same as workspace rows |
+| API key | server process memory; ignored `.env` or environment | authenticate Responses calls | never written by the application |
+| OpenAI request | OpenAI API transit with `store: false` | agent inference | governed by the API account and OpenAI API policy |
+| HTTP metadata | process/hosting access logs | operation and abuse response | operator/infrastructure policy |
 
-The GPT-5.6 runner is not invoked by the application. It extracts an explicit
-allow list from the synthetic fixture, uses `store: false`, and persists hashes,
-model/response identifiers, token totals, and the structured review. It does not
-persist the API key or raw request/response. Run `--dry-run` to inspect hashes and
-packet size without network access.
+Workspace expiry denies further API access; it is not represented as deletion of immutable
+evidence. The Build Week operator may rotate or remove the entire demo SQLite database under
+its retention policy. Do not submit personal, confidential, or regulated data to this public
+lab.
 
-Redaction protects values under declared sensitive key classes before rendering,
-but it is not a content-aware data-loss-prevention system. Do not import real
-credentials, personal data, or confidential production traces into this Build
-Week cut.
+Prompts sent to OpenAI contain the seeded Build Week request, pinned agent/skill instructions,
+and bounded safe evidence required for diagnosis or repair. They do not contain the workspace
+cookie, API key, authorization headers, raw hidden reasoning, or unrestricted database rows.
+Every request sets `store: false`.
 
-The application code sets no cookies and includes no analytics, ad identifiers,
-service workers, remote fonts, or third-party scripts. Public delivery
-infrastructure may process normal HTTP metadata; it never receives the contents
-of a trace selected through the browser file picker.
+The application recursively redacts values whose keys look like credentials, tokens,
+passwords, secrets, cookies, or authorization data before tool arguments/results enter the
+ledger. This is defense in depth, not a general data-loss-prevention system.
+
+Committed evidence contains screenshots plus browser assertions over safe ids, hashes,
+statuses, counts, and effects. It intentionally excludes raw provider requests/responses,
+full prompt text, cookies, the API key, and hidden reasoning.

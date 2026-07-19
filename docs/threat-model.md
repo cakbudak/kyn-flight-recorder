@@ -1,70 +1,53 @@
 # Threat model
 
-Date: 2026-07-18  
-Target: applicable OWASP ASVS 5.0 Level 1 controls for this local static surface  
-Claim boundary: security review target, not ASVS certification
+## Boundary
 
-## Assets and trust boundaries
+The public surface is an anonymous, short-lived Build Week lab. The browser and same-origin
+Python API are untrusted at their input boundary. OpenAI output is untrusted model output.
+SQLite and the statically coded tool registry are the local authority boundary.
 
-Protected assets are the developer's trace content, local command receipt, causal
-integrity, browser context, and API key used by the separate GPT-5.6 evidence
-runner. The browser trusts repository code and the bundled synthetic fixture. A
-user-selected import is untrusted until validation and redaction finish. Delivery
-is either the read-only Python loopback origin or the public static
-`buildweek.kyn.ist` origin behind Cloudflare, Traefik, and nginx. The application
-has no server-side trace API; imported files and simulated receipts remain in the
-browser. The OpenAI API boundary exists only when a developer explicitly runs
-`scripts/gpt56_review.py` without `--dry-run`.
-
-The demo has no identity system, database, production credential, connector, or
-external tool authority. Those are exclusions, not silently assumed controls.
+The only write-capable public tool creates an idempotent row in `sandbox_releases`. There is
+no shell, arbitrary filesystem, arbitrary URL fetch, MCP connector, production deployer, or
+generic code registry.
 
 ## Threats and controls
 
-| Threat | Attack path | Control | Evidence |
-| --- | --- | --- | --- |
-| Script injection | HTML/script strings in imported fields | JSON parse, schema + semantic fail-closed contract, dynamic DOM via `textContent`, CSP rejects inline/remote script | static sink tests + browser CSP check |
-| Credential disclosure | Secret-like fields in fixture/import | recursive key-class redaction before state/render; allow-listed GPT packet | core redaction tests + GPT packet negative test |
-| Trace confusion | Dangling graph, foreign correlation, duplicate/gapped events | unique ids, endpoint checks, exact correlation, contiguous sequence validation | negative state-machine tests |
-| Confused deputy | Crafted trace requests a different command/effect | closed JSON Schema; only `approve_tool_call`; blocked-only source; fixed actor; acknowledgement; recursive `external_effect=false` enforcement | schema + command-contract tests |
-| Lost update/replay | Stale revision or duplicate apply | compare expected/current revision; one-revision transition; idempotency receipt; terminal absorption | revision/idempotency tests |
-| Local persistence surprise | Receipt survives reload | session storage only, fixture-bound rehydration, visible Reset deletion | reload/reset browser journey |
-| Resource exhaustion | Very large import or recursive data | 1 MiB file cap; local browser only | browser import path; residual depth limit below |
-| Path traversal/listing | HTTP request or symlink escapes project root | canonical path confinement, no listing, only static reads, direct missing/traversal/symlink 404 | server negative tests |
-| Unauthorized write | POST or app network call | explicit 405 for common write methods; GET/HEAD-only surface; UI has no effect endpoint; browser network inventory must stay local | server + browser checks |
-| Supply-chain execution | Package install/build fetches code | no runtime or test package install; remote assets absent | clean runtime contract + static tests |
-| API-key leakage | GPT evidence runner logs/persists key | environment-only key, fixed HTTPS endpoint, sanitized artifact, no raw request/response persistence | evidence-runner tests; code review |
-| Model authority escalation | GPT review authorizes a command | review runner is separate from app and output is evidence-only | architecture boundary + no import path from evidence result |
+| Threat | Control | Residual risk |
+| --- | --- | --- |
+| Model requests an unauthorized tool | Responses receives only effective tools; runtime rechecks static registry and pinned skill grants | model call can fail, but cannot gain authority |
+| Model prose claims an effect | terminal outcome derives from committed tool receipts/effect rows, never prose | misleading prose may exist only as hashed output, not product truth |
+| Prompt injection changes policy | request and seeded prompts are server-owned; code validates calls and effect policy | future arbitrary user prompts require stronger content controls |
+| Diagnosis invents evidence | deterministic candidate plus exact owned evidence-id validation | supported fault vocabulary is intentionally narrow |
+| Repair changes unrelated fields | one operation, allowed operation/path/value checks, proposal hash | only the seeded policy mismatch is repairable |
+| Agent applies its own repair | no apply tool; separate human HTTP command requires acknowledgement, actor, reason, hash, and revision | anonymous actor label is not strong identity |
+| Stale/concurrent approval | `BEGIN IMMEDIATE` compare-and-swap on flow revision; idempotent identical replay | SQLite limits horizontal scaling |
+| Cross-workspace read | random opaque cookie token, only hash stored, every lookup scoped by workspace | anonymous bearer cookie can be used by anyone who steals it |
+| CSRF/cross-origin mutation | exact same-origin validation, SameSite=Strict cookie, no CORS | same-origin script compromise remains in scope of CSP/code integrity |
+| Overspend/denial of service | body, turn, tool, output-token, workspace, address/global hourly, and concurrency bounds | distributed abuse behind shared/proxied addresses can still consume global budget |
+| API-key disclosure | allow-listed `.env` loading, server-only client, no key in DB/events/responses/logs | host compromise is outside this app boundary |
+| Secret in tool payload | exact schemas plus recursive secret-key redaction before persistence/render | redaction is key-based, not semantic DLP |
+| Event tampering | append-only triggers, contiguous sequence, predecessor + SHA-256 chain | host/DB owner can replace the entire database |
+| Proxy spoofing | deployment is behind Cloudflare/Traefik; nginx forwards host/proto and bounded client metadata | direct exposure of host port must be prevented by firewall |
 
-## Security headers
+## Failure behavior
 
-Both `serve.py` and the dedicated public static origin send a restrictive Content
-Security Policy, `nosniff`, a strict referrer policy, same-origin opener/resource policy,
-denied framing, a restrictive Permissions Policy, and `Cache-Control: no-store`
-for application and JSON responses. The HTTPS origin additionally sends HSTS.
-These headers are defense in depth; DOM-safe construction and semantic validation
-remain the primary controls.
+- Missing API key or provider failure creates a terminal `failed` run; the UI does not offer
+  a diagnosis meant for a policy-blocked run.
+- Invalid Responses shapes, bad JSON, missing required tools, unknown tools, extra structured
+  fields, foreign evidence, and unsafe repair paths fail closed.
+- External I/O is never performed while a SQLite write transaction is open.
+- HTTP errors expose stable codes and safe messages, not provider bodies or SQL details.
 
-## Residual risks
+## Deployment assumptions
 
-- Redaction is key-name based, not a general secret-content classifier. A secret
-  hidden under an innocent key may render. Do not import real secrets.
-- JSON nesting depth is bounded indirectly by the 1 MiB limit, not an explicit
-  depth counter. A hostile deeply nested file could still stress a browser parser.
-- A valid synthetic trace can lie about its observations. Authenticity/signature
-  verification is outside this cut.
-- The public demo intentionally has no authentication because it contains only
-  synthetic data and performs no server-side mutation. Do not import real secrets
-  or confidential traces; public delivery infrastructure can observe request
-  metadata even though selected file content never leaves the browser.
-- The local server does not provide user authentication. Do not bind it to a
-  public interface on an untrusted network.
-- The GPT evidence call sends the allow-listed synthetic packet to OpenAI when
-  explicitly executed. It is not part of offline demo operation.
-- No physical assistive-technology or cross-browser security pass was available.
+- TLS terminates before nginx; `X-Forwarded-Proto=https` is preserved so cookies are Secure.
+- The host runtime port is reachable by the nginx container but blocked from the public
+  internet.
+- The ignored `.env` or service environment is readable only by the service account.
+- The operator controls SQLite retention, backups, host logs, firewall, and service updates.
 
-## Release rule
+## Explicitly not proved
 
-Do not relabel this cut as production-live without adding authenticated trace
-provenance, explicit tenant authorization, durable audit storage, rate/depth
-limits, connector isolation, and real deployment threat modeling.
+This cut does not prove strong user identity, production connector safety, multi-host SQLite
+coordination, arbitrary workflow repair, prompt-injection resistance for untrusted user
+prompts, or host-level tamper resistance. Those are not claimed by the submission.
