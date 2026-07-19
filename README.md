@@ -6,16 +6,18 @@ compose executable Flows, and operate every Run from authoritative evidence.**
 **[Open the live Studio](https://buildweek.kyn.ist/app/)** ·
 **[Inspect the source](https://github.com/cakbudak/kyn-agent-studio)**
 
-Kyn.ist Agent Studio is a standalone OpenAI Build Week 2026 projection of one
-part of Kyn.ist: its agent execution and maintenance discipline. It is a real,
+**Model text is data. It is never authority.**
+
+An Agent here can choose an Action, but the Skill grant, the exact Action
+version, the strict schema, the runtime validation, and the effect policy decide
+whether anything happens. A failed Run cannot be edited into a success. A repair
+cannot rewrite its parent. And a mistake made three times independently stops
+being available.
+
+Agent Studio is a standalone OpenAI Build Week 2026 cut of one discipline inside
+Kyn.ist: its agent execution, ratification, and maintenance contracts. It is a
 configurable workflow product—not a prescribed click-through and not a frontend
 simulation.
-
-The Studio deliberately does **not** publish Kyn.ist's private Ainou layer,
-Parts/Entities, Bricks/Packs/Frames, CE, production connectors, or internal data
-model. Instead, it exposes a bounded flat SQLite derivation with enough real
-functionality to build, run, inspect, approve, diagnose, repair, and rerun agent
-work.
 
 ## What you can build
 
@@ -41,6 +43,9 @@ work.
 - On any supported blocked Run, use the integrated **maintenance loop**:
   code-owned causal evidence → constrained Agent explanation → bounded repair →
   human revision fence → immutable Action/Flow successors → linked proof Run.
+- Watch the runtime **ratify its own dead ends**. A failure recurring across
+  three independent Runs becomes `canonical` and is refused before a fourth Run
+  is created—deterministically, with citations, and with no model in the loop.
 
 The seeded `Agent-reviewed launch` Flow is one editable example:
 
@@ -130,6 +135,33 @@ validates one allow-listed repair operation, and applies it only through a human
 hash/revision compare-and-swap. Applying creates immutable Action and Flow
 successors. A linked proof child—not model prose—establishes the changed outcome.
 
+### Ratification plane
+
+Most agent systems have a memory of what they did. This one has a memory of what
+did not work, and that memory has veto power.
+
+When a Run terminates blocked or failed, the runtime mints append-only evidence
+of the exact approach that failed—the pinned Flow version, the node, the error
+code, and a normalized fault detail. Nothing increments a mutable counter.
+`ratification_state` is **derived** by counting distinct citing Runs:
+
+```text
+1 independent Run   → proposed    recorded; execution unaffected
+2 independent Runs  → confirmed   visible in the Run surface
+3 independent Runs  → canonical   check_brake refuses the path
+```
+
+At `canonical`, a further Run on that exact pinned path is refused **before it is
+created**: no Run row, no Step, no event, no effect. The refusal cites the prior
+Run IDs, and every citation resolves to a hash-linked event that already existed.
+
+No model participates in any part of this. It is a count over append-only rows,
+so an Agent cannot argue its way past it.
+
+Publishing a repaired successor Flow version produces a new pinned path and
+therefore a new fingerprint. Fixing the problem always clears the brake; only
+repeating it unchanged is refused. The brake is a memory, not a trap.
+
 ## Flat SQLite projection
 
 This repository contains conventional product tables—not Kyn.ist's internal
@@ -151,22 +183,34 @@ automation_runs → automation_run_steps
                 → automation_effects
                 → automation_diagnoses → automation_repair_proposals
                                        → automation_repair_decisions
+                → automation_dead_end_evidence
 ```
 
 SQLite WAL and short `BEGIN IMMEDIATE` transactions serialize mutations. Database
 triggers enforce immutable definition/evidence rows, legal Run and Step
 transitions, terminal absorption, and optimistic revision fences.
 
-## Deliberate public boundary
+## What this is a projection of
 
-The only general write-capable Action appends an idempotent row to the isolated
-workspace sandbox. The public runtime has no shell execution, filesystem access,
-arbitrary HTTP, arbitrary MCP registration, production deployment authority, or
-tenant-wide secret store.
+Agent Studio is a standalone cut of one discipline inside Kyn.ist: how agent work
+is authorized, executed, evidenced, and maintained. It runs from a clean clone
+with Python and a browser. Nothing here calls back to a private service.
 
-This boundary is not a mock. It is the smallest safe environment in which real
-agent behavior, authority, orchestration, observation, approval, and maintenance
-can all be judged without open-sourcing the private Kyn.ist stack.
+The mechanisms are real, and each is a projection of a deeper substrate:
+
+| Here | In the private stack |
+| --- | --- |
+| Ratification over repeated Runs | Ratification over a knowledge graph with constraint-trigger invariants, per-producer trust cells, and quorum distillation across independent sources |
+| Skill grants pinning exact Action versions | A capability catalog with per-operation maturity and live-proof ratification gating |
+| One attributable human approval | Risk-classed operations with separation of duties and crypto-shreddable decision reasons |
+| A hash-linked event ledger | The same ledger joined to a causal projection and saved graph lenses over one structure graph |
+
+The public cut is bounded on purpose. The only general write-capable Action
+appends an idempotent row to an isolated workspace sandbox; there is no shell,
+filesystem, arbitrary HTTP, arbitrary MCP registration, production authority, or
+tenant-wide secret store. That is the smallest environment in which real agent
+behavior, authority, orchestration, observation, approval, ratification, and
+maintenance can all be judged at once.
 
 ## Run locally
 
