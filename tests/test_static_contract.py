@@ -42,6 +42,9 @@ class StaticContractTests(unittest.TestCase):
         cls.service = (ROOT / "deploy" / "kyn-flight-recorder.service").read_text(
             encoding="utf-8"
         )
+        cls.user_service = (
+            ROOT / "deploy" / "kyn-flight-recorder-user.service"
+        ).read_text(encoding="utf-8")
 
     def test_application_has_no_remote_executable_or_style_dependency(self) -> None:
         parser = SurfaceParser()
@@ -178,11 +181,15 @@ class StaticContractTests(unittest.TestCase):
             "--host 172.17.0.1 --port 4173",
             "NoNewPrivileges=true",
             "ProtectSystem=strict",
-            "StateDirectory=kyn-flight-recorder",
             "UMask=0077",
         ):
             with self.subTest(directive=directive):
                 self.assertIn(directive, self.service)
+                self.assertIn(directive, self.user_service)
+        self.assertIn("StateDirectory=kyn-flight-recorder", self.service)
+        self.assertIn("ReadWritePaths=/opt/server/projects/buildweek.kyn.ist/var", self.user_service)
+        self.assertNotIn("User=", self.user_service)
+        self.assertIn("WantedBy=default.target", self.user_service)
 
     def test_superseded_static_runtime_files_are_absent(self) -> None:
         for relative in (

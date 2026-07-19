@@ -210,7 +210,7 @@ linked rerun that proves the outcome changed.
 ```text
 app/          dependency-free browser control plane
 backend/      resources, runtime, tools, SQLite store, and HTTP API
-deploy/       nginx reverse proxy and systemd service contracts
+deploy/       nginx reverse proxy plus system/user service contracts
 docs/         product, runtime, ledger, threat, and quality contracts
 evidence/     sanitized deterministic and real-model browser proof
 scripts/      verification runners
