@@ -10,17 +10,17 @@ automation runtime. A visitor can:
 
 1. define typed, versioned Actions;
 2. define versioned Prompts, Skills, and Agents;
-3. compose pinned Action/Agent nodes into an acyclic Flow;
-4. execute deterministic and OpenAI-backed Runs;
-5. inspect authoritative Steps, events, model calls, receipts, approvals, and
+3. compose pinned Action/Agent nodes on a visual acyclic Flow canvas;
+4. attach manual, secret-webhook, and interval triggers;
+5. execute deterministic and OpenAI-backed Runs through a bounded worker;
+6. inspect authoritative Steps, events, model calls, receipts, approvals, and
    effects;
-6. pause and resume at an immutable Human approval;
-7. rerun terminal work as a linked child; and
-8. operate the included evidence → diagnosis → bounded repair → approval → rerun
-   maintenance loop.
+7. pause and resume at an immutable Human approval;
+8. rerun terminal work as a linked child; and
+9. maintain any supported blocked Run through evidence → diagnosis → bounded
+   repair → approval → successor → linked proof.
 
-The seeded launch Flow and Repair Lab are examples. Neither is the only legal
-journey.
+The seeded launch Flow is one editable use case. It is not a prescribed journey.
 
 ## Public boundary
 
@@ -59,13 +59,16 @@ Skill versions. Its effective Action set is derived from those pins.
 ### Flow
 
 An Automation Flow version pins input schema, one start node, Action/Agent nodes,
-explicit input mappings, outcome routes, and all transitive resource
-fingerprints. Graphs are bounded, reachable, and acyclic.
+canvas positions, explicit input mappings, retry/backoff/error settings, outcome
+routes, and all transitive resource fingerprints. Graphs are bounded, reachable,
+and acyclic.
 
 ## Run contract
 
 - Input is validated before a Run advances.
 - A Run pins one immutable Flow version before external I/O.
+- Webhook and schedule bindings pin the Flow version active at trigger creation.
+- Trigger enable/disable is guarded by an optimistic configuration revision.
 - Each node attempt creates a durable Step.
 - Each Action attempt creates a durable receipt.
 - OpenAI calls record safe metadata and hashes, never raw credentials.
@@ -92,9 +95,12 @@ fingerprints. Graphs are bounded, reachable, and acyclic.
 | --- | --- | --- |
 | `ai` | execute pinned Agent/Prompt/Skills; optional strict Action calls | visitor's OpenAI account |
 | `template` | deterministic declared-variable rendering | none |
+| `transform` | declarative input/literal mapping into a strict output | none |
+| `delay` | bounded 0–5000 ms pause and pass-through | none |
 | `condition` | one typed comparison and explicit branch outcome | none |
+| `assert` | block on one failed declared comparison | none |
 | `approval` | pause and await immutable Human decision | human |
-| `sandbox` | append one idempotent workspace-local effect | local SQLite |
+| `data_store` | append one idempotent workspace-local effect | local SQLite |
 
 ## Invariants
 
@@ -111,19 +117,18 @@ fingerprints. Graphs are bounded, reachable, and acyclic.
 - Workspace IDs never bypass opaque-cookie ownership checks.
 - Secret-like payload fields are rejected or redacted before evidence persistence.
 
-## Repair Lab contract
+## Integrated maintenance contract
 
-The legacy release template remains because it demonstrates functionality that a
-generic builder alone does not prove:
+Maintenance is part of each supported failed Run, not a separate scripted demo:
 
 ```text
-blocked tool receipt
+blocked/failed Action receipt
   → deterministic causal candidate
   → model explanation with exact owned event citations
-  → one allow-listed repair proposal
-  → human proposal-hash + revision fence
-  → successor Flow version
-  → linked child Run with changed authoritative effect
+  → one allowlisted Action repair proposal
+  → human proposal-hash + Action/Flow revision fences
+  → successor Action and Flow versions
+  → linked proof Run with changed authoritative outcome
 ```
 
 The model cannot invent evidence, apply its proposal, or rewrite the failed Run.
@@ -136,7 +141,8 @@ The model cannot invent evidence, apply its proposal, or rewrite the failed Run.
 | execute | Deterministic and real Responses-backed Flows produce validated Runs |
 | observe | Steps, calls, receipts, events, approvals, and effects are inspectable |
 | approve | Run pauses and resumes/blocks only from immutable Human command |
-| maintain | Repair Lab diagnosis is evidence-owned and repair is bounded/fenced |
+| trigger | webhook and interval bindings pin a definition and create real Runs |
+| maintain | Run diagnosis is evidence-owned and repair is bounded/fenced |
 | rerun | Child is linked, parent remains unchanged, idempotency prevents duplicates |
 | safety | BYOK, same-origin, isolation, bounds, no arbitrary tools or secret persistence |
 | database | Flat tables, immutability triggers, legal transitions, no private ontology |

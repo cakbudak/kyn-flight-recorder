@@ -1,32 +1,34 @@
-export const PHASE_ORDER = ["ready", "blocked", "diagnosed", "repair", "applied", "proven"];
+export const TERMINAL_RUN_STATUSES = Object.freeze([
+  "completed",
+  "blocked",
+  "failed",
+  "cancelled"
+]);
 
-export function rootRunFor(snapshot) {
-  return snapshot?.runs?.find((run) => !run.parent_run_id) ?? null;
+export function isActiveRun(run) {
+  return Boolean(run && !TERMINAL_RUN_STATUSES.includes(run.status));
 }
 
-export function childRunFor(snapshot, root = rootRunFor(snapshot)) {
-  return root
-    ? snapshot?.runs?.find((run) => run.parent_run_id === root.id) ?? null
-    : null;
+export function latestStepForNode(run, nodeId) {
+  return run?.steps?.filter((step) => step.node_id === nodeId).at(-1) ?? null;
 }
 
-export function phaseFor(snapshot) {
-  const root = rootRunFor(snapshot);
-  const child = childRunFor(snapshot, root);
-  if (child?.status === "completed") return "proven";
-  if (!root) return "ready";
-  if (root.status === "failed" || child?.status === "failed") return "failed";
-  if (root.repair?.status === "applied") return "applied";
-  if (root.repair?.status === "proposed") return "repair";
-  if (root.diagnosis) return "diagnosed";
-  return "blocked";
-}
-
-export function selectedRunFor(snapshot, selectedRunId = null) {
-  const runs = snapshot?.runs ?? [];
-  return (
-    runs.find((run) => run.id === selectedRunId) ??
-    childRunFor(snapshot) ??
-    rootRunFor(snapshot)
+export function maintenancePhase(run, runs = []) {
+  if (!run) return "unavailable";
+  const proof = runs.find(
+    (candidate) =>
+      candidate.parent_run_id === run.id &&
+      candidate.flow_version === run.repair?.applied_flow_version
   );
+  if (proof?.status === "completed") return "proven";
+  if (run.repair?.status === "applied") return "applied";
+  if (run.repair?.status === "proposed") return "proposed";
+  if (run.diagnosis) return "diagnosed";
+  if (["blocked", "failed"].includes(run.status)) return "failed";
+  return "not-required";
+}
+
+export function selectedStudioRun(snapshot, selectedRunId = null) {
+  const runs = snapshot?.studio?.runs ?? [];
+  return runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
 }

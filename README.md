@@ -20,19 +20,25 @@ work.
 ## What you can build
 
 - **Define Actions** with strict input/output JSON Schemas. Built-in execution
-  kinds are AI, template, condition, Human approval, and idempotent sandbox
-  effect.
-- **Build Flows** as explicit acyclic graphs of pinned Action and Agent versions.
-  Every node declares input mappings; every branch declares an outcome route.
+  kinds are AI, template, transform, delay, condition, assertion, Human approval,
+  and an idempotent workspace data store.
+- **Build Flows visually** on a node canvas. Drag pinned Action or Agent versions,
+  connect explicit outcomes, map input/literal/predecessor data, set retry and
+  error policy, then publish an immutable successor version.
+- Attach real **webhook and interval triggers**. A trigger always pins the Flow
+  version current when it is created. Model-backed trigger Runs wait safely for
+  the visitor's browser-owned key instead of persisting a credential.
 - Create **Versioned Agents, Prompts, and Skills**. Skills grant exact callable
   Action version IDs; model text cannot widen authority.
-- **Observe Runs** through Steps, model calls, Action receipts, approvals,
-  effects, and hash-linked events.
+- **Operate Runs live** through the same graph, with current-node state, bounded
+  attempts/backoff, cancellation, Steps, model calls, Action receipts,
+  approvals, effects, and hash-linked events.
 - Pause a live graph at a real Human approval, commit an attributable decision,
   then resume the same pinned Run.
 - Rerun a terminal execution as a linked child without rewriting its parent.
-- Use the **Repair Lab** to execute a complete failure → evidence-owned diagnosis
-  → bounded repair → human revision fence → child rerun proof loop.
+- On any supported blocked Run, use the integrated **maintenance loop**:
+  code-owned causal evidence → constrained Agent explanation → bounded repair →
+  human revision fence → immutable Action/Flow successors → linked proof Run.
 
 The seeded `Agent-reviewed launch` Flow is one editable example:
 
@@ -49,19 +55,23 @@ own mixed graph from scratch.
 1. Open the live Studio and create an isolated workspace.
 2. Go to **Actions** and create a Template Action. Its schemas and configuration
    are visible and editable.
-3. Go to **Flows**, create a Flow, select the Action version, and map the Flow
-   input into its node.
-4. Start the deterministic Flow. It runs without an OpenAI credential and
-   produces a validated output plus immutable receipt and event chain.
+3. Go to **Flows**, create a visual Flow, drag another capability onto the canvas,
+   connect it, inspect typed mappings and retry policy, then publish v1.
+4. Add a webhook trigger and invoke the one-time URL, or start the Flow manually.
+   The Run is pinned before execution and becomes visible while the bounded worker
+   is active.
 5. Open **Configuration**, paste your own OpenAI API key, and save it for this
    browser tab.
 6. Start `Agent-reviewed launch`. The official OpenAI SDK executes its pinned
    Agent/Prompt/Skill and the Run pauses at Human approval.
 7. Inspect Steps, model calls, receipts, and events. Approve the pending request;
    the graph resumes and writes exactly one idempotent SQLite sandbox effect.
-8. Rerun it. The child pins the same Flow version and keeps the parent intact.
-9. Open **Repair Lab** for the deeper closed loop: real tool denial, cited causal
-   diagnosis, bounded repair proposal, revision-fenced approval, and linked proof.
+8. Edit the Flow on canvas and publish v2. Existing Runs still render and retain
+   their exact v1 graph.
+9. Create a Data Store Action with `write_enabled:false`, put it in a Flow, and
+   run it. From that blocked Run, execute Diagnose → Propose → Approve → Proof.
+   The parent stays blocked with zero effects; its linked child runs Flow v2 and
+   commits exactly one effect.
 
 ## Browser-owned OpenAI credential
 
@@ -87,9 +97,11 @@ rows are immutable at the SQLite layer.
 
 ### Execution plane
 
-A Run pins one Flow version, validates input, maps data into Steps, and invokes
-every graph capability through the same Action path. Terminal states are
-absorbing. A retry or rerun creates a linked new Run.
+A Run is created with one fully pinned Flow version before worker/provider I/O,
+then validates input, maps data into Steps, and invokes every graph capability
+through the same Action path. Attempts are bounded to three with explicit retry
+codes and backoff. Terminal states are absorbing. A rerun creates a linked new
+Run; it never reopens its parent.
 
 Events form a per-Run SHA-256 chain. Action receipts, model calls, approval
 decisions, and sandbox effects are append-only. External OpenAI I/O never occurs
@@ -104,11 +116,11 @@ uses strict OpenAI function schemas. A model response is data, never authority.
 
 ### Maintenance plane
 
-The general Studio preserves failed Runs and supports linked reruns. The included
-Repair Lab additionally derives a deterministic candidate from authoritative
-receipts, requires the diagnostician to cite the complete owned evidence set,
+The Studio derives a deterministic causal candidate from authoritative receipts,
+lets a pinned diagnostician explain only that candidate and its owned event IDs,
 validates one allow-listed repair operation, and applies it only through a human
-hash/revision compare-and-swap.
+hash/revision compare-and-swap. Applying creates immutable Action and Flow
+successors. A linked proof child—not model prose—establishes the changed outcome.
 
 ## Flat SQLite projection
 
@@ -122,17 +134,15 @@ skills → skill_versions
 agents → agent_versions
 actions → action_versions
 automation_flows → automation_flow_versions
+                 → automation_trigger_bindings
 automation_runs → automation_run_steps
                 → automation_events
                 → automation_model_calls
                 → automation_action_receipts
                 → automation_approval_requests → automation_approval_decisions
                 → automation_effects
-
-Repair Lab:
-flows → flow_versions → runs → events | model_calls | tool_receipts
-                              → diagnoses → repairs → repair_approvals
-                              → sandbox_releases
+                → automation_diagnoses → automation_repair_proposals
+                                       → automation_repair_decisions
 ```
 
 SQLite WAL and short `BEGIN IMMEDIATE` transactions serialize mutations. Database
@@ -185,10 +195,20 @@ Important Studio routes:
 ```text
 POST /api/v1/studio/actions
 POST /api/v1/studio/flows
-POST /api/v1/studio/flows/:id/runs
+POST /api/v1/studio/flows/:id/versions
+POST /api/v1/studio/flows/:id/triggers
+POST /api/v1/studio/triggers/:id/state
+POST /api/v1/studio/flows/:id/runs:enqueue
+POST /api/v1/hooks/:one-time-secret
 GET  /api/v1/studio/runs/:id
+POST /api/v1/studio/runs/:id:continue
+POST /api/v1/studio/runs/:id:cancel
 POST /api/v1/studio/approvals/:id/decisions
 POST /api/v1/studio/runs/:id/reruns
+POST /api/v1/studio/runs/:id/diagnoses
+POST /api/v1/studio/diagnoses/:id/repairs
+POST /api/v1/studio/repairs/:id/apply
+POST /api/v1/studio/repairs/:id/proof
 
 POST /api/v1/prompts
 POST /api/v1/skills
@@ -213,12 +233,14 @@ node scripts/browser_verify.mjs \
 
 The browser verifier exercises the real same-origin HTTP and SQLite stack through
 workspace creation, Action definition, Flow composition, deterministic execution,
-AI execution, approval/resume, evidence inspection, linked rerun, and Repair Lab.
+canvas successor publication, webhook execution, asynchronous AI execution,
+approval/resume, live graph evidence, linked rerun, and integrated maintenance.
 Provider-shaped deterministic responses are used locally; the same journey can be
 run against the deployed OpenAI-backed service. The committed
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json)
 and [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
-both pass 21/21; the latter is the public HTTPS journey with real GPT-5.6 calls.
+are generated from one runner. The current local journey passes 24/24 checks; the public HTTPS report is
+regenerated from this exact runner after deployment.
 
 ## Codex provenance
 

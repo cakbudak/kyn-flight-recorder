@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const TIMEOUT_MS = 180_000;
+const TIMEOUT_MS = 60_000;
 const checks = [];
 const APPROVAL_DEMO_BRIEF =
   "Launch a Build Week preview for judges. A 20–4000 character brief enters a " +
@@ -31,6 +31,10 @@ function record(name, condition, detail = null) {
   if (!condition) {
     throw new Error(`check failed: ${name}${detail ? ` (${JSON.stringify(detail)})` : ""}`);
   }
+}
+
+function progress(label) {
+  process.stderr.write(`[browser] ${label}\n`);
 }
 
 function delay(milliseconds) {
@@ -228,9 +232,9 @@ async function main() {
     await page.locator("#overview-view").waitFor({ state: "visible" });
     const initial = await workspaceSnapshot(page);
     record(
-      "workspace seeds five Action kinds and one editable Flow",
-      initial.studio.actions.length >= 5 &&
-        new Set(initial.studio.actions.map((action) => action.version.kind)).size >= 5 &&
+      "workspace seeds the complete bounded Action palette and one editable Flow",
+      initial.studio.actions.length >= 8 &&
+        new Set(initial.studio.actions.map((action) => action.version.kind)).size >= 8 &&
         initial.studio.flows.length >= 1,
       {
         actions: initial.studio.actions.length,
@@ -244,6 +248,7 @@ async function main() {
     await page.locator("#action-dialog").waitFor({ state: "visible" });
     await page.locator("#action-name").fill("Browser greeting");
     await page.locator("#action-slug").fill("browser-greeting");
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "02-action-contract.png"));
     await page.locator("#action-form button[type='submit']").click();
     await waitUntilReady(page);
     await page.waitForFunction(() => document.querySelectorAll("#action-list .definition-card").length >= 6);
@@ -257,22 +262,20 @@ async function main() {
 
     await page.locator('[data-view="flows"]').click();
     await page.locator("#create-flow").click();
-    await page.locator("#flow-dialog").waitFor({ state: "visible" });
-    await page.locator("#flow-name").fill("Browser greeting Flow");
-    await page.locator("#flow-slug").fill("browser-greeting-flow");
-    await page.locator("[data-node-field='version']").selectOption(browserAction.version.id);
-    await page.locator("#flow-input-schema").fill(JSON.stringify(browserAction.version.input_schema, null, 2));
-    await page.locator("[data-node-field='mapping']").fill(
-      JSON.stringify({ name: { source: "input", path: "name" } }, null, 2)
-    );
-    await page.locator("#flow-form button[type='submit']").click();
+    await page.locator(".visual-builder.is-editing").waitFor({ state: "visible" });
+    await page.locator("[data-flow-settings]").click();
+    await page.locator('[data-flow-setting="name"]').fill("Browser greeting Flow");
+    await page.locator('[data-flow-setting="slug"]').fill("browser-greeting-flow");
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "02-visual-flow-builder.png"));
+    await page.locator("[data-publish-flow-draft]").click();
     await waitUntilReady(page);
-    await page.waitForFunction(() => document.querySelectorAll("#flow-list .selection-button").length >= 2);
+    await page.waitForFunction(() => document.querySelectorAll("#flow-list .selection-button").length >= 3);
     snapshot = await workspaceSnapshot(page);
     const deterministicFlow = snapshot.studio.flows.find((flow) => flow.slug === "browser-greeting-flow");
     record(
       "browser composes a user-defined version-pinned Flow",
-      deterministicFlow?.version.nodes[0].version_id === browserAction.version.id &&
+      deterministicFlow?.version.nodes.length === 1 &&
+        deterministicFlow.version.nodes[0].version_id === browserAction.version.id &&
         deterministicFlow.version.requires_model === false,
       deterministicFlow ? { id: deterministicFlow.id, nodes: deterministicFlow.version.nodes.length } : null
     );
@@ -281,8 +284,11 @@ async function main() {
     await page.locator("#run-dialog").waitFor({ state: "visible" });
     await page.locator("#run-form button[type='submit']").click();
     await waitUntilReady(page);
+    await page.waitForFunction(() => document.querySelector("#run-inspector .status-completed"));
     snapshot = await workspaceSnapshot(page);
-    const deterministicRun = snapshot.studio.runs.find((run) => run.flow_id === deterministicFlow.id);
+    const deterministicRun = snapshot.studio.runs.find(
+      (run) => run.flow_id === deterministicFlow.id && run.input.name === "Ada"
+    );
     record(
       "deterministic Flow executes without a credential and emits authoritative evidence",
       deterministicRun?.status === "completed" &&
@@ -298,6 +304,68 @@ async function main() {
             receipts: deterministicRun.action_receipts.length
           }
         : null
+    );
+
+    await page.locator('[data-view="flows"]').click();
+    await page.locator("#flow-list .selection-button", { hasText: "Browser greeting Flow" }).click();
+    await page.locator("[data-add-trigger]").click();
+    await page.locator("#trigger-form button[type='submit']").click();
+    await waitUntilReady(page);
+    const hookPath = await page.locator(".webhook-reveal code").innerText();
+    const webhookResult = await page.evaluate(async (url) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Webhook" })
+      });
+      return (await response.json()).data;
+    }, hookPath);
+    record(
+      "a public webhook trigger executes its pinned deterministic Flow version",
+      webhookResult?.run?.status === "completed" &&
+        webhookResult.run.flow_version === 1 &&
+        webhookResult.run.output?.text === "Hello Webhook",
+      webhookResult?.run
+        ? { status: webhookResult.run.status, flow_version: webhookResult.run.flow_version }
+        : null
+    );
+    await page.locator(`[data-toggle-trigger="${webhookResult.trigger_id}"]`).click();
+    await waitUntilReady(page);
+    snapshot = await workspaceSnapshot(page);
+    const disabledTrigger = snapshot.studio.triggers.find(
+      (trigger) => trigger.id === webhookResult.trigger_id
+    );
+    record(
+      "trigger operations can disable a binding through an optimistic revision fence",
+      disabledTrigger?.enabled === false && disabledTrigger.revision === 2,
+      disabledTrigger
+        ? { enabled: disabledTrigger.enabled, revision: disabledTrigger.revision }
+        : null
+    );
+
+    await page.locator("[data-edit-flow]").click();
+    await page.locator(".retry-editor input[type='number']").first().fill("2");
+    await page.locator(".retry-editor input[type='number']").first().blur();
+    await page.locator("[data-publish-flow-draft]").click();
+    await waitUntilReady(page);
+    snapshot = await workspaceSnapshot(page);
+    const revisedDeterministicFlow = snapshot.studio.flows.find(
+      (flow) => flow.id === deterministicFlow.id
+    );
+    const unchangedDeterministicRun = snapshot.studio.runs.find(
+      (run) => run.id === deterministicRun.id
+    );
+    record(
+      "canvas editing publishes a successor while prior Runs keep their exact graph pin",
+      revisedDeterministicFlow?.version.version === 2 &&
+        revisedDeterministicFlow.version.nodes[0].settings.max_attempts === 2 &&
+        unchangedDeterministicRun?.flow_version === 1 &&
+        unchangedDeterministicRun.flow_graph.nodes[0].settings.max_attempts === 1,
+      {
+        current_version: revisedDeterministicFlow?.version.version,
+        prior_run_version: unchangedDeterministicRun?.flow_version,
+        prior_run_attempt_policy: unchangedDeterministicRun?.flow_graph.nodes[0].settings.max_attempts
+      }
     );
 
     await page.locator("#open-config").click();
@@ -321,6 +389,7 @@ async function main() {
     await page.locator("#run-input").fill(JSON.stringify({ brief: APPROVAL_DEMO_BRIEF }, null, 2));
     await page.locator("#run-form button[type='submit']").click();
     await waitUntilReady(page);
+    await page.waitForFunction(() => document.querySelector("#run-inspector .status-waiting_approval"));
     snapshot = await workspaceSnapshot(page);
     const seededFlow = snapshot.studio.flows.find((flow) => flow.slug === "agent-reviewed-launch");
     let aiRun = snapshot.studio.runs.find(
@@ -395,6 +464,7 @@ async function main() {
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "03-run-evidence.png"));
 
     await page.locator('[data-view="resources"]').click();
+    progress("creating first-class Prompt, Skill, and Agent resources");
     await page.locator('[data-resource-tab="prompts"]').click();
     await page.locator("#create-resource").click();
     await page.locator("#prompt-name").fill("Browser Prompt");
@@ -423,45 +493,71 @@ async function main() {
       }
     );
 
-    await page.locator('[data-view="repair"]').click();
-    await clickAndWait(page, "#repair-primary-action");
-    await page.waitForFunction(() => document.querySelector("#repair-primary-action")?.textContent.includes("Diagnose"));
-    await clickAndWait(page, "#repair-primary-action");
-    await page.waitForFunction(() => document.querySelector("#repair-primary-action")?.textContent.includes("Propose"));
-    await clickAndWait(page, "#repair-primary-action");
-    await page.waitForFunction(() => document.querySelector("#repair-primary-action")?.textContent.includes("revision fence"));
-    await page.locator("#repair-primary-action").click();
-    await page.locator("#repair-approval-dialog").waitFor({ state: "visible" });
-    await page.locator("#repair-approval-ack").check();
-    await page.locator("#repair-approval-form button[type='submit']").click();
+    progress("building a blocked visual Flow for integrated maintenance");
+    await page.locator('[data-view="actions"]').click();
+    await page.locator("#create-action").click();
+    await page.locator("#action-kind").selectOption("data_store");
+    await page.locator("#action-name").fill("Recovery evidence store");
+    await page.locator("#action-slug").fill("recovery-evidence-store");
+    const deniedConfig = JSON.parse(await page.locator("#action-config").inputValue());
+    deniedConfig.write_enabled = false;
+    await page.locator("#action-config").fill(JSON.stringify(deniedConfig, null, 2));
+    await page.locator("#action-form button[type='submit']").click();
     await waitUntilReady(page);
-    await page.waitForFunction(() => document.querySelector("#repair-primary-action")?.textContent.includes("linked child"));
-    await clickAndWait(page, "#repair-primary-action");
-    await page.waitForFunction(() => document.querySelector("#repair-primary-action")?.textContent.includes("Closed loop proven"));
+
+    await page.locator('[data-view="flows"]').click();
+    await page.locator("#create-flow").click();
+    await page.locator("[data-flow-settings]").click();
+    await page.locator('[data-flow-setting="name"]').fill("Browser recovery Flow");
+    await page.locator('[data-flow-setting="slug"]').fill("browser-recovery-flow");
+    await page.locator(".palette-item", { hasText: "Recovery evidence store" }).click();
+    await page.locator("[data-publish-flow-draft]").click();
+    await waitUntilReady(page);
+    await page.locator("#flow-inspector [data-run-flow]").click();
+    await page.locator("#run-form button[type='submit']").click();
+    await waitUntilReady(page);
+    await page.waitForFunction(() => document.querySelector("#run-inspector .status-blocked"));
+
+    progress("diagnosing, proposing, and approving the bounded repair");
+    await clickAndWait(page, "[data-diagnose-studio-run]");
+    await clickAndWait(page, "[data-propose-studio-repair]");
+    await page.locator("[data-approve-studio-repair]").click();
+    await page.locator("#studio-repair-ack").check();
+    await page.locator("#studio-repair-form button[type='submit']").click();
+    await waitUntilReady(page);
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "04-repair-approved.png"));
+    progress("executing linked proof Run");
+    await clickAndWait(page, "[data-prove-studio-repair]");
     snapshot = await workspaceSnapshot(page);
-    const repairRoot = snapshot.runs.find((run) => !run.parent_run_id);
-    const repairChild = snapshot.runs.find((run) => run.parent_run_id === repairRoot.id);
+    const recoveryFlow = snapshot.studio.flows.find((flow) => flow.slug === "browser-recovery-flow");
+    const repairRoot = snapshot.studio.runs.find(
+      (run) => run.flow_id === recoveryFlow.id && !run.parent_run_id
+    );
+    const repairChild = snapshot.studio.runs.find((run) => run.parent_run_id === repairRoot.id);
     const ownedIds = new Set(repairRoot.events.map((event) => event.id));
     record(
-      "Repair Lab proves evidence-owned diagnosis bounded repair and linked changed outcome",
+      "integrated Run maintenance proves evidence-owned diagnosis bounded repair and linked outcome",
       repairRoot.status === "blocked" &&
         repairRoot.diagnosis.evidence_event_ids.every((id) => ownedIds.has(id)) &&
         repairRoot.repair.status === "applied" &&
-        repairRoot.repair.approval.acknowledged === true &&
+        repairRoot.repair.applied_flow_version === 2 &&
         repairChild.status === "completed" &&
-        repairRoot.sandbox_effects.length === 0 &&
-        repairChild.sandbox_effects.length === 1 &&
+        repairRoot.effects.length === 0 &&
+        repairChild.effects.length === 1 &&
         verifyChain(repairRoot) &&
         verifyChain(repairChild),
       {
         parent_status: repairRoot.status,
         child_status: repairChild.status,
         citations: repairRoot.diagnosis.evidence_event_ids.length,
-        parent_effects: repairRoot.sandbox_effects.length,
-        child_effects: repairChild.sandbox_effects.length
+        parent_effects: repairRoot.effects.length,
+        child_effects: repairChild.effects.length
       }
     );
-    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "04-repair-proven.png"));
+    if (options.artifacts) {
+      await page.locator(`#run-list [data-select-run="${repairRoot.id}"]`).click();
+      await capture(page, resolve(ROOT, options.artifacts, "05-repair-proven.png"));
+    }
 
     const buttons = await page.locator("button").evaluateAll((items) =>
       items.map((button) => ({
@@ -476,7 +572,7 @@ async function main() {
     );
 
     await page.emulateMedia({ reducedMotion: "reduce" });
-    const reducedDuration = await page.locator("#repair-primary-action").evaluate(
+    const reducedDuration = await page.locator(".graph-node").first().evaluate(
       (element) => getComputedStyle(element).transitionDuration
     );
     record(
@@ -502,7 +598,7 @@ async function main() {
         mobile.errorHidden,
       mobile
     );
-    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "05-mobile-studio.png"));
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "06-mobile-studio.png"));
 
     const securityResponse = await fetch(`${baseUrl}/app/`);
     record(

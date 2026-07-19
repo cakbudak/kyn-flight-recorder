@@ -39,6 +39,23 @@ class ScriptedResponsesClient:
         if not isinstance(metadata, dict):
             raise AssertionError("runtime did not identify the pinned agent role")
         if metadata.get("kyn_surface") == "agent-studio":
+            if metadata.get("operation") == "diagnosis":
+                input_items = payload.get("input")
+                if not isinstance(input_items, list) or not input_items:
+                    raise AssertionError("diagnosis candidate is missing")
+                candidate = json.loads(str(input_items[0]["content"]))
+                result = {
+                    "root_cause": candidate["root_cause"],
+                    "explanation": (
+                        "The denied Action receipt and terminal Step establish the exact "
+                        "pinned authority mismatch without inferring an external cause."
+                    ),
+                    "confidence": 0.99,
+                    "evidence_event_ids": candidate["evidence_event_ids"],
+                }
+                return self._message(
+                    json.dumps(result, separators=(",", ":")), "studio-diagnosis"
+                )
             result = {
                 "summary": "The launch brief is concrete, bounded, and ready for review.",
                 "score": 0.91,

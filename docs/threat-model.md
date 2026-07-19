@@ -6,10 +6,9 @@ The public surface is an anonymous, short-lived Build Week lab. The browser and 
 Python API are untrusted at their input boundary. OpenAI output is untrusted model output.
 SQLite and the statically coded tool registry are the local authority boundary.
 
-The configurable public write Action creates an idempotent row in
-`automation_effects`; the Repair Lab writes only `sandbox_releases`. There is no
-shell, arbitrary filesystem, arbitrary URL fetch, MCP connector, production
-deployer, or generic code registry.
+The configurable public Data Store Action creates an idempotent row in
+`automation_effects`. There is no shell, arbitrary filesystem, arbitrary URL
+fetch, MCP connector, production deployer, or generic code registry.
 
 ## Threats and controls
 
@@ -19,7 +18,7 @@ deployer, or generic code registry.
 | Model prose claims an effect | terminal outcome derives from committed tool receipts/effect rows, never prose | misleading prose may exist only as hashed output, not product truth |
 | Prompt injection widens authority | code validates every call against pinned Skill grants, strict schemas, and static callable Action kinds | untrusted content can still degrade model output or make a Run fail |
 | Diagnosis invents evidence | deterministic candidate plus exact owned evidence-id validation | supported fault vocabulary is intentionally narrow |
-| Repair changes unrelated fields | one operation, allowed operation/path/value checks, proposal hash | only the seeded policy mismatch is repairable |
+| Repair changes unrelated fields | one operation, allowed operation/path/value checks, proposal hash, exact Action and Flow revision fences | only the public Data Store authority-policy mismatch is automatically repairable |
 | Agent applies its own repair | no apply tool; separate human HTTP command requires acknowledgement, actor, reason, hash, and revision | anonymous actor label is not strong identity |
 | Stale/concurrent approval | `BEGIN IMMEDIATE` compare-and-swap on flow revision; idempotent identical replay | SQLite limits horizontal scaling |
 | Cross-workspace read | random opaque cookie token, only hash stored, every lookup scoped by workspace | anonymous bearer cookie can be used by anyone who steals it |
@@ -32,9 +31,12 @@ deployer, or generic code registry.
 
 ## Failure behavior
 
-- A missing key is rejected before a new model-backed command creates a Run.
-  Provider failure after Run creation becomes a terminal `failed` Run; the Repair
-  Lab does not offer policy diagnosis for that failure class.
+- A missing key is rejected before an operator model command starts. Webhook and
+  schedule activation are the deliberate exception: they persist a fully pinned
+  `created` Run with `run.credential_required` evidence, but perform no model I/O
+  until a workspace operator continues it with a browser-owned key. Provider
+  failure after Run creation becomes terminal `failed` evidence and is never
+  mislabeled as an authority-policy block.
 - Invalid Responses shapes, bad JSON, missing required tools, unknown tools, extra structured
   fields, foreign evidence, and unsafe repair paths fail closed.
 - External I/O is never performed while a SQLite write transaction is open.
@@ -51,6 +53,7 @@ deployer, or generic code registry.
 
 ## Explicitly not proved
 
-This cut does not prove strong user identity, production connector safety, multi-host SQLite
-coordination, arbitrary workflow repair, prompt-injection resistance for untrusted user
-prompts, or host-level tamper resistance. Those are not claimed by the submission.
+This cut does not prove strong user identity, production connector safety,
+multi-host SQLite coordination, arbitrary automatic workflow repair,
+prompt-injection resistance for untrusted user prompts, or host-level tamper
+resistance. Those are not claimed by the submission.

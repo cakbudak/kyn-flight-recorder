@@ -657,13 +657,61 @@ class StudioStore:
             cursor = connection.execute(
                 """
                 UPDATE automation_trigger_bindings
-                SET last_fired_at = ?, revision = revision + 1, updated_at = ?
+                SET last_fired_at = ?, updated_at = ?
                 WHERE id = ? AND enabled = 1
                 """,
                 (now, now, trigger_id),
             )
             if cursor.rowcount != 1:
                 raise Conflict("Trigger is no longer enabled")
+
+    def set_trigger_enabled(
+        self,
+        workspace_id: str,
+        trigger_id: str,
+        *,
+        enabled: bool,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_trigger_bindings WHERE id = ? AND workspace_id = ?",
+                (trigger_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation trigger was not found")
+            if int(row["revision"]) != expected_revision:
+                raise Conflict("Automation trigger revision is stale")
+            if bool(row["enabled"]) == enabled:
+                return self._trigger_projection(row)
+            now = utc_now()
+            config = _decode(row["config_json"])
+            next_fire_at = (
+                _after_minutes(int(config["interval_minutes"]))
+                if enabled and row["trigger_type"] == "schedule"
+                else None
+            )
+            connection.execute(
+                """
+                UPDATE automation_trigger_bindings
+                SET enabled = ?, revision = revision + 1, next_fire_at = ?, updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND revision = ?
+                """,
+                (
+                    int(enabled),
+                    next_fire_at,
+                    now,
+                    trigger_id,
+                    workspace_id,
+                    expected_revision,
+                ),
+            )
+            updated = connection.execute(
+                "SELECT * FROM automation_trigger_bindings WHERE id = ?",
+                (trigger_id,),
+            ).fetchone()
+            assert updated is not None
+            return self._trigger_projection(updated)
 
     def claim_due_schedules(self, *, limit: int = 20) -> list[dict[str, Any]]:
         if not 1 <= limit <= 100:
@@ -689,8 +737,7 @@ class StudioStore:
                 connection.execute(
                     """
                     UPDATE automation_trigger_bindings
-                    SET last_fired_at = ?, next_fire_at = ?, revision = revision + 1,
-                        updated_at = ?
+                    SET last_fired_at = ?, next_fire_at = ?, updated_at = ?
                     WHERE id = ? AND revision = ? AND enabled = 1
                     """,
                     (
@@ -831,6 +878,144 @@ class StudioStore:
                     "additionalProperties": False,
                 },
                 config={"operation": "append_record", "collection": "approved_launches"},
+                agent_version_id=None,
+                effect_level="sandbox_write",
+                created_by="bootstrap",
+            )
+            self._insert_action(
+                connection,
+                workspace_id,
+                name="Normalize webhook intake",
+                slug="normalize-webhook-intake",
+                description="Maps an incoming value into a stable downstream contract.",
+                kind="template",
+                executor_kind="transform",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "value": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000,
+                        }
+                    },
+                    "required": ["value"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "normalized": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "required": ["normalized", "source"],
+                    "additionalProperties": False,
+                },
+                config={
+                    "operation": "map",
+                    "mappings": {
+                        "normalized": {"source": "input", "path": "value"},
+                        "source": {"source": "literal", "value": "agent-studio"},
+                    },
+                },
+                agent_version_id=None,
+                effect_level="none",
+                created_by="bootstrap",
+            )
+            self._insert_action(
+                connection,
+                workspace_id,
+                name="Bounded cooldown",
+                slug="bounded-cooldown",
+                description="Pauses one worker briefly, then passes the validated input through.",
+                kind="template",
+                executor_kind="delay",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": "string", "maxLength": 4000}
+                    },
+                    "required": ["value"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": "string", "maxLength": 4000}
+                    },
+                    "required": ["value"],
+                    "additionalProperties": False,
+                },
+                config={"milliseconds": 250},
+                agent_version_id=None,
+                effect_level="none",
+                created_by="bootstrap",
+            )
+            self._insert_action(
+                connection,
+                workspace_id,
+                name="Readiness assertion",
+                slug="readiness-assertion",
+                description="Blocks execution when an explicit readiness threshold is not met.",
+                kind="condition",
+                executor_kind="assert",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": "number", "minimum": 0, "maximum": 1}
+                    },
+                    "required": ["score"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "passed": {"type": "boolean"},
+                        "actual": {"type": "number"},
+                    },
+                    "required": ["passed", "actual"],
+                    "additionalProperties": False,
+                },
+                config={
+                    "path": "score",
+                    "operator": "gte",
+                    "value": 0.75,
+                    "message": "The readiness score is below the approved threshold.",
+                },
+                agent_version_id=None,
+                effect_level="none",
+                created_by="bootstrap",
+            )
+            self._insert_action(
+                connection,
+                workspace_id,
+                name="Workspace evidence store",
+                slug="workspace-evidence-store",
+                description=(
+                    "Appends one idempotent record to this workspace's SQLite sandbox."
+                ),
+                kind="sandbox",
+                executor_kind="data_store",
+                input_schema={
+                    "type": "object",
+                    "properties": {"record": {"type": "string", "maxLength": 4000}},
+                    "required": ["record"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "effect_id": {"type": "string"},
+                        "collection": {"type": "string"},
+                    },
+                    "required": ["effect_id", "collection"],
+                    "additionalProperties": False,
+                },
+                config={
+                    "operation": "append_record",
+                    "collection": "workspace-evidence",
+                    "write_enabled": True,
+                },
                 agent_version_id=None,
                 effect_level="sandbox_write",
                 created_by="bootstrap",
@@ -2444,7 +2629,10 @@ class StudioStore:
             row = connection.execute(
                 """
                 SELECT r.*, fv.version AS flow_version_number,
-                       fv.fingerprint AS flow_fingerprint
+                       fv.fingerprint AS flow_fingerprint,
+                       fv.start_node_id AS flow_start_node_id,
+                       fv.nodes_json AS flow_nodes_json,
+                       fv.routes_json AS flow_routes_json
                 FROM automation_runs r
                 JOIN automation_flow_versions fv ON fv.id = r.flow_version_id
                 WHERE r.id = ? AND r.workspace_id = ?
@@ -2499,12 +2687,54 @@ class StudioStore:
                 (approval for approval in reversed(approvals) if approval["decision"] is None),
                 None,
             )
+            diagnosis_row = connection.execute(
+                "SELECT * FROM automation_diagnoses WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            diagnosis = None
+            repair = None
+            if diagnosis_row is not None:
+                diagnosis = self._diagnosis_projection(diagnosis_row)
+                diagnosed_step = connection.execute(
+                    "SELECT node_id FROM automation_run_steps WHERE id = ?",
+                    (diagnosis_row["failed_step_id"],),
+                ).fetchone()
+                diagnosis["failed_node_id"] = (
+                    diagnosed_step["node_id"] if diagnosed_step is not None else None
+                )
+                repair_row = connection.execute(
+                    "SELECT * FROM automation_repair_proposals WHERE diagnosis_id = ?",
+                    (diagnosis_row["id"],),
+                ).fetchone()
+                if repair_row is not None:
+                    repair = self._repair_projection(repair_row)
+                    if repair_row["applied_action_version_id"]:
+                        applied_action = connection.execute(
+                            "SELECT version FROM action_versions WHERE id = ?",
+                            (repair_row["applied_action_version_id"],),
+                        ).fetchone()
+                        repair["applied_action_version"] = (
+                            int(applied_action["version"]) if applied_action else None
+                        )
+                    if repair_row["applied_flow_version_id"]:
+                        applied_flow = connection.execute(
+                            "SELECT version FROM automation_flow_versions WHERE id = ?",
+                            (repair_row["applied_flow_version_id"],),
+                        ).fetchone()
+                        repair["applied_flow_version"] = (
+                            int(applied_flow["version"]) if applied_flow else None
+                        )
             return {
                 "id": row["id"],
                 "flow_id": row["flow_id"],
                 "flow_version_id": row["flow_version_id"],
                 "flow_version": row["flow_version_number"],
                 "flow_fingerprint": row["flow_fingerprint"],
+                "flow_graph": {
+                    "start_node_id": row["flow_start_node_id"],
+                    "nodes": _decode(row["flow_nodes_json"]),
+                    "routes": _decode(row["flow_routes_json"]),
+                },
                 "parent_run_id": row["parent_run_id"],
                 "correlation_id": row["correlation_id"],
                 "status": row["status"],
@@ -2524,4 +2754,6 @@ class StudioStore:
                 "approvals": approvals,
                 "pending_approval": pending,
                 "effects": effects,
+                "diagnosis": diagnosis,
+                "repair": repair,
             }

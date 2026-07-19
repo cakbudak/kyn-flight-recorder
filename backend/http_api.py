@@ -262,6 +262,16 @@ class ApiApplication:
                 status=HTTPStatus.CREATED,
             )
         match = re.fullmatch(
+            rf"/api/v1/studio/triggers/{RESOURCE_ID}/state", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"enabled", "expected_revision"})
+            return self._ok(
+                self.control_plane.set_studio_trigger_enabled(
+                    workspace_id, match.group(1), **body
+                )
+            )
+        match = re.fullmatch(
             rf"/api/v1/studio/flows/{RESOURCE_ID}/runs:enqueue", request.path
         )
         if match:

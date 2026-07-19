@@ -72,9 +72,6 @@
           <button class="nav-item" type="button" data-view="resources">
             <span class="nav-icon" aria-hidden="true">S</span><span>Resources</span>
           </button>
-          <button class="nav-item" type="button" data-view="repair">
-            <span class="nav-icon" aria-hidden="true">↺</span><span>Repair Lab</span>
-          </button>
         </nav>
         <div class="sidebar-foot">
           <button class="nav-item" type="button" data-view="docs">
@@ -173,13 +170,13 @@
                 </div>
                 <div class="capability-grid">
                   <button type="button" data-view-target="actions">
-                    <span>01</span><strong>Define Actions</strong><small>AI, template, condition, approval, and sandbox effects.</small>
+                    <span>01</span><strong>Define Actions</strong><small>AI, transforms, conditions, delays, assertions, approvals, and bounded data effects.</small>
                   </button>
                   <button type="button" data-view-target="flows">
-                    <span>02</span><strong>Build Flows</strong><small>Map typed inputs across an explicit acyclic graph.</small>
+                    <span>02</span><strong>Build visually</strong><small>Drag typed nodes, connect outcomes, map data, and publish immutable graph versions.</small>
                   </button>
                   <button type="button" data-view-target="runs">
-                    <span>03</span><strong>Observe Runs</strong><small>Inspect Steps, model calls, receipts, approvals, and effects.</small>
+                    <span>03</span><strong>Operate live Runs</strong><small>Watch worker state, retries, approvals, receipts, effects, diagnoses, repairs, and proof children.</small>
                   </button>
                   <button type="button" data-view-target="resources">
                     <span>04</span><strong>Versioned Agents, Prompts, and Skills</strong><small>Pin model behavior and exact Action authority.</small>
@@ -200,6 +197,39 @@
               </article>
             </div>
 
+            <section class="section-block" aria-labelledby="use-cases-title">
+              <div class="section-heading">
+                <div><p class="section-kicker">Concrete automations</p><h2 id="use-cases-title">What you can build here</h2></div>
+                <p>Every pattern uses the same versioned Action boundary and remains editable on the canvas.</p>
+              </div>
+              <div class="use-case-grid">
+                <button type="button" data-view-target="flows">
+                  <span class="use-case-mark">AI → H</span>
+                  <strong>Agent review with human release</strong>
+                  <small>Analyze a launch brief with a pinned Agent, route by score, pause for approval, then commit one bounded effect.</small>
+                  <em>Open visual builder →</em>
+                </button>
+                <button type="button" data-view-target="flows">
+                  <span class="use-case-mark">HOOK → MAP</span>
+                  <strong>Webhook intake and normalization</strong>
+                  <small>Issue a private webhook URL, validate the payload, transform fields, assert the contract, and inspect every receipt.</small>
+                  <em>Build an intake Flow →</em>
+                </button>
+                <button type="button" data-view-target="actions">
+                  <span class="use-case-mark">CLOCK → AI</span>
+                  <strong>Scheduled evidence digest</strong>
+                  <small>Run on a bounded interval, invoke OpenAI with a visitor-owned key, and retain the exact definition and model-call evidence.</small>
+                  <em>Compose the Actions →</em>
+                </button>
+                <button type="button" data-view-target="runs">
+                  <span class="use-case-mark">FAIL → PROOF</span>
+                  <strong>Closed-loop recovery</strong>
+                  <small>Diagnose a failed node from owned evidence, approve an allowlisted successor, then prove the changed outcome in a linked Run.</small>
+                  <em>Open Run operations →</em>
+                </button>
+              </div>
+            </section>
+
             <section class="section-block" aria-labelledby="recent-runs-title">
               <div class="section-heading">
                 <div><p class="section-kicker">Operations</p><h2 id="recent-runs-title">Recent Runs</h2></div>
@@ -216,15 +246,15 @@
             </header>
             <div class="filter-bar">
               <label class="search-field"><span class="visually-hidden">Filter Actions</span><input id="action-filter" type="search" placeholder="Filter Actions…"></label>
-              <div class="kind-legend" aria-label="Action kinds"><span>AI</span><span>Logic</span><span>Human</span><span>Effect</span></div>
+              <div class="kind-legend" aria-label="Action kinds"><span>AI</span><span>Transform</span><span>Logic</span><span>Human</span><span>Data</span></div>
             </div>
             <div id="action-list" class="definition-grid"></div>
           </section>
 
           <section class="view" id="flows-view" data-view-panel="flows" hidden>
             <header class="page-header">
-              <div><p class="eyebrow"><span></span> Graph composer</p><h1>Flows</h1><p class="page-lede">Bundle immutable Action and Agent versions into an explicit, validated DAG.</p></div>
-              <button class="button button-primary" id="create-flow" type="button">New Flow</button>
+              <div><p class="eyebrow"><span></span> Visual automation builder</p><h1>Flows</h1><p class="page-lede">Drag typed capabilities onto a canvas, connect explicit outcomes, publish immutable versions, and attach live triggers.</p></div>
+              <button class="button button-primary" id="create-flow" type="button">Create Flow</button>
             </header>
             <div class="split-workspace">
               <aside class="selection-list" aria-label="Available Flows"><div id="flow-list"></div></aside>
@@ -256,45 +286,24 @@
             <div id="resource-list" class="resource-definition-list"></div>
           </section>
 
-          <section class="view" id="repair-view" data-view-panel="repair" hidden>
-            <header class="page-header">
-              <div><p class="eyebrow"><span></span> Closed-loop maintenance</p><h1>Repair Lab</h1><p class="page-lede">A complete executable template: fail under policy, diagnose from owned evidence, propose one bounded repair, approve, and prove it by linked child Run.</p></div>
-              <span class="status-badge" id="repair-phase-badge">Ready</span>
-            </header>
-            <div class="repair-layout">
-              <article class="panel repair-control">
-                <div class="panel-heading"><div><p class="section-kicker">Live template</p><h2>Production release guard</h2></div><span class="version-chip" id="repair-flow-version">v1</span></div>
-                <ol class="repair-phases" id="repair-phases">
-                  <li data-repair-phase="ready"><span>1</span>Execute</li>
-                  <li data-repair-phase="blocked"><span>2</span>Diagnose</li>
-                  <li data-repair-phase="diagnosed"><span>3</span>Repair</li>
-                  <li data-repair-phase="repair"><span>4</span>Approve</li>
-                  <li data-repair-phase="applied"><span>5</span>Rerun</li>
-                  <li data-repair-phase="proven"><span>6</span>Prove</li>
-                </ol>
-                <div class="repair-manifest" id="repair-manifest"></div>
-                <button class="button button-primary button-full" id="repair-primary-action" type="button">Run real agent flow</button>
-                <p class="action-help" id="repair-action-help"></p>
-              </article>
-              <article class="panel evidence-console">
-                <div class="panel-heading"><div><p class="section-kicker">Authoritative evidence</p><h2>Failure → changed outcome</h2></div></div>
-                <div id="repair-evidence"></div>
-              </article>
-            </div>
-          </section>
-
           <section class="view docs-view" id="docs-view" data-view-panel="docs" hidden>
             <header class="page-header"><div><p class="eyebrow"><span></span> Live documentation</p><h1>How Agent Studio works</h1><p class="page-lede">The public product is intentionally smaller than Kyn.ist. Its contracts are not decorative.</p></div></header>
             <div class="docs-layout">
               <nav class="docs-nav" aria-label="Documentation sections">
                 <a href="#what-happens">What actually happens</a>
+                <a href="#visual-builder">Build on the canvas</a>
+                <a href="#triggers">Triggers and credentials</a>
                 <a href="#more-than-traces">More than traces</a>
+                <a href="#maintenance-loop">Maintain failed Runs</a>
                 <a href="#runtime-contract">Runtime contract</a>
                 <a href="#bounded">Deliberate boundary</a>
               </nav>
               <div class="docs-content">
-                <article id="what-happens"><p class="section-kicker">Execution</p><h2>What actually happens</h2><p>A Flow pins exact Action or Agent versions. The runtime validates its input, maps it into each Step, invokes every capability through one Action boundary, commits receipts and hash-linked events, and follows only declared routes. External model I/O happens outside SQLite write transactions.</p><div class="doc-sequence"><span>Input</span><i>→</i><span>Validate</span><i>→</i><span>Execute</span><i>→</i><span>Receipt</span><i>→</i><span>Route</span></div></article>
-                <article id="more-than-traces"><p class="section-kicker">Control plane</p><h2>Why this is more than a trace viewer</h2><p>You define executable Actions and compose Flows here. Runs can genuinely pause for Human approval, resume into a bounded effect, fail terminally, and rerun as linked immutable children. The Repair Lab adds evidence-owned diagnosis and a revision-fenced repair loop.</p></article>
+                <article id="what-happens"><p class="section-kicker">Execution</p><h2>What actually happens</h2><p>A webhook, schedule, or operator command creates and fully pins a Run before any provider call. The worker validates input, resolves typed mappings, invokes every capability through one Action boundary, applies bounded retries, commits receipts and hash-linked events, and follows only declared outcome routes. External model I/O happens outside SQLite write transactions.</p><div class="doc-sequence"><span>Trigger</span><i>→</i><span>Pin</span><i>→</i><span>Execute</span><i>→</i><span>Receipt</span><i>→</i><span>Route</span></div></article>
+                <article id="visual-builder"><p class="section-kicker">Visual builder</p><h2>Build a Flow, not a four-click demo</h2><p>Create any number of Flows from the Action palette. Drop nodes onto the canvas, drag them into place, connect outcome ports, map each input from Flow input, an earlier node, or a literal, and set retry, backoff, and error policy per node. Publishing creates immutable v1. Editing a published graph creates a successor version; Runs already in flight keep their original pin.</p><div class="contract-grid"><div><strong>Eight Action kinds</strong><p>AI, template, transform, delay, condition, assertion, approval, and isolated data store.</p></div><div><strong>Explicit data movement</strong><p>No ambient context: every node input declares its source and path.</p></div></div></article>
+                <article id="triggers"><p class="section-kicker">Activation</p><h2>Manual, webhook, and scheduled Runs</h2><p>A manual Run accepts JSON validated against the current Flow input schema. A webhook binding emits a one-time secret URL and permanently pins the Flow version active when the trigger is created. A schedule uses a bounded minute interval. Deterministic Flows run immediately; model-backed trigger Runs are durably created with <code>credential_required</code> evidence and wait until a visitor explicitly continues them with the OpenAI key held in that browser tab.</p></article>
+                <article id="more-than-traces"><p class="section-kicker">Control plane</p><h2>Why this is more than a trace viewer</h2><p>You create typed Actions, arrange them on a visual DAG, attach real triggers, and operate every live Run. Runs pause for human approval, resume through the same pinned graph, and can be cancelled with attributable evidence. A blocked Run exposes an integrated loop: AI explanation constrained to owned evidence, an allowlisted repair, human revision fence, immutable successor versions, and a linked proof Run.</p></article>
+                <article id="maintenance-loop"><p class="section-kicker">Maintenance</p><h2>Repair stays inside the failed Run</h2><p>Open a blocked or failed Run. The diagnostician receives a code-owned causal candidate and may cite only event IDs from that Run. The repair service derives one allowlisted patch against the exact Action and Flow revisions. Nothing changes until a human reviews the patch, proposal hash, actor, reason, and revision fence. Applying creates successor definitions; proof creates a linked child Run. The terminal parent is never rewritten.</p><div class="doc-sequence"><span>Failure</span><i>→</i><span>Ground</span><i>→</i><span>Propose</span><i>→</i><span>Approve</span><i>→</i><span>Successor</span><i>→</i><span>Proof</span></div></article>
                 <article id="runtime-contract"><p class="section-kicker">Contracts</p><h2>Definitions and Runs stay distinct</h2><div class="contract-grid"><div><strong>Definition plane</strong><p>Actions, Flows, Agents, Prompts, and Skills are immutable, fingerprinted versions.</p></div><div><strong>Execution plane</strong><p>Runs, Steps, model calls, receipts, approvals, effects, and events are authoritative records.</p></div><div><strong>Authority plane</strong><p>Skills grant exact Action version IDs. Model text never widens authority.</p></div><div><strong>Maintenance plane</strong><p>Terminal Runs remain absorbing. A rerun is a linked new Run against a pinned Flow version.</p></div></div></article>
                 <article id="bounded"><p class="section-kicker">Safety</p><h2>What is deliberately bounded</h2><p>This public projection excludes Ainou, Parts/Entities, Bricks/Packs/Frames, CE, arbitrary MCP servers, shell access, filesystem access, arbitrary HTTP, and production connectors. The only write effect appends an idempotent record to this workspace’s SQLite sandbox. That keeps the demonstration real without publishing Kyn.ist’s private architecture.</p></article>
               </div>
@@ -302,7 +311,7 @@
           </section>
 
           <section class="view config-view" id="config-view" data-view-panel="config" hidden>
-            <header class="page-header"><div><p class="eyebrow"><span></span> Bring your own key</p><h1>Configuration</h1><p class="page-lede">Use your own OpenAI API key for model-backed Actions and the Repair Lab.</p></div></header>
+            <header class="page-header"><div><p class="eyebrow"><span></span> Bring your own key</p><h1>Configuration</h1><p class="page-lede">Use your own OpenAI API key for model-backed Actions, queued trigger Runs, and evidence-grounded diagnosis.</p></div></header>
             <div class="config-grid">
               <form class="panel config-card" id="config-form">
                 <div class="panel-heading"><div><p class="section-kicker">OpenAI</p><h2>Browser session credential</h2></div><span class="status-badge" id="config-key-badge">Not configured</span></div>
@@ -337,7 +346,7 @@
           <label class="field"><span>Name</span><input id="action-name" required maxlength="100" value="Greeting formatter"></label>
           <label class="field"><span>Slug</span><input id="action-slug" required maxlength="64" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="greeting-formatter"></label>
           <label class="field field-wide"><span>Description</span><input id="action-description" required maxlength="500" value="Render a deterministic greeting from validated input."></label>
-          <label class="field"><span>Kind</span><select id="action-kind"><option value="template">Template</option><option value="condition">Condition</option><option value="approval">Human approval</option><option value="sandbox">Sandbox effect</option><option value="ai">AI / Agent</option></select></label>
+          <label class="field"><span>Kind</span><select id="action-kind"><option value="template">Template</option><option value="transform">Transform</option><option value="delay">Delay</option><option value="condition">Condition</option><option value="assert">Assert</option><option value="approval">Human approval</option><option value="data_store">Data store</option><option value="ai">AI / Agent</option></select></label>
           <label class="field" id="action-agent-field" hidden><span>Pinned Agent version</span><select id="action-agent"></select></label>
           <label class="field field-wide"><span>Input JSON Schema</span><textarea id="action-input-schema" class="code-input" rows="8" required></textarea></label>
           <label class="field field-wide"><span>Output JSON Schema</span><textarea id="action-output-schema" class="code-input" rows="8" required></textarea></label>
@@ -347,19 +356,29 @@
       </form>
     </dialog>
 
-    <dialog class="dialog editor-dialog dialog-wide" id="flow-dialog" aria-labelledby="flow-dialog-title" aria-describedby="flow-dialog-description">
-      <form method="dialog" id="flow-form">
-        <header class="dialog-header"><div><p class="section-kicker">Graph composer</p><h2 id="flow-dialog-title">Create Flow</h2><p id="flow-dialog-description">Add version-pinned nodes, explicit mappings, and outcome routes. Cycles and unreachable nodes are rejected.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="flow-dialog" aria-label="Close">×</button></header>
-        <div class="form-grid two-columns">
-          <label class="field"><span>Name</span><input id="flow-name" required maxlength="100" value="My automation"></label>
-          <label class="field"><span>Slug</span><input id="flow-slug" required maxlength="64" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="my-automation"></label>
-          <label class="field field-wide"><span>Description</span><input id="flow-description" required maxlength="500" value="A user-defined versioned Action Flow."></label>
-          <label class="field field-wide"><span>Flow input JSON Schema</span><textarea id="flow-input-schema" class="code-input" rows="7" required></textarea></label>
-          <label class="field"><span>Start node ID</span><input id="flow-start-node" required maxlength="64"></label>
+    <dialog class="dialog" id="trigger-dialog" aria-labelledby="trigger-dialog-title" aria-describedby="trigger-dialog-description">
+      <form method="dialog" id="trigger-form">
+        <header class="dialog-header"><div><p class="section-kicker">Inbound automation</p><h2 id="trigger-dialog-title">Add Trigger</h2><p id="trigger-dialog-description">Pin this trigger to the current immutable Flow version. Webhook secrets are shown once.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="trigger-dialog" aria-label="Close">×</button></header>
+        <input id="trigger-flow-id" type="hidden">
+        <label class="field"><span>Name</span><input id="trigger-name" required maxlength="100" value="Production intake"></label>
+        <label class="field"><span>Trigger type</span><select id="trigger-type"><option value="webhook">Webhook</option><option value="schedule">Schedule</option></select></label>
+        <div id="trigger-schedule-fields" hidden>
+          <label class="field"><span>Interval in minutes</span><input id="trigger-interval" type="number" min="1" max="10080" value="60"></label>
+          <label class="field"><span>Scheduled input</span><textarea id="trigger-input" class="code-input" rows="8">{}</textarea></label>
         </div>
-        <section class="sub-editor"><div class="sub-editor-head"><div><strong>Nodes</strong><small>Each node pins one Action or Agent version.</small></div><button class="button button-quiet" id="add-flow-node" type="button">Add node</button></div><div id="flow-node-rows" class="editor-rows"></div></section>
-        <section class="sub-editor"><div class="sub-editor-head"><div><strong>Routes</strong><small>Leave empty for a one-node Flow. Outcomes: success, true, false, approved, rejected.</small></div><button class="button button-quiet" id="add-flow-route" type="button">Add route</button></div><div id="flow-route-rows" class="editor-rows"></div></section>
-        <footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="flow-dialog">Cancel</button><button class="button button-primary" type="submit">Create immutable Flow v1</button></footer>
+        <footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="trigger-dialog">Cancel</button><button class="button button-primary" type="submit">Create pinned trigger</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="dialog" id="studio-repair-dialog" aria-labelledby="studio-repair-title" aria-describedby="studio-repair-description">
+      <form method="dialog" id="studio-repair-form">
+        <header class="dialog-header"><div><p class="section-kicker">Human revision fence</p><h2 id="studio-repair-title">Approve exact repair</h2><p id="studio-repair-description">This creates new immutable Action and Flow versions. The failed Run remains unchanged.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="studio-repair-dialog" aria-label="Close">×</button></header>
+        <input id="studio-repair-id" type="hidden">
+        <div id="studio-repair-patch" class="repair-patch-preview"></div>
+        <label class="field"><span>Actor</span><input id="studio-repair-actor" required maxlength="100" value="workflow-operator"></label>
+        <label class="field"><span>Reason</span><textarea id="studio-repair-reason" required minlength="12" maxlength="500" rows="4">I reviewed the cited evidence and approve this bounded policy change.</textarea></label>
+        <label class="checkbox-field"><input id="studio-repair-ack" type="checkbox" required><span>I verified the proposal hash, expected Action version, and expected Flow revision.</span></label>
+        <footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="studio-repair-dialog">Cancel</button><button class="button button-primary" type="submit">Apply as successor versions</button></footer>
       </form>
     </dialog>
 
@@ -395,10 +414,6 @@
 
     <dialog class="dialog" id="agent-dialog" aria-labelledby="agent-dialog-title" aria-describedby="agent-dialog-description">
       <form method="dialog" id="agent-form"><header class="dialog-header"><div><p class="section-kicker">Executable behavior</p><h2 id="agent-dialog-title">Create Agent</h2><p id="agent-dialog-description">Pin one model, Prompt version, and set of Skill versions.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="agent-dialog" aria-label="Close">×</button></header><label class="field"><span>Name</span><input id="agent-name" required value="Brief Analyst"></label><label class="field"><span>Slug</span><input id="agent-slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="brief-analyst-agent"></label><div class="form-grid two-columns"><label class="field"><span>Role</span><select id="agent-role"><option value="executor">Executor</option><option value="diagnostician">Diagnostician</option><option value="repairer">Repairer</option></select></label><label class="field"><span>Model</span><select id="agent-model"><option value="gpt-5.6">gpt-5.6</option><option value="gpt-5.6-sol">gpt-5.6-sol</option><option value="gpt-5.6-terra">gpt-5.6-terra</option><option value="gpt-5.6-luna">gpt-5.6-luna</option></select></label></div><label class="field"><span>Instructions</span><textarea id="agent-instructions" rows="5" required>Follow the pinned Prompt and Skills. Return only the requested output contract.</textarea></label><label class="field"><span>Prompt version</span><select id="agent-prompt"></select></label><fieldset class="choice-field"><legend>Skill versions</legend><div id="agent-skill-choices" class="choice-list"></div></fieldset><footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="agent-dialog">Cancel</button><button class="button button-primary" type="submit">Create Agent v1</button></footer></form>
-    </dialog>
-
-    <dialog class="dialog" id="repair-approval-dialog" aria-labelledby="repair-approval-title" aria-describedby="repair-approval-description">
-      <form method="dialog" id="repair-approval-form"><header class="dialog-header"><div><p class="section-kicker">Revision fence</p><h2 id="repair-approval-title">Apply bounded repair</h2><p id="repair-approval-description">The proposal hash and expected revision must still match. The failed Run remains unchanged.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="repair-approval-dialog" aria-label="Close">×</button></header><label class="field"><span>Actor</span><input id="repair-approval-actor" required value="build-week-reviewer"></label><label class="field"><span>Reason</span><textarea id="repair-approval-reason" required minlength="12" rows="4">Approve the evidence-bound policy repair and preserve immutable history.</textarea></label><label class="checkbox-field"><input id="repair-approval-ack" type="checkbox" required><span>I reviewed the exact patch, proposal hash, and expected Flow revision.</span></label><footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="repair-approval-dialog">Cancel</button><button class="button button-primary" type="submit">Apply as new Flow version</button></footer></form>
     </dialog>
 
     <script type="module" src="./app.mjs"></script>

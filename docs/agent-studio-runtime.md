@@ -1,62 +1,83 @@
 # Kyn.ist Agent Studio — public runtime cut
 
-This repository is an executable, clean-room projection of Kyn's public product
-capabilities. It is intentionally not a copy of the private Kyn stack.
+This repository is an executable, clean-room projection of Kyn.ist's agent
+workflow and maintenance capabilities. It is intentionally not a copy of the
+private Kyn stack.
 
 ## Product promise
 
-A visitor can define five versioned resources and use them together:
+A visitor can create and operate a real automation system:
 
-1. **Actions** declare typed input/output contracts over a bounded executor.
+1. **Actions** declare typed input/output contracts over bounded executors.
 2. **Prompts** declare templates and their exact variables.
-3. **Skills** grant instructions and an explicit Action allow-list.
+3. **Skills** carry instructions and exact Action-version authority grants.
 4. **Agents** pin one model, Prompt version, and Skill versions.
-5. **Flows** pin an acyclic graph of Action and Agent nodes, mappings, and routes.
+5. **Flows** arrange pinned Actions or Agents on a visual acyclic graph with
+   mappings, outcomes, retry settings, and canvas positions.
+6. **Triggers** start a pinned Flow version manually, by secret webhook, or on a
+   bounded interval.
+7. **Runs** expose live node state, attempts, receipts, model calls, approvals,
+   effects, hash-linked events, and linked reruns.
+8. **Maintenance** turns a supported failure into owned evidence, a bounded
+   successor proposal, a human decision, and a linked proof Run.
 
-Starting a Flow creates a real Run. The Run pins the complete Flow fingerprint,
-records each Step and Action invocation, writes a hash-linked event ledger, and
-records sanitized model-call metadata. Approval nodes pause the Run; an immutable
-human decision resumes or blocks it. A rerun is a linked new Run against an
-explicitly selected immutable Flow version.
-
-The existing evidence-bound diagnose → repair → approve → rerun loop remains an
-included template. It proves Kyn's closed-loop maintenance discipline, while the
-Studio proves that the runtime is configurable rather than a prescribed four-click
-demo.
+The seeded `Agent-reviewed launch` graph is an editable use case, not a tour.
+Visitors can ignore it and build any graph supported by the public Action
+surface.
 
 ## Deliberately bounded Action surface
 
-The public cut supports only declarative executors whose effects can be defended on
-an unauthenticated Build Week deployment:
-
 | Kind | Behaviour | External authority |
 | --- | --- | --- |
-| `ai` | Runs a pinned Agent through OpenAI Responses; may call only Actions granted by pinned Skills | OpenAI only, visitor BYOK |
-| `template` | Deterministically renders an exact template from validated input | none |
-| `condition` | Evaluates one declared comparison and exposes `true`/`false` routes | none |
-| `approval` | Creates an immutable approval request and pauses the Run | human decision |
-| `sandbox` | Appends one idempotent local effect row | local SQLite only |
+| `ai` | Runs a pinned Agent through OpenAI Responses; may call only exact Actions granted by pinned Skills | OpenAI only, visitor BYOK |
+| `template` | Renders a declared template from validated input | none |
+| `transform` | Maps input paths or literals into a declared output schema | none |
+| `delay` | Waits 0–5000 ms and passes validated input through | none |
+| `condition` | Evaluates one declared comparison and emits `true` or `false` | none |
+| `assert` | Blocks when one declared comparison fails | none |
+| `approval` | Persists a request and pauses until an attributable human decision | human decision |
+| `data_store` | Appends one idempotent record in a named workspace-local collection | local SQLite only |
 
-There is no arbitrary shell, filesystem, URL fetch, MCP server, secret store, or
-production connector in the public deployment. Database rows configure known
-executors; they never register Python code.
+There is no arbitrary shell, filesystem, URL fetch, MCP server registration,
+secret store, production connector, or database-configured code. The only
+network authority is the official OpenAI SDK for an explicitly model-backed
+operation.
 
-## Flow definition
+## Visual Flow definition
 
 A Flow version contains:
 
-- a JSON Schema subset for Run input;
+- a strict JSON Schema subset for Run input;
 - at most twelve uniquely named nodes;
 - one explicit start node;
-- nodes that pin an Action version or Agent version;
-- explicit mappings whose sources are Run input, a completed predecessor Step, or
-  a literal;
-- directed routes selected by `success`, `true`, `false`, `approved`, or
-  `rejected` outcomes;
-- an acyclic graph validated before publication.
+- immutable Action or Agent version pins;
+- an `{x, y}` position for every canvas node;
+- mappings from Run input, a reachable predecessor Step, or a literal;
+- bounded attempts, backoff, retryable codes, and error policy per node;
+- outcome routes selected by `success`, `true`, `false`, `approved`, or
+  `rejected`; and
+- a complete transitive resource-pin and fingerprint set.
 
-Definitions are immutable. Publishing a changed definition creates a successor
-version and advances the Flow revision exactly once.
+Publication rejects cycles, unreachable nodes, duplicate outcomes, impossible
+data reads, and schema mismatches. Editing a published graph creates a successor
+version and advances its optimistic revision exactly once. Existing Runs retain
+the graph they originally pinned.
+
+## Trigger contract
+
+- **Manual:** validates operator-provided JSON and enqueues a pinned Run.
+- **Webhook:** generates a one-time secret URL; only its hash is stored. The
+  binding keeps the Flow version active at creation time.
+- **Schedule:** accepts a 1–10,080 minute interval and bounded validated input.
+
+Bindings can be disabled or re-enabled through an optimistic trigger revision
+fence. Execution timestamps do not advance that configuration revision, so a
+busy schedule cannot starve an operator's state command.
+
+Deterministic trigger Runs execute immediately. A model-backed trigger cannot
+carry a server credential, so it creates a durable `created` Run plus
+`run.credential_required` evidence. A workspace operator may continue that exact
+Run with a key held in their browser tab.
 
 ## Run lifecycle
 
@@ -64,34 +85,48 @@ version and advances the Flow revision exactly once.
 created → running → completed
                   ↘ blocked
                   ↘ failed
+                  ↘ cancelled
                   ↘ waiting_approval → running
                                      ↘ blocked
+                                     ↘ cancelled
 ```
 
-`completed`, `blocked`, `failed`, and `cancelled` are absorbing. A terminal Run is
-never reopened or silently upgraded. Maintenance creates a linked new Run with its
-own pinned definition and evidence chain.
-
-Every node attempt produces a Step. Every state-changing operation produces an
-event with the previous event hash and its own SHA-256 hash. The event ledger is
-authoritative; UI state and best-effort telemetry are not.
+Every node attempt produces a Step. Retries remain separate attempts and are
+bounded by the pinned node settings. `completed`, `blocked`, `failed`, and
+`cancelled` are absorbing database states. A rerun is a linked new Run; it never
+reopens or upgrades its parent.
 
 ## OpenAI boundary
 
-The browser stores the visitor's key in `sessionStorage`, sends it only in the
-`X-OpenAI-API-Key` header on same-origin model operations, and can clear it at any
-time. The server constructs an official `openai.OpenAI` client for that operation,
-uses the Responses API with `store=false`, discards the client afterward, and never
-writes the key to SQLite.
+The browser stores the visitor's key in `sessionStorage`, attaches it only to a
+same-origin operation forecast to call a model, and can clear it at any time.
+The server constructs an ephemeral official `openai.OpenAI` client, calls the
+Responses API with `store=false`, records only safe provider metadata and hashes,
+then discards the client. It never reads an operator `OPENAI_API_KEY` fallback.
 
-Custom function tools use strict JSON Schema. Model-requested Actions are
-intersected with the exact Action versions granted by the Agent's pinned Skills and
-then pass through the same Action invocation path as direct Flow nodes.
+Custom tools use strict schemas. Model-requested Actions are intersected with the
+exact Action versions granted by the Agent's pinned Skills and then traverse the
+same executor, receipt, validation, and effect path as direct Flow nodes. Model
+text cannot route the graph, grant authority, approve, apply a repair, or create
+an effect by assertion.
+
+## Integrated maintenance
+
+For supported blocked or failed Actions, code first derives a causal candidate
+from the terminal Step, receipt, and owned event IDs. A pinned diagnostician may
+explain only that candidate through a strict Structured Output. The repair
+service then derives one allowlisted patch against exact Action and Flow
+revisions. Application requires a human actor, reason, acknowledgement, proposal
+hash, and both revision fences.
+
+Applying a repair creates successor Action and Flow versions. Proof executes one
+idempotent linked child per proposal on the successor. The terminal parent, its
+zero or partial effects, and all prior evidence remain immutable.
 
 ## Excluded private layers
 
 This cut does not contain or reconstruct Ainou, CE, Appiyon, Kynllm internals,
 Parts/Entities, Bricks/Packs/Frames, the production queue, the production graph,
-or their schemas. SQLite contains only explicit product-facing tables. Similar
-principles are demonstrated through a clean-room implementation; private code and
-private ontology remain private.
+or their schemas. SQLite contains conventional product tables only. The public
+runtime demonstrates the contracts through an independent implementation while
+Kyn.ist's private architecture and economic model remain private.

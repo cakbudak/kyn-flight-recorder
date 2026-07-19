@@ -846,7 +846,7 @@ class ControlPlane:
             workspace_id, proposal["diagnosis_id"]
         )
         parent = self.studio.get_run(workspace_id, diagnosis["run_id"])
-        key = require_string(
+        require_string(
             idempotency_key, "repair proof idempotency key", maximum=100
         )
         return self._studio_runtime(client).execute(
@@ -856,7 +856,7 @@ class ControlPlane:
             flow_version=int(proposal["applied_flow_version"]),
             parent_run_id=parent["id"],
             correlation_id=parent["correlation_id"],
-            idempotency_key=f"repair-proof:{proposal_id}:{key}",
+            idempotency_key=f"repair-proof:{proposal_id}",
         )
 
     def get_studio_action(self, workspace_id: str, action_id: str) -> dict[str, Any]:
@@ -910,6 +910,29 @@ class ControlPlane:
             config=normalized_config,
         )
 
+    def set_studio_trigger_enabled(
+        self,
+        workspace_id: str,
+        trigger_id: str,
+        *,
+        enabled: Any,
+        expected_revision: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(enabled, bool):
+            raise ContractViolation("trigger enabled state must be a boolean")
+        if (
+            not isinstance(expected_revision, int)
+            or isinstance(expected_revision, bool)
+            or expected_revision < 1
+        ):
+            raise ContractViolation("trigger expected revision is invalid")
+        return self.studio.set_trigger_enabled(
+            workspace_id,
+            require_string(trigger_id, "trigger id", maximum=80),
+            enabled=enabled,
+            expected_revision=expected_revision,
+        )
+
     def fire_studio_webhook(
         self, secret: Any, input_data: Any
     ) -> dict[str, Any]:
@@ -918,16 +941,30 @@ class ControlPlane:
             raise ContractViolation("webhook payload must be an object")
         trigger = self.studio.resolve_webhook(normalized_secret)
         if trigger["requires_model"]:
-            raise ContractViolation(
-                "This webhook Flow requires a browser-owned OpenAI credential and must be started from the Studio"
+            run = self.studio_runtime.prepare(
+                trigger["workspace_id"],
+                trigger["flow_id"],
+                input_data=input_data,
+                flow_version=trigger["flow_version"],
+                idempotency_key=f"webhook:{trigger['id']}:{new_id('delivery')}",
             )
-        run = self.studio_runtime.execute(
-            trigger["workspace_id"],
-            trigger["flow_id"],
-            input_data=input_data,
-            flow_version=trigger["flow_version"],
-            idempotency_key=f"webhook:{trigger['id']}:{new_id('delivery')}",
-        )
+            self.studio.append_event(
+                trigger["workspace_id"],
+                run["id"],
+                event_type="run.credential_required",
+                actor_type="runtime",
+                actor_id=None,
+                payload={"trigger_id": trigger["id"], "reason": "browser_byok"},
+            )
+            run = self.studio.get_run(trigger["workspace_id"], run["id"])
+        else:
+            run = self.studio_runtime.execute(
+                trigger["workspace_id"],
+                trigger["flow_id"],
+                input_data=input_data,
+                flow_version=trigger["flow_version"],
+                idempotency_key=f"webhook:{trigger['id']}:{new_id('delivery')}",
+            )
         self.studio.mark_trigger_fired(trigger["id"])
         return {"trigger_id": trigger["id"], "run": run}
 

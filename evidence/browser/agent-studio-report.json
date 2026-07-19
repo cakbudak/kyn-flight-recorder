@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-07-19T13:34:47.101Z",
+  "generated_at": "2026-07-19T15:32:32.255Z",
   "surface": "Kyn.ist Agent Studio full Playwright journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:37209",
+    "base_url": "http://127.0.0.1:46753",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
     ]
   },
   "summary": {
-    "checks": 21,
-    "passed": 21,
+    "checks": 24,
+    "passed": 24,
     "failed": 0
   },
   "checks": [
@@ -42,16 +42,20 @@
       "detail": 0
     },
     {
-      "name": "workspace seeds five Action kinds and one editable Flow",
+      "name": "workspace seeds the complete bounded Action palette and one editable Flow",
       "status": "pass",
       "detail": {
-        "actions": 5,
+        "actions": 9,
         "flows": 1,
         "kinds": [
           "template",
           "condition",
           "approval",
+          "transform",
           "ai",
+          "data_store",
+          "assert",
+          "delay",
           "sandbox"
         ]
       }
@@ -60,15 +64,15 @@
       "name": "browser can define a typed immutable Action",
       "status": "pass",
       "detail": {
-        "id": "act_6e68f554da704bd3a4eedae9bd66764c",
-        "version": "actv_48601daaef2c47acba7042157e2540e3"
+        "id": "act_f50682017c724adbb407408a9603e42f",
+        "version": "actv_a51c9d835eae4c44890d183eb08fd229"
       }
     },
     {
       "name": "browser composes a user-defined version-pinned Flow",
       "status": "pass",
       "detail": {
-        "id": "aflow_6a107fd88eb145a2b2f7ba01396e6c17",
+        "id": "aflow_964155d91113424cb59c8284e6851775",
         "nodes": 1
       }
     },
@@ -76,10 +80,35 @@
       "name": "deterministic Flow executes without a credential and emits authoritative evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_181e4e1c9c964b9c9f3ce631683f8747",
+        "id": "arun_d75287b386bd404fb419cfc40435c92d",
         "status": "completed",
         "model_calls": 0,
         "receipts": 1
+      }
+    },
+    {
+      "name": "a public webhook trigger executes its pinned deterministic Flow version",
+      "status": "pass",
+      "detail": {
+        "status": "completed",
+        "flow_version": 1
+      }
+    },
+    {
+      "name": "trigger operations can disable a binding through an optimistic revision fence",
+      "status": "pass",
+      "detail": {
+        "enabled": false,
+        "revision": 2
+      }
+    },
+    {
+      "name": "canvas editing publishes a successor while prior Runs keep their exact graph pin",
+      "status": "pass",
+      "detail": {
+        "current_version": 2,
+        "prior_run_version": 1,
+        "prior_run_attempt_policy": 1
       }
     },
     {
@@ -93,7 +122,7 @@
       "name": "AI Flow uses pinned Agent stack and pauses at a real Human approval",
       "status": "pass",
       "detail": {
-        "id": "arun_e16ff64109d1458aad0268caec94a36d",
+        "id": "arun_a1af20803ba845f58aac2889899741b4",
         "status": "waiting_approval",
         "steps": [
           "completed",
@@ -117,9 +146,9 @@
       "name": "rerun creates a linked child against the same immutable Flow version",
       "status": "pass",
       "detail": {
-        "id": "arun_003a2263bd654708bd03a09abd74388d",
-        "parent": "arun_e16ff64109d1458aad0268caec94a36d",
-        "flow_version_id": "aflowv_a2e4bdfed1df40d3860d29d86e177764"
+        "id": "arun_48ec7fa114df45c5a5c1c1abc61b6c68",
+        "parent": "arun_a1af20803ba845f58aac2889899741b4",
+        "flow_version_id": "aflowv_07a589f43129418d8d507207511ac68c"
       }
     },
     {
@@ -128,7 +157,7 @@
       "detail": {
         "status": "completed",
         "effects": 1,
-        "events": 22
+        "events": 23
       }
     },
     {
@@ -141,12 +170,12 @@
       }
     },
     {
-      "name": "Repair Lab proves evidence-owned diagnosis bounded repair and linked changed outcome",
+      "name": "integrated Run maintenance proves evidence-owned diagnosis bounded repair and linked outcome",
       "status": "pass",
       "detail": {
         "parent_status": "blocked",
         "child_status": "completed",
-        "citations": 2,
+        "citations": 4,
         "parent_effects": 0,
         "child_effects": 1
       }
@@ -155,7 +184,7 @@
       "name": "every browser button has an accessible name",
       "status": "pass",
       "detail": {
-        "buttons": 71
+        "buttons": 85
       }
     },
     {
@@ -196,20 +225,20 @@
   ],
   "diagnostics": {
     "server_output": [
-      "19/Jul/2026 15:34:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:45 127.0.0.1 \"POST /api/v1/repairs/rpr_cfe95c2b63ec4186ba1cdc183b96d2f7/apply HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"POST /api/v1/runs/run_7201f8efee774799a2f56cbed3768c7c/rerun HTTP/1.1\" 201 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/state.mjs HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      "19/Jul/2026 17:32:30 127.0.0.1 \"POST /api/v1/studio/repairs/arep_ce012e1ea3ad4f9fb671efc54574d30b/apply HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:30 127.0.0.1 \"POST /api/v1/studio/repairs/arep_ce012e1ea3ad4f9fb671efc54574d30b/proof HTTP/1.1\" 201 -",
+      "19/Jul/2026 17:32:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/state.mjs HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
     ],
     "page_errors": [],
     "failed_requests": []

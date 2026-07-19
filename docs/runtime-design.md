@@ -5,204 +5,170 @@ Date: 2026-07-19
 
 ## 1. Design boundary
 
-The cut preserves Kyn's contracts without copying Kyn's internal ontology. OpenAI produces
-model output; this runtime owns all authority and evidence. SQLite is a transparent
-product-facing read model and write model for this standalone application.
+This cut preserves Kyn.ist's public execution contracts without copying its
+private ontology. OpenAI produces untrusted model output; the control plane owns
+all authority, routing, evidence, and effects. SQLite is a conventional flat
+product store for this standalone application.
 
-The composition root is `serve.py`. HTTP calls one `ControlPlane`; the control plane calls
-resource, runtime, diagnosis, and repair services; those services use one `Store`. No HTTP
-handler writes SQLite directly.
+`serve.py` is the composition root. HTTP handlers validate the transport and
+call one `ControlPlane`; no handler or browser command authors runtime evidence.
 
 ```text
-browser -> same-origin API -> ControlPlane -> Store + StudioStore (SQLite)
-                                  |
-                                  +-> StudioRuntime -> Action invocation
-                                  |       |                |
-                                  |       |                +-> bounded local executors
-                                  |       +-> Responses SDK + strict granted Actions
-                                  |
-                                  +-> Repair Lab AgentRuntime -> tool/diagnosis/repair validators
+browser ──same origin──> HTTP API ──> ControlPlane ──> StudioStore ──> SQLite
+                                            │
+                                            ├──> bounded worker ──> StudioRuntime
+                                            │                         ├── local executors
+                                            │                         └── OpenAI Responses SDK
+                                            ├──> trigger scheduler
+                                            └──> diagnosis / repair policy
 ```
 
 ## 2. Flat SQLite projection
 
-The schema uses explicit nouns. There is no generic object/part/entity/edge table.
+The active Studio schema uses explicit product nouns; there is no generic
+object, part, entity, brick, frame, or edge table.
 
-| Table | Purpose |
+| Table family | Purpose |
 | --- | --- |
-| `workspaces` | anonymous isolated lab boundary and usage counters |
-| `prompts` | stable prompt identity and current version |
-| `prompt_versions` | immutable template, variables, fingerprint |
-| `skills` | stable skill identity and current version |
-| `skill_versions` | immutable instructions, allowed tools, fingerprint |
-| `agents` | stable agent identity and current version |
-| `agent_versions` | immutable model/instructions and prompt/skill pins |
-| `flows` | stable flow identity and current revision/version |
-| `flow_versions` | immutable agent pins, request, policy, repair policy, fingerprint |
-| `runs` | pinned execution, parent/correlation, status, revision, timings |
-| `events` | ordered append-only hash chain per run |
-| `model_calls` | provider response id, role, model, status, usage and safe hashes |
-| `tool_receipts` | validated call, result/error, authority and idempotency evidence |
-| `diagnoses` | structured grounded fault analysis and evidence ids |
-| `repairs` | bounded patch, proposal hash, fence and approval/application state |
-| `repair_approvals` | append-only human command and applied-version receipt |
-| `sandbox_releases` | Repair Lab effect created by successful `stage_release` |
-| `actions` / `action_versions` | stable typed capabilities and immutable executor contracts |
-| `automation_flows` / `automation_flow_versions` | configurable pinned DAG definitions |
-| `automation_runs` / `automation_run_steps` | authoritative graph execution and node attempts |
-| `automation_events` | ordered append-only hash chain per Automation Run |
-| `automation_model_calls` | safe Responses metadata/hashes for Studio Agents |
+| `workspaces` | anonymous isolated authority boundary and usage counters |
+| `prompts` / `prompt_versions` | stable identity plus immutable template versions |
+| `skills` / `skill_versions` | immutable instructions and exact authority grants |
+| `agents` / `agent_versions` | model, Prompt, Skill, and effective Action pins |
+| `actions` / `action_versions` | typed capabilities and immutable executor contracts |
+| `automation_flows` / `automation_flow_versions` | stable Flow plus immutable visual DAG versions |
+| `automation_trigger_bindings` | version-pinned webhook and interval activation |
+| `automation_runs` / `automation_run_steps` | pinned execution and node attempts |
+| `automation_events` | ordered append-only hash chain per Run |
+| `automation_model_calls` | safe Responses metadata and request/output hashes |
 | `automation_action_receipts` | one authoritative result per Action attempt |
-| `automation_approval_requests` / `automation_approval_decisions` | real pause/resume command boundary |
-| `automation_effects` | idempotent workspace-local public Action effects |
+| `automation_approval_requests` / `automation_approval_decisions` | pause/resume command boundary |
+| `automation_effects` | idempotent workspace-local data effects |
+| `automation_diagnoses` | grounded fault analysis with owned event citations |
+| `automation_repair_proposals` / `automation_repair_decisions` | fenced successor command and evidence |
 
-JSON columns hold bounded arrays or manifest fragments where SQLite has no useful scalar
-projection. They do not hide polymorphic internal entities. Database triggers reject updates
-and deletes on immutable version and event tables.
+Bounded JSON columns contain schemas, graph manifests, mappings, or event
+payloads where a scalar projection would add no query value. They do not encode
+Kyn.ist's internal polymorphic structures. Database triggers make definition
+versions and evidence append-only and reject illegal lifecycle transitions.
 
-## 3. Studio resource composition
+## 3. Resource composition
 
-An Action version declares a bounded built-in executor plus strict input/output
-schemas. An Automation Flow version pins Action or Agent nodes, mappings, routes,
-and every transitive fingerprint. Graph validation rejects cycles, unreachable
-nodes, ambiguous outcomes, and reads from non-predecessor Steps.
+An Action version declares one statically coded executor, strict input/output
+schemas, effect level, configuration, optional Agent pin, and a fingerprint.
+The eight logical kinds are `ai`, `template`, `transform`, `delay`, `condition`,
+`assert`, `approval`, and `data_store`.
 
-Each Studio Agent version pins exactly one Prompt and bounded Skills. A Skill can
-grant exact callable Action version IDs. The effective set is intersected with
-the runtime's static callable kinds; approval and AI Actions cannot become nested
-model tools.
+An Agent version pins one Prompt and bounded Skills. A Skill may grant exact
+callable Action version IDs. Effective authority is intersected with the
+runtime's static callable kinds; database content cannot register Python code,
+and AI or approval Actions cannot become nested model tools.
 
-## 4. Repair Lab resource composition
+A Flow version pins the complete graph: input schema, start node, node resource
+versions, canvas positions, mappings, retry/backoff/error settings, routes, and
+transitive fingerprints. Validation rejects cycles, unreachable nodes,
+ambiguous outcomes, reads from non-predecessor Steps, and unbounded graph size.
 
-Each agent version pins exactly one prompt version and a bounded list of skill versions.
-The agent's effective tool set is the union of its pinned skills' allow-lists, intersected
-with the server's static `ToolRegistry`. A database string can never register executable
-code.
+## 4. Publication and triggers
 
-Each flow version pins three roles:
+Publishing a new Flow creates immutable v1. Editing a published graph performs
+an optimistic revision compare-and-swap and creates an immutable successor.
+Runs and triggers keep their original Flow-version pin.
 
-- `executor`: performs the requested task through local tools;
-- `diagnostician`: explains a deterministic failure candidate using cited event ids;
-- `repairer`: proposes one bounded data patch for the diagnosed cause.
+A webhook binding returns its raw secret once and stores only its SHA-256 hash
+and short hint. A schedule stores a bounded interval and validated input. The
+schedule pump atomically claims due bindings before creating Runs. Trigger
+retries use server idempotency keys and cannot mutate a prior terminal Run.
+Enable/disable commands use a dedicated optimistic configuration revision;
+ordinary fire timestamps do not invalidate an operator command.
 
-The runtime records explicit `agent.started`, `agent.handoff`, and `agent.completed` events
-with role and version fingerprint. Handoffs are flow-declared control-plane transitions,
-not prose interpreted as a transition.
+Deterministic trigger Runs execute immediately. Model-backed triggers cannot
+possess a server-side visitor key, so they durably prepare a `created` Run and
+append `run.credential_required`. The workspace operator later continues the
+same pinned Run with a browser-held credential.
 
-## 5. Studio execution protocol
+## 5. Execution protocol
 
-1. Validate Flow input against the pinned schema.
-2. In a short write, create the Run, pin Flow/resources, append initial events,
-   and transition to `running`.
-3. Resolve the current node mapping from validated Run input, literals, and
-   completed predecessor Step output.
-4. Invoke the pinned Action through one path. AI Actions render their pinned
-   Agent/Prompt/Skills, call Responses outside all writes, and dispatch only
-   strict granted Action tools through that same path.
-5. Persist Step result, Action receipt, safe model metadata, and hash-linked
-   events. Route only on a declared authoritative outcome.
-6. At an Approval Action, persist the request and transition to
-   `waiting_approval`. A human decision resumes at the already pinned next node or
-   blocks terminally.
-7. Complete, block, or fail without reopening a terminal Run. Rerun creates a
-   linked child with its own evidence chain.
+1. Resolve and validate the requested immutable Flow version and Run input.
+2. In a short write transaction, create a fully pinned `created` Run before any
+   worker or provider call and append `run.queued`.
+3. The bounded worker advances it to `running`, resolves the current mapping
+   from Run input, literals, and completed predecessor output, and creates an
+   attempt Step.
+4. Invoke the resource through one Action path. AI Actions render their pinned
+   Agent/Prompt/Skills, call Responses outside SQLite writes, and dispatch only
+   strict granted Action calls through that same path.
+5. Commit Step output, Action receipt, safe model metadata, and hash-linked
+   events. Retry only codes named in the pinned node settings, up to three
+   attempts, with bounded backoff.
+6. Route only on an executor-owned outcome. `on_error=continue` follows one
+   declared error route; otherwise exhausted errors fail closed. An explicit
+   `ActionBlocked` authority denial always blocks the Run.
+7. At an Approval Action, persist the request and transition to
+   `waiting_approval`. One immutable human decision resumes the already pinned
+   graph or blocks it.
+8. Complete, block, fail, or cancel without reopening terminal state. A rerun
+   creates a linked child with its own evidence chain.
 
-## 6. Repair Lab execution protocol
+At most two Studio workers execute concurrently per process. The HTTP command
+returns the prepared Run, while the operations console polls the authoritative
+projection until it reaches a pause or terminal state.
 
-1. In a short `BEGIN IMMEDIATE`, create a `running` run pinned to the current flow version
-   and append its first events; commit.
-2. Resolve prompt and skill text from the pinned versions. Store only hashes and safe
-   summaries in events.
-3. Call `POST /v1/responses` with `store=false`, strict function schemas,
-   `parallel_tool_calls=false`, bounded output, and only effective tools. No DB transaction
-   is open.
-4. For each `function_call`, parse JSON, validate the exact schema again, enforce skill
-   authority, and execute through `ToolRegistry` in a short transaction.
-5. Append the response output plus `function_call_output` in memory and call Responses again
-   if needed. Cap model turns and tool calls.
-6. Complete the run from receipts: a successful sandbox release means `completed`; a policy
-   denial means `blocked`; malformed or missing required behavior means `failed`.
-7. Atomically append the terminal event and transition. Terminal states cannot transition.
+## 6. Evidence ledger
 
-`stage_release` does not contact a deployment system. On success it inserts one idempotent
-`sandbox_releases` row. On policy denial it inserts no effect. Both outcomes have receipts.
+Every event has unique `(run_id, sequence)`. `event_hash` is SHA-256 over the
+canonical event identity, sequence, timestamp, type, actor, payload, and
+`prev_hash`; sequence one uses a fixed genesis marker. An independent verifier
+can recompute the chain from the API projection.
 
-## 7. Evidence ledger
+Steps, model calls, Action receipts, decisions, and effects are material rows,
+not strings inferred from a log. No event can truthfully claim an effect without
+the corresponding receipt and effect committed by the executor. Secret-like
+keys are rejected or redacted before evidence persistence.
 
-Every event has `(run_id, sequence)` uniqueness. `event_hash` is SHA-256 over the event's
-canonical identity, sequence, timestamp, type, actor, payload, and `prev_hash`. Sequence 1
-uses a fixed genesis marker. API projections expose enough fields for an independent verifier
-to recompute the chain.
+## 7. Diagnosis and repair protocol
 
-Runs are truth; `model_calls` and `tool_receipts` are material evidence. No event claims an
-effect unless the corresponding effect or receipt row commits in the same transaction.
+Code first derives a supported causal candidate from the terminal Step, its
+Action receipt, and owned events. For example, a `data_store` Action whose pinned
+`write_enabled` policy is false yields an `authority_policy` candidate and an
+allowlisted path `/config/write_enabled`.
 
-## 8. Diagnosis protocol
+The pinned diagnostician receives only that candidate. Strict Structured Output
+must cite a subset of the supplied event IDs; foreign or invented evidence fails
+closed. The model never selects the fault class or repair path.
 
-Code first derives a bounded candidate from receipts. In the judge case:
+The proposal hash commits to diagnosis, Action, Flow, exact current versions,
+and canonical patch. Apply requires the exact hash, both expected revisions, a
+human actor and bounded reason, and explicit acknowledgement. One
+`BEGIN IMMEDIATE` creates successor Action and Flow versions, records the
+decision, and marks the proposal applied. Stale or altered commands have no
+partial effect.
 
-```text
-fault_class = policy_mismatch
-requested = production
-allowed = [staging]
-repairable_path = /policy/allowed_environments
-evidence = policy inspection + denied stage receipt event ids
-```
+Proof creates one idempotent linked child per proposal, pinned to the applied
+Flow successor. The parent is not edited. Only the child's authoritative
+terminal outcome and effect receipt prove the change.
 
-The diagnostician receives only this candidate and a redacted evidence packet. Responses
-Structured Outputs must return the exact schema. The validator rejects unknown evidence ids,
-another fault class, an unsupported path, or claims outside the packet. A model failure does
-not fabricate a diagnosis.
+## 8. Workspace, credential, and HTTP boundary
 
-## 9. Repair and approval protocol
+The browser receives an opaque workspace cookie; only its hash is stored. Every
+lookup is workspace-scoped. Mutations require JSON, exact same-origin and Fetch
+Metadata checks, bounded bodies, and a valid `HttpOnly`, `SameSite=Strict`,
+`Secure`-on-HTTPS cookie. The API enables no CORS.
 
-The repairer receives the validated diagnosis, current bounded manifest, and allow-list. It
-may propose at most one `replace` operation on `/policy/allowed_environments`. Code verifies
-that the requested environment is added without removing existing values or changing any
-other field.
+The OpenAI key lives in browser `sessionStorage` and is attached only to a
+same-origin operation whose server-side forecast can call a model. The server
+ignores an operator `OPENAI_API_KEY`, constructs an ephemeral official SDK
+client, and never persists or logs the credential. Workspace, address, global,
+and concurrency budgets bound public model usage.
 
-The proposal hash commits to diagnosis id, flow id, expected revision, and canonical patch.
-Apply requires:
+## 9. Test seams and release proof
 
-- the exact proposal hash;
-- current flow revision equal to `expected_flow_revision`;
-- a non-empty actor and bounded reason;
-- explicit acknowledgement of the sandbox effect;
-- proposal status `proposed`.
+The Responses transport is injectable. Contract tests use provider-shaped
+deterministic responses while retaining the real HTTP, control-plane, runtime,
+and SQLite paths. Chromium verification creates definitions, uses the visual
+canvas, fires a webhook, publishes a successor, executes and approves an AI
+Flow, inspects live evidence, and completes diagnosis → repair → proof.
 
-One `BEGIN IMMEDIATE` performs the compare-and-swap, inserts the new immutable flow version,
-advances the stable flow row, marks the proposal applied, and appends the approval evidence.
-A repeated identical application returns the prior result. Any stale or altered request fails
-without partial state.
-
-The repair loop permits exactly one child per blocked parent. Child creation checks for an
-existing row inside `BEGIN IMMEDIATE`, and a partial unique index on non-null `parent_run_id`
-enforces the same invariant in SQLite. A repeated rerun returns the existing child before
-model I/O, so retries cannot duplicate model calls or sandbox effects.
-
-## 10. Workspace and HTTP boundary
-
-The browser obtains an opaque workspace cookie when it creates a lab. Every row is scoped by
-that workspace, directly or through a scoped parent lookup. Identifiers alone do not grant
-cross-workspace reads.
-
-Mutation requests must be JSON, same-origin, and below the body limit. The server enforces
-per-address and per-workspace request/model budgets plus a process-wide model budget. The API
-does not enable CORS. Cookies are `HttpOnly`, `SameSite=Strict`, and `Secure` on HTTPS.
-
-The visitor's API key is held in browser `sessionStorage` and attached only to a
-same-origin model command. The server explicitly ignores an operator
-`OPENAI_API_KEY`, constructs an ephemeral official SDK client per bounded
-operation, and does not persist or log the key. Errors are mapped to stable public
-codes; raw provider bodies, authorization headers, prompts, and secret-like values
-are never logged.
-
-## 11. Test seams and proof
-
-`ResponsesClient` is injectable. Contract tests use a deterministic fake that emits the same
-response item shapes as the official API. Tests must prove failure before implementation or
-through controlled mutation for the high-risk invariants.
-
-Release evidence additionally requires one sanitized real `gpt-5.6` journey. The artifact
-may retain ids, model name, usage, hashes, event types, and outcomes; it must not contain the
-API key, raw hidden reasoning, full prompts, cookies, or provider request headers.
+Release evidence additionally runs the same browser journey through public HTTPS
+with a real visitor credential. Sanitized reports may retain IDs, model, usage,
+hashes, event types, and outcomes; they must never contain keys, cookies, raw
+provider requests, or hidden reasoning.

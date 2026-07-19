@@ -220,6 +220,14 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    def copyfile(self, source: object, outputfile: object) -> None:
+        """Treat a client closing a static response early as a normal disconnect."""
+
+        try:
+            super().copyfile(source, outputfile)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
     def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
         if path.startswith("/api/"):

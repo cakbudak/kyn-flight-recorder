@@ -16,10 +16,11 @@ Automated/static evidence:
 - no `transition: all`, no zero-scale entrances, transitions ≤300 ms;
 - `prefers-reduced-motion` collapses animation/transition durations;
 - 390 × 844 Chromium reload has no document overflow and preserves the proven state;
-- Chromium accessibility tree exposes 16 named buttons in the completed journey.
+- Chromium verifies every rendered button has visible text or an accessible
+  label (86 buttons in the archived deterministic journey).
 
-The browser evidence is in `browser/closed-loop-report.json` and
-`real-model/closed-loop-report.json`.
+The browser evidence is in `browser/agent-studio-report.json` and
+`live/agent-studio-report.json`.
 
 Not yet verified: physical VoiceOver, NVDA, JAWS, or TalkBack operation. That remains a named
 gap and is not counted as a pass.

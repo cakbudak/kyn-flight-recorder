@@ -1,29 +1,33 @@
 # Verification evidence
 
 The active evidence set proves **Kyn.ist Agent Studio**: user-defined Actions and
-Flows, version-pinned Agent resources, executable Runs, Human approval, linked
-reruns, and the bounded Repair Lab. Superseded Recorder artifacts are removed
+Flows, version-pinned Agent resources, webhook activation, executable Runs,
+Human approval, linked reruns, and integrated bounded maintenance. Superseded Recorder artifacts are removed
 from the active tree and remain recoverable in Git history.
 
 ## Deterministic full-stack browser proof
 
-`browser/agent-studio-report.json` records the 21-check Chromium journey against
+`browser/agent-studio-report.json` records the 24-check Chromium journey against
 the real Python server, same-origin HTTP API, control plane, flat SQLite stores,
-Action dispatcher, approvals, Repair Lab, and browser UI. Only provider responses
-come from a deterministic provider-shaped seam.
+Action dispatcher, visual canvas, trigger path, approvals, integrated
+maintenance, and browser UI. Only provider responses come from a deterministic
+provider-shaped seam.
 
 Expected screenshots:
 
 - `browser/01-agent-studio.png`
+- `browser/02-action-contract.png`
+- `browser/02-visual-flow-builder.png`
 - `browser/02-waiting-approval.png`
 - `browser/03-run-evidence.png`
-- `browser/04-repair-proven.png`
-- `browser/05-mobile-studio.png`
+- `browser/04-repair-approved.png`
+- `browser/05-repair-proven.png`
+- `browser/06-mobile-studio.png`
 
 ## Public HTTPS + real-model proof
 
 [`live/agent-studio-report.json`](live/agent-studio-report.json) runs the same
-21-check browser journey through `https://buildweek.kyn.ist`: Cloudflare, the
+24-check browser journey through `https://buildweek.kyn.ist`: Cloudflare, the
 same-origin proxy, persistent service, flat SQLite runtime, and actual OpenAI
 Responses calls. The service has no operator key. The verifier enters the key
 through Configuration, and Chromium is launched without `OPENAI_API_KEY` in its
@@ -37,7 +41,7 @@ The committed proof shows:
 - approval resumes to exactly one sandbox effect;
 - a linked child Run owns an independent valid event chain;
 - Prompt, Skill, and Agent creation work in the browser;
-- Repair Lab proves its before/after outcome.
+- integrated maintenance proves its blocked-parent/successor-child outcome.
 
 Screenshots:
 

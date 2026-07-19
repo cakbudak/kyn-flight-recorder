@@ -571,7 +571,9 @@ class StudioRuntime:
                             workspace_id,
                             run_id,
                             step_id,
-                            status="failed",
+                            status=(
+                                "blocked" if isinstance(error, ActionBlocked) else "failed"
+                            ),
                             output=None,
                             route_outcome="error",
                             error_code=error.code,

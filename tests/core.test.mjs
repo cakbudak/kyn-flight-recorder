@@ -2,97 +2,79 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  PHASE_ORDER,
-  childRunFor,
-  phaseFor,
-  rootRunFor,
-  selectedRunFor
+  TERMINAL_RUN_STATUSES,
+  isActiveRun,
+  latestStepForNode,
+  maintenancePhase,
+  selectedStudioRun
 } from "../app/state.mjs";
 
 function run(overrides = {}) {
   return {
     id: "run_root",
     parent_run_id: null,
+    flow_version: 1,
     status: "blocked",
     diagnosis: null,
     repair: null,
-    events: [],
+    steps: [],
     ...overrides
   };
 }
 
-function snapshot(...runs) {
-  return { runs };
-}
-
-test("the UI phase contract starts with a composed flow", () => {
-  assert.equal(phaseFor(snapshot()), "ready");
-  assert.deepEqual(PHASE_ORDER, ["ready", "blocked", "diagnosed", "repair", "applied", "proven"]);
+test("run liveness is derived from the authoritative terminal set", () => {
+  assert.deepEqual(TERMINAL_RUN_STATUSES, ["completed", "blocked", "failed", "cancelled"]);
+  assert.equal(isActiveRun(run({ status: "running" })), true);
+  assert.equal(isActiveRun(run({ status: "waiting_approval" })), true);
+  assert.equal(isActiveRun(run({ status: "completed" })), false);
+  assert.equal(isActiveRun(null), false);
 });
 
-test("a blocked run advances only through evidence, proposal, and approval", () => {
-  const root = run();
-  const state = snapshot(root);
-  assert.equal(phaseFor(state), "blocked");
+test("the latest attempt for a graph node is selected without mutation", () => {
+  const source = run({
+    steps: [
+      { id: "step_1", node_id: "analyze", attempt: 1 },
+      { id: "step_2", node_id: "other", attempt: 1 },
+      { id: "step_3", node_id: "analyze", attempt: 2 }
+    ]
+  });
+  const before = JSON.stringify(source);
+  assert.equal(latestStepForNode(source, "analyze").id, "step_3");
+  assert.equal(latestStepForNode(source, "missing"), null);
+  assert.equal(JSON.stringify(source), before);
+});
 
+test("maintenance advances only through diagnosis, proposal, application, and proof", () => {
+  const root = run();
+  assert.equal(maintenancePhase(root), "failed");
   root.diagnosis = { id: "diag_1" };
-  assert.equal(phaseFor(state), "diagnosed");
-
-  root.repair = { id: "rpr_1", status: "proposed" };
-  assert.equal(phaseFor(state), "repair");
-
-  root.repair.status = "applied";
-  assert.equal(phaseFor(state), "applied");
+  assert.equal(maintenancePhase(root), "diagnosed");
+  root.repair = { id: "repair_1", status: "proposed" };
+  assert.equal(maintenancePhase(root), "proposed");
+  root.repair = { id: "repair_1", status: "applied", applied_flow_version: 2 };
+  assert.equal(maintenancePhase(root), "applied");
+  const proof = run({ id: "run_proof", parent_run_id: root.id, flow_version: 2, status: "completed" });
+  assert.equal(maintenancePhase(root, [root, proof]), "proven");
 });
 
-test("only a completed linked child proves the changed outcome", () => {
-  const root = run({
-    repair: { id: "rpr_1", status: "applied" }
-  });
-  const unrelated = run({
-    id: "run_unrelated",
-    parent_run_id: "run_other",
-    status: "completed"
-  });
-  assert.equal(phaseFor(snapshot(unrelated, root)), "applied");
-
-  const child = run({
-    id: "run_child",
-    parent_run_id: root.id,
-    status: "completed"
-  });
-  assert.equal(childRunFor(snapshot(child, root), root), child);
-  assert.equal(phaseFor(snapshot(child, root)), "proven");
+test("an unrelated or failed child cannot prove a repair", () => {
+  const root = run({ repair: { id: "repair_1", status: "applied", applied_flow_version: 2 } });
+  const unrelated = run({ id: "run_other", parent_run_id: "another", flow_version: 2, status: "completed" });
+  const failed = run({ id: "run_failed", parent_run_id: root.id, flow_version: 2, status: "failed" });
+  assert.equal(maintenancePhase(root, [root, unrelated, failed]), "applied");
 });
 
-test("provider failures never masquerade as policy failures", () => {
-  assert.equal(phaseFor(snapshot(run({ status: "failed" }))), "failed");
-  const root = run({ repair: { id: "rpr_1", status: "applied" } });
-  const failedChild = run({
-    id: "run_child",
-    parent_run_id: root.id,
-    status: "failed"
-  });
-  assert.equal(phaseFor(snapshot(failedChild, root)), "failed");
-});
-
-test("run selection is explicit and otherwise prefers the linked child", () => {
+test("run selection uses the Studio projection and honors an explicit ID", () => {
   const root = run();
-  const child = run({
-    id: "run_child",
-    parent_run_id: root.id,
-    status: "completed"
-  });
-  const state = snapshot(child, root);
-  assert.equal(rootRunFor(state), root);
-  assert.equal(selectedRunFor(state), child);
-  assert.equal(selectedRunFor(state, root.id), root);
-  assert.equal(selectedRunFor(state, "foreign"), child);
+  const child = run({ id: "run_child", status: "completed" });
+  const snapshot = { studio: { runs: [child, root] } };
+  assert.equal(selectedStudioRun(snapshot), child);
+  assert.equal(selectedStudioRun(snapshot, root.id), root);
+  assert.equal(selectedStudioRun(snapshot, "foreign"), child);
+  assert.equal(selectedStudioRun({}, "foreign"), null);
 });
 
-test("phase derivation never mutates the server projection", () => {
-  const state = snapshot(run({ diagnosis: { id: "diag_1" } }));
-  const before = JSON.stringify(state);
-  assert.equal(phaseFor(state), "diagnosed");
-  assert.equal(JSON.stringify(state), before);
+test("healthy runs do not expose a maintenance workflow", () => {
+  assert.equal(maintenancePhase(run({ status: "completed" })), "not-required");
+  assert.equal(maintenancePhase(null), "unavailable");
 });

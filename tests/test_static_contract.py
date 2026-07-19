@@ -53,8 +53,8 @@ class StaticContractTests(unittest.TestCase):
             self.assertNotIn("Kyn.ist Flight Recorder", surface)
         for phrase in (
             "Define Actions",
-            "Build Flows",
-            "Observe Runs",
+            "Build visually",
+            "Operate live Runs",
             "Human approval",
             "Versioned Agents, Prompts, and Skills",
         ):
@@ -119,13 +119,29 @@ class StaticContractTests(unittest.TestCase):
     def test_browser_key_is_attached_only_to_same_origin_model_actions(self) -> None:
         self.assertIn('"X-OpenAI-API-Key"', self.client)
         self.assertIn("modelAction = false", self.client)
-        for route in ("/runs`,", "/diagnoses`,", "/repairs`,", "/rerun`,"):
-            with self.subTest(route=route):
-                start = self.client.index(route)
-                call = self.client[start : start + 180]
-                self.assertIn("modelAction: true", call)
-        apply_start = self.client.index("/apply`,")
-        self.assertNotIn("modelAction: true", self.client[apply_start : apply_start + 260])
+
+        def operation_body(name: str) -> str:
+            match = re.search(
+                rf"async function {name}\b.*?(?=\n(?:async )?function |\Z)",
+                self.client,
+                flags=re.DOTALL,
+            )
+            self.assertIsNotNone(match, name)
+            return match.group(0) if match else ""
+
+        keyed_operations = {
+            "submitRun": "modelAction: flow.version.requires_model",
+            "continueStudioRun": "modelAction: true",
+            "diagnoseStudioRun": "modelAction: true",
+            "proveStudioRepair": "modelAction: Boolean(flow?.version.requires_model)",
+            "rerunStudio": "modelAction: flow.version.requires_model",
+        }
+        for name, contract in keyed_operations.items():
+            with self.subTest(operation=name):
+                self.assertIn(contract, operation_body(name))
+        for name in ("cancelStudioRun", "proposeStudioRepair", "submitStudioRepair"):
+            with self.subTest(unkeyed_operation=name):
+                self.assertNotIn("modelAction:", operation_body(name))
 
     def test_configuration_and_live_documentation_explain_the_real_boundary(self) -> None:
         for phrase in (
@@ -211,11 +227,20 @@ class StaticContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.index)
 
-    def test_active_browser_surface_has_no_legacy_graph_or_fixture_model(self) -> None:
+    def test_active_browser_surface_has_a_real_canvas_and_no_fixture_model(self) -> None:
         combined = f"{self.index}\n{self.client}\n{self.state}"
-        for legacy in ("demo-run.json", "core.mjs", "graph-node", "fixture"):
+        for legacy in ("demo-run.json", "core.mjs", "Kyn.ist Flight Recorder", "fixture"):
             with self.subTest(legacy=legacy):
                 self.assertNotIn(legacy, combined)
+        for required in (
+            "graph-node",
+            "application/x-kyn-node",
+            "data-connect-from",
+            "data-connect-to",
+            "publishFlowDraft",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, combined)
 
     def test_runtime_has_one_script_entry_and_one_pure_state_module(self) -> None:
         scripts = re.findall(r'<script[^>]+src="([^"]+)"', self.index)

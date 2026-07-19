@@ -5,7 +5,7 @@ import time
 import unittest
 from pathlib import Path
 
-from backend.contracts import Conflict, verify_event_chain
+from backend.contracts import Conflict, NotFound, verify_event_chain
 from backend.service import ControlPlane
 from backend.store import Store
 
@@ -33,6 +33,22 @@ class ProductWorkflowContractTest(unittest.TestCase):
         self.plane = ControlPlane(self.store, NoModelClient())
         bootstrap = self.plane.create_workspace(seed=True)
         self.workspace_id = bootstrap["workspace_id"]
+
+    def test_new_workspace_exposes_the_complete_bounded_action_palette(self) -> None:
+        snapshot = self.plane.snapshot(self.workspace_id)["studio"]
+        kinds = {action["version"]["kind"] for action in snapshot["actions"]}
+        self.assertTrue(
+            {
+                "ai",
+                "template",
+                "transform",
+                "delay",
+                "condition",
+                "assert",
+                "approval",
+                "data_store",
+            }.issubset(kinds)
+        )
 
     def test_canvas_layout_retry_policy_and_successor_version_are_pinned(self) -> None:
         action = self.plane.create_action(
@@ -274,6 +290,58 @@ class ProductWorkflowContractTest(unittest.TestCase):
         self.assertEqual(fired["run"]["status"], "completed")
         self.assertEqual(fired["run"]["output"], {"text": "Accepted lead-42"})
         self.assertNotIn("secret", self.plane.studio_snapshot(self.workspace_id)["triggers"][0])
+        disabled = self.plane.set_studio_trigger_enabled(
+            self.workspace_id,
+            trigger["id"],
+            enabled=False,
+            expected_revision=1,
+        )
+        self.assertFalse(disabled["enabled"])
+        self.assertEqual(disabled["revision"], 2)
+        with self.assertRaises(NotFound):
+            self.plane.fire_studio_webhook(trigger["secret"], {"value": "blocked"})
+        with self.assertRaises(Conflict):
+            self.plane.set_studio_trigger_enabled(
+                self.workspace_id,
+                trigger["id"],
+                enabled=True,
+                expected_revision=1,
+            )
+
+    def test_model_schedule_prepares_a_pinned_run_without_server_credentials(self) -> None:
+        flow = self.plane.snapshot(self.workspace_id)["studio"]["flows"][0]
+        trigger = self.plane.create_studio_trigger(
+            self.workspace_id,
+            flow["id"],
+            name="Scheduled launch review",
+            trigger_type="schedule",
+            config={
+                "interval_minutes": 60,
+                "input": {
+                    "brief": (
+                        "Review a typed automation with explicit authority, Human approval, "
+                        "bounded effects, evidence, and a measurable success condition."
+                    )
+                },
+            },
+        )
+        with self.store.write() as connection:
+            connection.execute(
+                "UPDATE automation_trigger_bindings SET next_fire_at = ? WHERE id = ?",
+                ("2000-01-01T00:00:00.000Z", trigger["id"]),
+            )
+
+        fired = self.plane.fire_due_studio_schedules()
+
+        self.assertEqual(len(fired), 1)
+        run = fired[0]["run"]
+        self.assertEqual(run["status"], "created")
+        self.assertEqual(run["flow_version"], flow["version"]["version"])
+        self.assertEqual(run["model_calls"], [])
+        self.assertIn(
+            "run.credential_required",
+            [event["type"] for event in run["events"]],
+        )
 
     def test_run_is_observable_after_pinning_and_before_execution(self) -> None:
         flow_id = next(
@@ -349,6 +417,7 @@ class ProductWorkflowContractTest(unittest.TestCase):
             self.workspace_id, flow["id"], input_data={"value": "release-42"}
         )
         self.assertEqual(blocked["status"], "blocked")
+        self.assertEqual(blocked["steps"][-1]["status"], "blocked")
         self.assertEqual(blocked["action_receipts"][0]["outcome"], "denied")
         self.assertEqual(blocked["effects"], [])
 
@@ -389,9 +458,20 @@ class ProductWorkflowContractTest(unittest.TestCase):
         self.assertEqual(proof["parent_run_id"], blocked["id"])
         self.assertEqual(proof["flow_version"], 2)
         self.assertEqual(len(proof["effects"]), 1)
+        repeated_proof = self.plane.prove_studio_repair(
+            self.workspace_id,
+            proposal["id"],
+            input_data=blocked["input"],
+            idempotency_key="a-different-browser-command",
+        )
+        self.assertEqual(repeated_proof["id"], proof["id"])
+        self.assertEqual(len(repeated_proof["effects"]), 1)
         unchanged = self.plane.get_studio_run(self.workspace_id, blocked["id"])
         self.assertEqual(unchanged["status"], "blocked")
         self.assertEqual(unchanged["effects"], [])
+        self.assertEqual(unchanged["diagnosis"]["id"], diagnosis["id"])
+        self.assertEqual(unchanged["repair"]["status"], "applied")
+        self.assertEqual(unchanged["flow_graph"]["start_node_id"], "deliver")
 
 
 if __name__ == "__main__":
