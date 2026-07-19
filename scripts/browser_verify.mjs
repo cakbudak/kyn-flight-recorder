@@ -7,17 +7,11 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { APPROVAL_DEMO_BRIEF } from "../src/lib.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT_MS = Number(process.env.BROWSER_TIMEOUT_MS ?? 180_000);
 const checks = [];
-const APPROVAL_DEMO_BRIEF =
-  "Launch a Build Week preview for judges. The workflow has a strict typed input and " +
-  "must produce a contract-bound summary, score, and risk list. It pins every Agent, " +
-  "Prompt, Skill, Action, and Flow version before execution. Passing work pauses for an " +
-  "attributable human decision before one idempotent SQLite sandbox effect. Every model " +
-  "call, Step, outcome, receipt, decision, effect, and hash-linked event must remain " +
-  "inspectable, while prior Runs and definitions stay immutable during repair.";
 
 function record(name, condition, detail = null) {
   checks.push({ name, status: condition ? "pass" : "fail", detail });

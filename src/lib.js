@@ -24,6 +24,17 @@ export const SUCCESS_ERROR = [
   { id: "error", label: "Error", description: "Execution failed closed.", tone: "danger" }
 ];
 
+export const APPROVAL_DEMO_BRIEF = [
+  "Target audience: OpenAI Build Week judges assessing a public agent-workflow product.",
+  "Typed input contract: one object with a required brief string and no additional properties.",
+  "Typed output contract: one object with a required summary string, score number from 0 to 1, and risks array of strings, with no additional properties.",
+  "Deterministic decision boundary: score at or above 0.75 routes to human approval; a lower score routes to needs-work.",
+  "Human authority boundary: only the named operator may approve continuation, and no effect occurs before that recorded decision.",
+  "Bounded effect scope: approval permits exactly one idempotent append to the isolated workspace-evidence SQLite collection, with no production connector.",
+  "Inspectable evidence: every pinned definition, model attempt, Step, outcome, tool receipt, approval, effect, and hash-linked event remains queryable; failed Runs and prior versions remain immutable.",
+  "Measurable success condition: schema-valid output, score at or above 0.75, a recorded operator approval, exactly one successful effect receipt, and a valid event chain; otherwise the Run cannot be called successful."
+].join(" ");
+
 export const ACTION_PRESETS = {
   template: {
     label: "Template",
@@ -208,7 +219,7 @@ export function exampleForSchema(schema, name = "value") {
   if (schema.type === "boolean") return true;
   if (schema.type === "integer" || schema.type === "number") return 1;
   return name === "brief"
-    ? "Review this agent workflow for a bounded public launch and identify the decisive risk."
+    ? APPROVAL_DEMO_BRIEF
     : name === "name" ? "Ada" : name === "value" ? "ready" : `example-${name}`;
 }
 

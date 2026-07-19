@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  APPROVAL_DEMO_BRIEF,
   TERMINAL_RUN_STATUSES,
+  exampleForSchema,
   isActiveRun,
   latestStepForNode,
   maintenancePhase,
@@ -80,4 +82,26 @@ test("run selection uses the Studio projection and honors an explicit ID", () =>
 test("healthy runs do not expose a maintenance workflow", () => {
   assert.equal(maintenancePhase(run({ status: "completed" })), "not-required");
   assert.equal(maintenancePhase(null), "unavailable");
+});
+
+test("the seeded AI Run example states every readiness boundary explicitly", () => {
+  const example = exampleForSchema({
+    type: "object",
+    properties: { brief: { type: "string" } },
+    required: ["brief"],
+    additionalProperties: false
+  });
+  assert.equal(example.brief, APPROVAL_DEMO_BRIEF);
+  for (const contract of [
+    "Target audience:",
+    "Typed input contract:",
+    "Typed output contract:",
+    "Deterministic decision boundary:",
+    "Human authority boundary:",
+    "Bounded effect scope:",
+    "Inspectable evidence:",
+    "Measurable success condition:"
+  ]) {
+    assert.match(example.brief, new RegExp(contract));
+  }
 });
