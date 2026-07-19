@@ -37,7 +37,7 @@ class DemoServerTests(unittest.TestCase):
             self.assertTrue(response.geturl().endswith("/app/"))
             self.assertIn(b"Kyn.ist Flight Recorder", response.read())
 
-    def test_health_is_explicit_about_standalone_mode(self) -> None:
+    def test_health_is_explicit_about_runtime_availability(self) -> None:
         with self.open("/healthz") as response:
             payload = json.loads(response.read())
             self.assertEqual(response.status, 200)
@@ -45,8 +45,9 @@ class DemoServerTests(unittest.TestCase):
                 payload,
                 {
                     "status": "ok",
-                    "mode": "standalone-demo",
-                    "external_dependencies": 0,
+                    "mode": "closed-loop-agent-runtime",
+                    "sqlite": "unavailable",
+                    "openai_configured": False,
                 },
             )
 

@@ -1,20 +1,35 @@
 #!/usr/bin/env python3
-"""Serve the standalone Kyn.ist Flight Recorder with no third-party packages."""
+"""Serve the standalone Kyn.ist closed-loop runtime with the Python standard library."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
+
+from backend.contracts import ContractViolation, ProviderFailure
+from backend.http_api import MAX_API_BODY, ApiApplication, ApiRequest, ApiResponse
+from backend.openai_client import (
+    ResponsesClient,
+    UnavailableResponsesClient,
+    load_env_file,
+)
+from backend.service import ControlPlane
+from backend.store import Store
 
 
 ROOT = Path(__file__).resolve().parent
 APP_ENTRY = ROOT / "app" / "index.html"
+DEFAULT_DATABASE = ROOT / "var" / "kyn-flight-recorder.sqlite3"
+HOST_RE = re.compile(r"^[A-Za-z0-9.:-]{1,255}$")
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -26,7 +41,7 @@ SECURITY_HEADERS = {
         "font-src 'self'; "
         "object-src 'none'; "
         "base-uri 'none'; "
-        "form-action 'none'; "
+        "form-action 'self'; "
         "frame-ancestors 'none'"
     ),
     "Cross-Origin-Opener-Policy": "same-origin",
@@ -39,9 +54,13 @@ SECURITY_HEADERS = {
 
 
 class DemoRequestHandler(SimpleHTTPRequestHandler):
-    """Read-only static handler with explicit security and cache headers."""
+    """Static application plus a thin same-origin JSON API adapter."""
 
-    server_version = "KynFlightRecorder/1.0"
+    server_version = "KynFlightRecorder/2.0"
+
+    @property
+    def runtime_server(self) -> "DemoServer":
+        return self.server  # type: ignore[return-value]
 
     def end_headers(self) -> None:
         for name, value in SECURITY_HEADERS.items():
@@ -55,13 +74,13 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    @staticmethod
-    def _health_payload() -> bytes:
+    def _health_payload(self) -> bytes:
         return json.dumps(
             {
                 "status": "ok",
-                "mode": "standalone-demo",
-                "external_dependencies": 0,
+                "mode": "closed-loop-agent-runtime",
+                "sqlite": "ready" if self.runtime_server.database_ready else "unavailable",
+                "openai_configured": self.runtime_server.model_configured,
             },
             separators=(",", ":"),
         ).encode("utf-8")
@@ -75,15 +94,22 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         if include_body:
             self.wfile.write(payload)
 
-    def _method_not_allowed(self) -> None:
+    def _method_not_allowed(self, *, api: bool = False) -> None:
+        if api:
+            self._send_api_response(
+                ApiResponse(
+                    HTTPStatus.METHOD_NOT_ALLOWED,
+                    {"error": {"code": "method_not_allowed", "message": "API route does not allow this method"}},
+                    {"Allow": "GET, POST"},
+                )
+            )
+            return
         self.send_response(HTTPStatus.METHOD_NOT_ALLOWED)
         self.send_header("Allow", "GET, HEAD")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
     def translate_path(self, path: str) -> str:
-        """Resolve static paths without following a symlink outside the served root."""
-
         served_root = Path(self.directory).resolve()
         candidate = Path(super().translate_path(path)).resolve()
         try:
@@ -92,8 +118,97 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
             return str(served_root / ".kyn-flight-recorder-path-denied")
         return str(candidate)
 
+    def _api_request(self, method: str, path: str) -> bool:
+        if not path.startswith("/api/"):
+            return False
+        application = self.runtime_server.api
+        if application is None:
+            self._send_api_response(
+                ApiResponse(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"error": {"code": "runtime_unavailable", "message": "runtime API is unavailable"}},
+                )
+            )
+            return True
+
+        body = b""
+        body_too_large = False
+        if method in {"POST", "PUT", "PATCH", "DELETE"}:
+            raw_length = self.headers.get("Content-Length")
+            if raw_length is None:
+                content_length = 0
+            else:
+                try:
+                    content_length = int(raw_length)
+                except ValueError:
+                    self._send_api_response(
+                        ApiResponse(
+                            HTTPStatus.BAD_REQUEST,
+                            {"error": {"code": "invalid_length", "message": "Content-Length is invalid"}},
+                        )
+                    )
+                    return True
+            if content_length < 0:
+                self._send_api_response(
+                    ApiResponse(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": {"code": "invalid_length", "message": "Content-Length is invalid"}},
+                    )
+                )
+                return True
+            if content_length > MAX_API_BODY:
+                body_too_large = True
+                self.close_connection = True
+            else:
+                body = self.rfile.read(content_length)
+
+        forwarded = self.headers.get("X-Forwarded-Proto", "").lower()
+        scheme = forwarded if forwarded in {"http", "https"} else "http"
+        host = self.headers.get("Host", "")
+        if not HOST_RE.fullmatch(host):
+            self._send_api_response(
+                ApiResponse(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": {"code": "invalid_host", "message": "Host header is invalid"}},
+                )
+            )
+            return True
+        request = ApiRequest(
+            method=method,
+            path=path,
+            headers={key: value for key, value in self.headers.items()},
+            body=body,
+            remote_address=self._remote_address(),
+            scheme=scheme,
+            host=host,
+            body_too_large=body_too_large,
+        )
+        self._send_api_response(application.dispatch(request))
+        return True
+
+    def _remote_address(self) -> str:
+        forwarded = self.headers.get("X-Real-IP", "").strip()
+        if forwarded and re.fullmatch(r"[0-9A-Fa-f:.]{3,64}", forwarded):
+            return forwarded
+        return str(self.client_address[0])
+
+    def _send_api_response(self, response: ApiResponse) -> None:
+        payload = json.dumps(response.payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self.send_response(int(response.status))
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        for name, value in response.headers.items():
+            self.send_header(name, value)
+        if self.close_connection:
+            self.send_header("Connection", "close")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(payload)
+
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
+        if self._api_request("GET", path):
+            return
         if path == "/":
             self._redirect_to_app()
             return
@@ -104,6 +219,9 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
 
     def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler API
         path = urlsplit(self.path).path
+        if path.startswith("/api/"):
+            self._method_not_allowed(api=True)
+            return
         if path == "/":
             self._redirect_to_app()
             return
@@ -113,19 +231,28 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         super().do_HEAD()
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        path = urlsplit(self.path).path
+        if self._api_request("POST", path):
+            return
         self._method_not_allowed()
 
-    do_PUT = do_POST
-    do_PATCH = do_POST
-    do_DELETE = do_POST
+    def do_PUT(self) -> None:  # noqa: N802 - stdlib handler API
+        path = urlsplit(self.path).path
+        if self._api_request("PUT", path):
+            return
+        self._method_not_allowed()
 
-    def list_directory(self, path: str):  # type: ignore[no-untyped-def]
+    do_PATCH = do_PUT
+    do_DELETE = do_PUT
+    do_OPTIONS = do_PUT
+
+    def list_directory(self, path: str) -> Any:
         self.send_error(HTTPStatus.NOT_FOUND, "Directory listing is disabled")
         return None
 
     def log_message(self, format_string: str, *args: object) -> None:
         sys.stderr.write(
-            f"{self.log_date_time_string()} {self.address_string()} "
+            f"{self.log_date_time_string()} {self.client_address[0]} "
             f"{format_string % args}\n"
         )
 
@@ -134,22 +261,40 @@ class DemoServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        request_handler: type[SimpleHTTPRequestHandler],
+        *,
+        control_plane: ControlPlane | None = None,
+        model_configured: bool = False,
+        workspace_model_call_limit: int = 12,
+    ) -> None:
+        self.database_ready = control_plane is not None
+        self.model_configured = model_configured
+        self.api = (
+            ApiApplication(
+                control_plane,
+                workspace_model_call_limit=workspace_model_call_limit,
+            )
+            if control_plane is not None
+            else None
+        )
+        super().__init__(server_address, request_handler)
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Serve Kyn.ist Flight Recorder from the local repository."
+        description="Serve the Kyn.ist closed-loop agent runtime."
     )
+    parser.add_argument("--host", default="127.0.0.1", help="Bind address.")
+    parser.add_argument("--port", default=4173, type=int, help="TCP port, or 0 for ephemeral.")
     parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Bind address (default: 127.0.0.1).",
+        "--database",
+        default=None,
+        help="SQLite path (default: KYN_DATABASE_PATH or var/kyn-flight-recorder.sqlite3).",
     )
-    parser.add_argument(
-        "--port",
-        default=4173,
-        type=int,
-        help="TCP port, or 0 for an ephemeral port (default: 4173).",
-    )
+    parser.add_argument("--model", default=None, help="OpenAI model (default: OPENAI_MODEL or gpt-5.6).")
     return parser.parse_args(argv)
 
 
@@ -162,22 +307,45 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --port must be between 0 and 65535", file=sys.stderr)
         return 2
 
+    load_env_file(ROOT / ".env")
+    database_path = Path(
+        args.database or os.environ.get("KYN_DATABASE_PATH", str(DEFAULT_DATABASE))
+    )
+    model = args.model or os.environ.get("OPENAI_MODEL", "gpt-5.6")
+    store = Store(database_path)
+    try:
+        store.initialize()
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        client = ResponsesClient(api_key) if api_key else UnavailableResponsesClient()
+        control_plane = ControlPlane(store, client, default_model=model)
+    except (OSError, ContractViolation, ProviderFailure) as error:
+        print(f"error: runtime initialization failed: {error}", file=sys.stderr)
+        return 1
+
     handler = partial(DemoRequestHandler, directory=str(ROOT))
     try:
-        server = DemoServer((args.host, args.port), handler)
-    except OSError as error:
+        server = DemoServer(
+            (args.host, args.port),
+            handler,
+            control_plane=control_plane,
+            model_configured=bool(api_key),
+            workspace_model_call_limit=int(os.environ.get("KYN_WORKSPACE_MODEL_CALL_LIMIT", "12")),
+        )
+    except (OSError, ValueError) as error:
         print(f"error: cannot bind {args.host}:{args.port}: {error}", file=sys.stderr)
         return 1
 
     bound_host, bound_port = server.server_address[:2]
     display_host = "127.0.0.1" if bound_host in {"0.0.0.0", "::"} else bound_host
     print(f"Kyn.ist Flight Recorder: http://{display_host}:{bound_port}/app/", flush=True)
-    print("Synthetic local demo · no external services · Ctrl-C to stop", flush=True)
-
+    print(
+        f"SQLite closed loop · OpenAI Responses {'ready' if api_key else 'not configured'} · Ctrl-C to stop",
+        flush=True,
+    )
     try:
         server.serve_forever(poll_interval=0.25)
     except KeyboardInterrupt:
-        print("\nStopping demo server.", flush=True)
+        print("\nStopping runtime server.", flush=True)
     finally:
         server.server_close()
     return 0

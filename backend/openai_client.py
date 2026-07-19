@@ -111,3 +111,13 @@ class ResponsesClient:
         if not isinstance(result, dict):
             raise ProviderFailure("OpenAI returned an invalid response envelope")
         return result
+
+
+class UnavailableResponsesClient:
+    """Fail-loud transport used only when the server starts without a configured key."""
+
+    configured = False
+
+    def create(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        del payload
+        raise ProviderFailure("OPENAI_API_KEY is not configured")

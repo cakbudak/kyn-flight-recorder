@@ -50,6 +50,16 @@ class Unauthorized(RuntimeErrorBase):
     http_status = 401
 
 
+class Forbidden(RuntimeErrorBase):
+    code = "forbidden"
+    http_status = 403
+
+
+class PayloadTooLarge(RuntimeErrorBase):
+    code = "body_too_large"
+    http_status = 413
+
+
 class RateLimited(RuntimeErrorBase):
     code = "rate_limited"
     http_status = 429
