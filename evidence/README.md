@@ -30,6 +30,15 @@ node scripts/browser_verify.mjs \
 The browser runner uses Node's built-in WebSocket client and the Chrome DevTools
 Protocol. It has no npm dependencies; it needs a local Chromium binary.
 
+Run the identical journey against the public deployment without starting the
+local Python server:
+
+```bash
+node scripts/browser_verify.mjs \
+  --base-url https://buildweek.kyn.ist \
+  --report evidence/live-browser-verification.json
+```
+
 ## Screenshots
 
 - `01-blocked-run.png` — initial causal diagnosis.

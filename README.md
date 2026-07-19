@@ -5,6 +5,9 @@ controlled move that can advance it.**
 
 ![Kyn.ist Flight Recorder showing a blocked approval boundary](evidence/screenshots/01-blocked-run.png)
 
+**[Open the live demo](https://buildweek.kyn.ist/app/)** ·
+**[View the source on GitHub](https://github.com/cakbudak/kyn-flight-recorder)**
+
 Kyn.ist Flight Recorder is a standalone, local-first developer tool built for
 OpenAI Build Week 2026. It turns one portable agent trace into a causal graph,
 a deterministic replay, and a revision-fenced intervention receipt—without
@@ -13,7 +16,8 @@ build step.
 
 ## Judge path: 60 seconds
 
-1. Run `python3 serve.py` and open <http://127.0.0.1:4173/app/>.
+1. Open <https://buildweek.kyn.ist/app/>, or run `python3 serve.py` and open
+   <http://127.0.0.1:4173/app/>.
 2. Read the diagnosis, then select **Queue lease healthy**. This is the evidence
    that an infrastructure retry would be the wrong intervention.
 3. Select **Approval required**, then choose **Preview controlled intervention**.
@@ -43,9 +47,11 @@ disabled.
 | macOS | Python 3.10+; Safari, Chrome, or Firefox | Contract-compatible; not physically tested |
 | Windows | Python 3.10+; Edge, Chrome, or Firefox | Contract-compatible; not physically tested |
 
-There is no install, compilation, migration, account, secret, or network service.
-The bundled sample trace loads automatically. A judge can test the complete
-project from a clean clone without rebuilding anything.
+There is no install, compilation, migration, account, or secret. The hosted demo
+is the same static application behind Kyn.ist's HTTPS delivery path; the bundled
+sample trace loads automatically and every simulated transition remains in the
+browser. A judge can also test the complete project from a clean clone without
+rebuilding anything.
 
 ## What the trace proves
 
@@ -157,6 +163,9 @@ Run the real-browser journey if Node 20+ and Chromium are installed:
 
 ```bash
 node scripts/browser_verify.mjs
+
+# Exercise the same 38 checks against the public HTTPS origin:
+node scripts/browser_verify.mjs --base-url https://buildweek.kyn.ist
 ```
 
 Current reproducible evidence:

@@ -225,10 +225,25 @@ async function pressKey(client, key, code = key) {
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const options = { report: null, artifacts: null };
+  const options = { report: null, artifacts: null, baseUrl: null };
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--report") options.report = args[++index];
     else if (args[index] === "--artifacts") options.artifacts = args[++index];
+    else if (args[index] === "--base-url") {
+      const rawUrl = args[++index];
+      if (!rawUrl) throw new Error("--base-url requires an HTTP(S) origin");
+      const parsedUrl = new URL(rawUrl);
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error("--base-url must use http or https");
+      }
+      if (parsedUrl.username || parsedUrl.password || parsedUrl.search || parsedUrl.hash) {
+        throw new Error("--base-url must not contain credentials, a query, or a fragment");
+      }
+      if (parsedUrl.pathname !== "/") {
+        throw new Error("--base-url must be an origin without a path");
+      }
+      options.baseUrl = parsedUrl.origin;
+    }
     else throw new Error(`unknown argument: ${args[index]}`);
   }
   return options;
@@ -236,9 +251,10 @@ function parseArgs() {
 
 async function main() {
   const options = parseArgs();
-  const appPort = await freePort();
+  const localTarget = options.baseUrl === null;
+  const appPort = localTarget ? await freePort() : null;
   const debugPort = await freePort();
-  const baseUrl = `http://127.0.0.1:${appPort}`;
+  const baseUrl = options.baseUrl ?? `http://127.0.0.1:${appPort}`;
   const profile = mkdtempSync(resolve(tmpdir(), "kyn-flight-recorder-chromium-"));
   const serverOutput = [];
   const browserOutput = [];
@@ -248,12 +264,14 @@ async function main() {
   let fatalError = null;
 
   try {
-    server = spawn(process.env.PYTHON_BIN ?? "python3", ["serve.py", "--port", String(appPort)], {
-      cwd: ROOT,
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    server.stdout.on("data", (chunk) => serverOutput.push(String(chunk)));
-    server.stderr.on("data", (chunk) => serverOutput.push(String(chunk)));
+    if (localTarget) {
+      server = spawn(process.env.PYTHON_BIN ?? "python3", ["serve.py", "--port", String(appPort)], {
+        cwd: ROOT,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      server.stdout.on("data", (chunk) => serverOutput.push(String(chunk)));
+      server.stderr.on("data", (chunk) => serverOutput.push(String(chunk)));
+    }
     await waitForHttp(`${baseUrl}/healthz`);
 
     const chromium = findChromium();
@@ -328,7 +346,7 @@ async function main() {
     record("raw fixture credentials never enter the DOM", initial.rawCredentialInDom === false);
     record("all buttons have accessible names", initial.unnamedButtons === 0, initial.unnamedButtons);
     record("desktop document has no horizontal overflow", initial.horizontalOverflow === 0, initial.horizontalOverflow);
-    record("first render stays under one second locally", initial.renderMark !== null && initial.renderMark < 1000, initial.renderMark);
+    record("first render stays under one second on the tested origin", initial.renderMark !== null && initial.renderMark < 1000, initial.renderMark);
 
     const axTree = await client.send("Accessibility.getFullAXTree");
     const buttons = axTree.nodes.filter((node) => node.role?.value === "button");
@@ -637,7 +655,8 @@ async function main() {
     surface: "Kyn.ist Flight Recorder standalone browser journey",
     runtime: {
       chromium: findChromium(),
-      server: "Python standard library",
+      server: localTarget ? "Python standard library" : "external static origin",
+      base_url: baseUrl,
       viewport_matrix: ["1440x1000", "390x844", "390x520 dialog"]
     },
     summary: {

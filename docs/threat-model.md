@@ -9,9 +9,12 @@ Claim boundary: security review target, not ASVS certification
 Protected assets are the developer's trace content, local command receipt, causal
 integrity, browser context, and API key used by the separate GPT-5.6 evidence
 runner. The browser trusts repository code and the bundled synthetic fixture. A
-user-selected import is untrusted until validation and redaction finish. The
-Python server is a read-only loopback origin. The OpenAI API boundary exists only
-when a developer explicitly runs `scripts/gpt56_review.py` without `--dry-run`.
+user-selected import is untrusted until validation and redaction finish. Delivery
+is either the read-only Python loopback origin or the public static
+`buildweek.kyn.ist` origin behind Cloudflare, Traefik, and nginx. The application
+has no server-side trace API; imported files and simulated receipts remain in the
+browser. The OpenAI API boundary exists only when a developer explicitly runs
+`scripts/gpt56_review.py` without `--dry-run`.
 
 The demo has no identity system, database, production credential, connector, or
 external tool authority. Those are exclusions, not silently assumed controls.
@@ -35,10 +38,12 @@ external tool authority. Those are exclusions, not silently assumed controls.
 
 ## Security headers
 
-`serve.py` sends a restrictive Content Security Policy, `nosniff`, no-referrer,
-same-origin opener/resource policy, denied framing, and `Cache-Control: no-store`
-for application and JSON responses. These headers are defense in depth; DOM-safe
-construction and semantic validation remain the primary controls.
+Both `serve.py` and the dedicated public static origin send a restrictive Content
+Security Policy, `nosniff`, no-referrer, same-origin opener/resource policy,
+denied framing, a restrictive Permissions Policy, and `Cache-Control: no-store`
+for application and JSON responses. The HTTPS origin additionally sends HSTS.
+These headers are defense in depth; DOM-safe construction and semantic validation
+remain the primary controls.
 
 ## Residual risks
 
@@ -48,8 +53,12 @@ construction and semantic validation remain the primary controls.
   depth counter. A hostile deeply nested file could still stress a browser parser.
 - A valid synthetic trace can lie about its observations. Authenticity/signature
   verification is outside this cut.
-- Loopback serving does not provide user authentication. Do not bind to a public
-  interface on an untrusted network.
+- The public demo intentionally has no authentication because it contains only
+  synthetic data and performs no server-side mutation. Do not import real secrets
+  or confidential traces; public delivery infrastructure can observe request
+  metadata even though selected file content never leaves the browser.
+- The local server does not provide user authentication. Do not bind it to a
+  public interface on an untrusted network.
 - The GPT evidence call sends the allow-listed synthetic packet to OpenAI when
   explicitly executed. It is not part of offline demo operation.
 - No physical assistive-technology or cross-browser security pass was available.
