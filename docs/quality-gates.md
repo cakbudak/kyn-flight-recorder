@@ -13,7 +13,7 @@ reports are superseded and are not accepted as evidence for this product surface
 | reuse | published Flow executes as an evidence-linked child Run with a shared correlation ID | PASS |
 | execute | user-defined deterministic Flow completes without an OpenAI credential | PASS |
 | AI contract | AI Action pins Agent → Prompt + Skills; strict final schema and exact Action tools share one Responses request | PASS |
-| stateless tools | `store:false` tool turns preserve provider reasoning items and encrypted reasoning context | PASS |
+| stateless tools | `store:false` tool turns preserve provider reasoning items and encrypted reasoning context while removing response-only replay metadata | PASS |
 | observe | Steps, model attempts, receipts, approvals, effects, and hash-linked events persist in SQLite | PASS |
 | approve | Run pauses before effect; attributable human decision resumes the same pinned graph | PASS |
 | rerun | terminal parent remains immutable; linked child pins the same Flow version and owns its evidence | PASS |
@@ -26,25 +26,29 @@ reports are superseded and are not accepted as evidence for this product surface
 | credential | browser-tab `sessionStorage` only; server has no operator-key fallback and never persists the key | PASS |
 | browser | desktop + 390 px, reduced motion, named controls, no overflow, failed request, or console error | PASS |
 | real model | real GPT-5.6 analysis pauses, approves, and commits exactly one bounded SQLite effect | PASS |
-| public HTTPS | full real-model Studio journey through the deployed origin | PENDING REVALIDATION |
+| public HTTPS | full real-model Studio journey through the deployed origin | PASS |
 | assistive tech | physical screen-reader pass | NOT RUN |
 
 ## Current verification
 
 ```text
 68 Python runtime/database/HTTP/security/UI contract tests: PASS
- 6 pure browser-state tests:                              PASS
+ 7 pure browser-state tests:                              PASS
 30 Chromium full-stack Studio checks:                    PASS
- 1 real GPT-5.6 end-to-end Studio Run:                   PASS
-30 public HTTPS + real GPT-5.6 Chromium checks:          PENDING REVALIDATION
+30 public HTTPS + real GPT-5.6 Chromium checks:          PASS
+ 0 npm audit vulnerabilities:                            PASS
 ```
 
-The real-model proof executed the official Python SDK with a per-operation key,
-produced a strict typed analysis, crossed a deterministic condition, stopped at
-Human approval with zero effects, then resumed to exactly one idempotent SQLite
-sandbox effect. A separate forced two-turn SDK check proved function-call output
-round-tripping with `store:false`, strict final Structured Output, and the same
-tool definitions on both turns.
+The public real-model proof executed the official Python SDK with a per-operation
+browser key, produced a strict typed analysis, crossed a deterministic condition,
+stopped at Human approval with zero effects, then resumed to exactly one
+idempotent SQLite sandbox effect. Its controlled failure then used a real GPT-5.6
+diagnostician constrained to a code-owned causal candidate and Run-owned event
+IDs before publishing and proving a successor. A separate real forced two-turn
+SDK run proved function-call output round-tripping with `store:false`, strict
+final Structured Output, and the same tool definitions on both turns. That run
+also exposed and permanently covered the provider response-only `status` replay
+field returned by GPT-5.6.
 
 ## Reproduction
 

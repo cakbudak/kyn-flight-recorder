@@ -39,6 +39,7 @@ The committed proof shows:
 - a real GPT‑5.6 AI Action emits strict typed output;
 - the graph pauses at Human approval with zero effects;
 - approval resumes to exactly one sandbox effect;
+- a real GPT‑5.6 diagnostician explains only the code-owned failure candidate and cites Run-owned events;
 - a linked child Run owns an independent valid event chain;
 - Prompt, Skill, and Agent creation work in the browser;
 - integrated maintenance proves its blocked-parent/successor-child outcome.

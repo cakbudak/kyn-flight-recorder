@@ -253,7 +253,8 @@ run against the deployed OpenAI-backed service. The committed
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json)
 and [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
 are generated from one runner. The current local journey passes 30/30 checks; the public HTTPS report is
-regenerated from this exact runner after deployment.
+also 30/30 against the deployed official-SDK runtime and is archived with eight
+screenshots under `evidence/live/`.
 
 ## Codex provenance
 

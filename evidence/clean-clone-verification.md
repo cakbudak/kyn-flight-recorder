@@ -29,19 +29,22 @@ node scripts/browser_verify.mjs
 The default browser proof is deterministic. A real-model run is intentionally
 separate because it consumes the visitor's API quota.
 
-## Previous clean-clone proof
+## Current clean-clone proof
 
-On 2026-07-19, public commit `3a667b8` was cloned from the renamed GitHub URL with
-the credential helper disabled. In that untouched clone:
+On 2026-07-19, public source commit
+`7770410f002cfe09dd0a48a8645cf7d473144fcf` was cloned from the renamed GitHub URL
+with the credential helper disabled. In that untouched clone:
 
 - `pip install -r requirements.txt` completed;
 - 68 Python contract tests passed;
-- 6 pure browser-state tests passed;
-- the then-current Chromium product journey passed 24/24;
+- 7 pure browser-state tests passed;
+- the production frontend rebuilt successfully;
+- the current Chromium product journey passed 30/30;
+- `npm audit` reported zero vulnerabilities;
 - `OPENAI_API_KEY` was absent;
-- `git status --short` remained empty after verification.
+- `git status --short` remained empty after build and verification.
 
-That proof predates the professional React workbench and is retained only as
-historical provenance. The current 68-test, 30-check release is re-cloned from
-GitHub and recorded in a forward evidence commit after the release source is
-pushed.
+The clean clone path was temporary and contained no configuration symlink,
+private Kyn dependency, pre-existing database, or uncommitted asset. This evidence
+commit adds reports and documentation only; the product source verified above is
+unchanged.
