@@ -28,3 +28,15 @@ node scripts/browser_verify.mjs
 
 The default browser proof is deterministic. A real-model run is intentionally
 separate because it consumes the visitor's API quota.
+
+## Recorded clean-clone proof
+
+On 2026-07-19, public commit `ad92bc5` was cloned from the renamed GitHub URL with
+the credential helper disabled. In that untouched clone:
+
+- `pip install -r requirements.txt` completed;
+- 61 Python contract tests passed;
+- 6 pure browser-state tests passed;
+- the Chromium product journey passed 21/21;
+- `OPENAI_API_KEY` was absent;
+- `git status --short` remained empty after verification.
