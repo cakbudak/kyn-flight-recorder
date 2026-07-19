@@ -44,6 +44,7 @@ The schema uses explicit nouns. There is no generic object/part/entity/edge tabl
 | `tool_receipts` | validated call, result/error, authority and idempotency evidence |
 | `diagnoses` | structured grounded fault analysis and evidence ids |
 | `repairs` | bounded patch, proposal hash, fence and approval/application state |
+| `repair_approvals` | append-only human command and applied-version receipt |
 | `sandbox_releases` | the safe local effect created by successful `stage_release` |
 
 JSON columns hold bounded arrays or manifest fragments where SQLite has no useful scalar

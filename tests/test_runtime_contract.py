@@ -5,6 +5,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from backend.contracts import ContractViolation, Conflict, verify_event_chain
@@ -195,7 +196,7 @@ class RuntimeContractTest(unittest.TestCase):
         forbidden = {"parts", "entities", "bricks", "frames", "nodes", "edges"}
         self.assertTrue(tables.isdisjoint(forbidden))
 
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection:
             sql = " ".join(
                 row[0]
                 for row in connection.execute(
@@ -380,7 +381,7 @@ class DatabaseInvariantTest(unittest.TestCase):
 
     def test_version_rows_and_events_are_database_immutable(self) -> None:
         run = self.plane.run_flow(self.workspace_id, self.flow_id)
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection:
             with self.assertRaisesRegex(sqlite3.IntegrityError, "immutable"):
                 connection.execute("UPDATE flow_versions SET version = 9")
             with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
@@ -388,7 +389,7 @@ class DatabaseInvariantTest(unittest.TestCase):
 
     def test_terminal_status_is_absorbing_in_the_database(self) -> None:
         run = self.plane.run_flow(self.workspace_id, self.flow_id)
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection:
             with self.assertRaisesRegex(sqlite3.IntegrityError, "terminal"):
                 connection.execute(
                     "UPDATE runs SET status = 'running', revision = revision + 1 WHERE id = ?",

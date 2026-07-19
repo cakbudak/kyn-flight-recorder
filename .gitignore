@@ -1,8 +1,5 @@
+.env
+var/
 __pycache__/
 *.py[cod]
-.DS_Store
-.idea/
-.vscode/
-playwright-report/
-test-results/
-*.log
+node_modules/
