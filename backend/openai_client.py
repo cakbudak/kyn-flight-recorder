@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -22,6 +23,13 @@ ALLOWED_ENVIRONMENT_KEYS = frozenset(
         "KYN_WORKSPACE_MODEL_CALL_LIMIT",
     }
 )
+PROVIDER_FIELD_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]+$")
+
+
+def _safe_provider_field(value: Any, *, maximum: int = 120) -> str | None:
+    if not isinstance(value, str) or not value or len(value) > maximum:
+        return None
+    return value if PROVIDER_FIELD_RE.fullmatch(value) else None
 
 
 def load_env_file(path: str | Path) -> None:
@@ -84,19 +92,30 @@ class ResponsesClient:
         try:
             response = self._client.responses.create(**material)
         except APIStatusError as error:
-            provider_code = "api_status_error"
             body = getattr(error, "body", None)
+            envelope: Mapping[str, Any] = {}
             if isinstance(body, dict):
-                candidate = body.get("type") or body.get("code")
-                if isinstance(candidate, str) and candidate:
-                    provider_code = candidate[:80]
+                nested = body.get("error")
+                envelope = nested if isinstance(nested, dict) else body
+            provider_type = _safe_provider_field(envelope.get("type"), maximum=80)
+            provider_code = (
+                _safe_provider_field(envelope.get("code"), maximum=80)
+                or provider_type
+                or "api_status_error"
+            )
+            provider_param = _safe_provider_field(envelope.get("param"))
+            detail: dict[str, Any] = {
+                "provider_code": provider_code,
+                "status": int(error.status_code),
+                "request_id": getattr(error, "request_id", None),
+            }
+            if provider_type is not None:
+                detail["provider_type"] = provider_type
+            if provider_param is not None:
+                detail["provider_param"] = provider_param
             raise ProviderFailure(
                 f"OpenAI request failed with status {error.status_code}",
-                detail={
-                    "provider_code": provider_code,
-                    "status": int(error.status_code),
-                    "request_id": getattr(error, "request_id", None),
-                },
+                detail=detail,
             ) from None
         except (APITimeoutError, APIConnectionError) as error:
             raise ProviderFailure(

@@ -28,6 +28,9 @@ from .studio_store import StudioStore
 NODE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 ROUTE_OUTCOMES = frozenset({"success", "true", "false", "approved", "rejected"})
 CALLABLE_ACTION_KINDS = frozenset({"template", "condition", "sandbox"})
+PROVIDER_DETAIL_FIELDS = frozenset(
+    {"provider_code", "provider_type", "provider_param", "status", "request_id"}
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,29 @@ class ActionResult:
     route_outcome: str
     paused: bool = False
     approval_message: str | None = None
+
+
+def _safe_provider_detail(error: ProviderFailure) -> dict[str, Any]:
+    detail: dict[str, Any] = {}
+    for field in PROVIDER_DETAIL_FIELDS:
+        value = error.detail.get(field)
+        if field == "status" and isinstance(value, int) and not isinstance(value, bool):
+            detail[field] = value
+        elif isinstance(value, str) and 0 < len(value) <= 128:
+            detail[field] = value
+    return detail
+
+
+def _public_error_message(error: ContractViolation | ProviderFailure) -> str:
+    if not isinstance(error, ProviderFailure):
+        return str(error)
+    detail = _safe_provider_detail(error)
+    diagnostics = [
+        str(detail[field])
+        for field in ("provider_code", "provider_type", "provider_param")
+        if field in detail
+    ]
+    return f"{error} ({', '.join(diagnostics)})" if diagnostics else str(error)
 
 
 def validate_flow_definition(
@@ -377,6 +403,7 @@ class StudioRuntime:
                     return self.repository.get_run(workspace_id, run_id)
                 node_id = next_node
             except (ContractViolation, ProviderFailure) as error:
+                public_message = _public_error_message(error)
                 if step_id is not None:
                     try:
                         self.repository.finish_step(
@@ -387,12 +414,12 @@ class StudioRuntime:
                             output=None,
                             route_outcome=None,
                             error_code=error.code,
-                            error_message=str(error),
+                            error_message=public_message,
                         )
                     except (Conflict, ContractViolation):
                         pass
                 return self._fail_run(
-                    workspace_id, run_id, error.code, str(error)
+                    workspace_id, run_id, error.code, public_message
                 )
         self.repository.transition_run(
             workspace_id,
@@ -668,6 +695,15 @@ class StudioRuntime:
                 "parallel_tool_calls": False,
                 "max_output_tokens": self.max_output_tokens,
                 "store": False,
+                "reasoning": {"effort": action["config"]["reasoning_effort"]},
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "kyn_action_output",
+                        "schema": action["output_schema"],
+                        "strict": True,
+                    }
+                },
                 "metadata": {
                     "kyn_surface": "agent-studio",
                     "run_id": run_id,
@@ -676,19 +712,14 @@ class StudioRuntime:
                     "agent_version_id": agent["id"],
                 },
             }
-            if tool_definitions and used_tool_calls < max_tool_calls:
+            if tool_definitions:
                 payload["tools"] = tool_definitions
-                payload["tool_choice"] = "auto"
+                payload["include"] = ["reasoning.encrypted_content"]
+                payload["tool_choice"] = (
+                    "auto" if used_tool_calls < max_tool_calls else "none"
+                )
             else:
                 payload["tool_choice"] = "none"
-                payload["text"] = {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "kyn_action_output",
-                        "schema": action["output_schema"],
-                        "strict": True,
-                    }
-                }
             response = self._call_and_record(
                 workspace_id, run_id, step_id, agent, payload
             )
@@ -832,7 +863,30 @@ class StudioRuntime:
     ) -> dict[str, Any]:
         if self.repository.store.in_write_transaction():
             raise RuntimeError("external model I/O under a SQLite write transaction")
-        response = self.client.create(payload)
+        input_hash = fingerprint(payload)
+        try:
+            response = self.client.create(payload)
+        except ProviderFailure as error:
+            detail = _safe_provider_detail(error)
+            request_id = detail.get("request_id")
+            self.repository.record_model_call(
+                workspace_id,
+                run_id,
+                step_id,
+                agent_version_id=agent["id"],
+                provider_response_id=(
+                    request_id if isinstance(request_id, str) else "unavailable"
+                ),
+                status="failed",
+                model=str(payload.get("model", "unknown"))[:100],
+                input_hash=input_hash,
+                output_hash=fingerprint(
+                    {"error_code": error.code, "provider_detail": detail}
+                ),
+                usage={},
+                request_id=request_id if isinstance(request_id, str) else None,
+            )
+            raise
         summary = safe_response_summary(response)
         self.repository.record_model_call(
             workspace_id,
@@ -842,7 +896,7 @@ class StudioRuntime:
             provider_response_id=summary["provider_response_id"],
             status=summary["status"],
             model=summary["model"],
-            input_hash=fingerprint(payload),
+            input_hash=input_hash,
             output_hash=fingerprint(response),
             usage=summary["usage"],
             request_id=(

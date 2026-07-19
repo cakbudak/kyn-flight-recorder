@@ -168,9 +168,12 @@ async function main() {
       health
     );
 
+    const browserEnvironment = { ...process.env };
+    delete browserEnvironment.OPENAI_API_KEY;
     browser = await chromium.launch({
       executablePath: findChromium(),
       headless: true,
+      env: browserEnvironment,
       args: [
         "--no-sandbox",
         "--disable-gpu",

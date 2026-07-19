@@ -7,6 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
+from openai import APIStatusError
+
 from backend.contracts import ProviderFailure
 from backend.openai_client import ResponsesClient, load_env_file
 
@@ -28,6 +31,33 @@ class FakeResponsesResource:
 class FakeOpenAI:
     def __init__(self) -> None:
         self.responses = FakeResponsesResource()
+
+
+class FailingResponsesResource:
+    def create(self, **payload: object) -> FakeResponse:
+        del payload
+        response = httpx.Response(
+            400,
+            request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+            headers={"x-request-id": "req_safe_failure"},
+        )
+        raise APIStatusError(
+            "provider rejected request",
+            response=response,
+            body={
+                "error": {
+                    "type": "invalid_request_error",
+                    "code": "invalid_value",
+                    "param": "input[1].encrypted_content",
+                    "message": "must never be copied into public runtime evidence",
+                }
+            },
+        )
+
+
+class FailingOpenAI:
+    def __init__(self) -> None:
+        self.responses = FailingResponsesResource()
 
 
 class OpenAISdkTransportTests(unittest.TestCase):
@@ -53,6 +83,25 @@ class OpenAISdkTransportTests(unittest.TestCase):
         with self.assertRaises(ProviderFailure):
             transport.create({"input": "x" * (256 * 1024)})
         self.assertEqual(sdk.responses.calls, [])
+
+    def test_provider_error_keeps_only_safe_nested_diagnostics(self) -> None:
+        transport = ResponsesClient(
+            "test-browser-owned-key-for-sdk-contract",
+            sdk_client=FailingOpenAI(),
+        )
+        with self.assertRaises(ProviderFailure) as caught:
+            transport.create({"model": "gpt-5.6", "input": "safe"})
+        self.assertEqual(
+            caught.exception.detail,
+            {
+                "provider_code": "invalid_value",
+                "provider_type": "invalid_request_error",
+                "provider_param": "input[1].encrypted_content",
+                "status": 400,
+                "request_id": "req_safe_failure",
+            },
+        )
+        self.assertNotIn("must never", str(caught.exception.detail))
 
     def test_env_loader_ignores_operator_api_keys(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -7,7 +7,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from backend.contracts import ContractViolation, verify_event_chain
+from backend.contracts import ContractViolation, ProviderFailure, verify_event_chain
 from backend.service import ControlPlane
 from backend.store import Store
 
@@ -59,6 +59,85 @@ class StudioResponsesClient:
                 }
             ],
         }
+
+
+class ToolCallingStudioResponsesClient:
+    """Two-turn provider seam proving stateless reasoning + strict final output."""
+
+    def __init__(self, store: Store) -> None:
+        self.store = store
+        self.requests: list[dict[str, object]] = []
+
+    def create(self, payload: dict[str, object]) -> dict[str, object]:
+        if self.store.in_write_transaction():
+            raise AssertionError("provider I/O happened inside a SQLite write transaction")
+        self.requests.append(json.loads(json.dumps(payload)))
+        if len(self.requests) == 1:
+            return {
+                "id": "resp_tool_turn",
+                "status": "completed",
+                "model": "gpt-5.6-sol",
+                "usage": {"input_tokens": 40, "output_tokens": 20, "total_tokens": 60},
+                "output": [
+                    {
+                        "id": "rs_tool_turn",
+                        "type": "reasoning",
+                        "encrypted_content": "opaque-provider-reasoning",
+                        "summary": [],
+                    },
+                    {
+                        "id": "fc_tool_turn",
+                        "type": "function_call",
+                        "call_id": "call_needs_work",
+                        "name": "needs-work-response",
+                        "arguments": json.dumps(
+                            {"summary": "The launch brief needs one bounded clarification."}
+                        ),
+                        "status": "completed",
+                    },
+                ],
+            }
+        return {
+            "id": "resp_final_turn",
+            "status": "completed",
+            "model": "gpt-5.6-sol",
+            "usage": {"input_tokens": 80, "output_tokens": 30, "total_tokens": 110},
+            "output": [
+                {
+                    "id": "msg_final_turn",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": json.dumps(
+                                {
+                                    "summary": "The bounded launch is ready for human review.",
+                                    "score": 0.91,
+                                    "risks": ["The sandbox effect still requires approval."],
+                                }
+                            ),
+                            "annotations": [],
+                        }
+                    ],
+                }
+            ],
+        }
+
+
+class FailingStudioResponsesClient:
+    def create(self, payload: dict[str, object]) -> dict[str, object]:
+        del payload
+        raise ProviderFailure(
+            "OpenAI request failed with status 400",
+            detail={
+                "provider_code": "invalid_value",
+                "provider_type": "invalid_request_error",
+                "provider_param": "input[1].encrypted_content",
+                "status": 400,
+                "request_id": "req_runtime_failure",
+            },
+        )
 
 
 class AgentStudioRuntimeContractTest(unittest.TestCase):
@@ -135,6 +214,72 @@ class AgentStudioRuntimeContractTest(unittest.TestCase):
         self.assertEqual(rerun["id"], repeated["id"])
         self.assertEqual(rerun["parent_run_id"], completed["id"])
         self.assertEqual(rerun["flow_version_id"], completed["flow_version_id"])
+
+    def test_ai_action_keeps_tools_reasoning_and_strict_output_in_one_contract(self) -> None:
+        client = ToolCallingStudioResponsesClient(self.store)
+        flow_id = self.bootstrap["snapshot"]["studio"]["flows"][0]["id"]
+        run = self.plane.start_studio_run(
+            self.workspace_id,
+            flow_id,
+            input_data={
+                "brief": (
+                    "Prove a stateless model tool turn and a schema-bound final response "
+                    "before a human authorizes the sandbox effect."
+                )
+            },
+            client=client,
+        )
+
+        self.assertEqual(run["status"], "waiting_approval")
+        self.assertEqual(len(client.requests), 2)
+        for request in client.requests:
+            self.assertEqual(request["include"], ["reasoning.encrypted_content"])
+            self.assertEqual(request["reasoning"], {"effort": "medium"})
+            self.assertEqual(
+                request["text"],
+                {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "kyn_action_output",
+                        "schema": self.plane.get_studio_action(
+                            self.workspace_id,
+                            next(
+                                action["id"]
+                                for action in self.bootstrap["snapshot"]["studio"]["actions"]
+                                if action["slug"] == "ai-launch-analysis"
+                            ),
+                        )["version"]["output_schema"],
+                        "strict": True,
+                    }
+                },
+            )
+            self.assertEqual(len(request["tools"]), 1)
+        self.assertEqual(client.requests[0]["tool_choice"], "auto")
+        second_input = client.requests[1]["input"]
+        self.assertTrue(
+            any(item.get("type") == "reasoning" for item in second_input)
+        )
+        self.assertTrue(
+            any(item.get("type") == "function_call_output" for item in second_input)
+        )
+
+    def test_failed_provider_attempt_is_visible_without_provider_message_leakage(self) -> None:
+        flow_id = self.bootstrap["snapshot"]["studio"]["flows"][0]["id"]
+        run = self.plane.start_studio_run(
+            self.workspace_id,
+            flow_id,
+            input_data={"brief": "Expose a safe failed model-attempt receipt in the Run evidence."},
+            client=FailingStudioResponsesClient(),
+        )
+
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["error_code"], "provider_failure")
+        self.assertIn("invalid_value", run["error_message"])
+        self.assertIn("input[1].encrypted_content", run["error_message"])
+        self.assertEqual(len(run["model_calls"]), 1)
+        self.assertEqual(run["model_calls"][0]["status"], "failed")
+        self.assertEqual(run["model_calls"][0]["request_id"], "req_runtime_failure")
+        self.assertEqual(run["model_calls"][0]["usage"], {})
 
     def test_user_can_define_and_execute_a_deterministic_action_flow(self) -> None:
         action = self.plane.create_action(
