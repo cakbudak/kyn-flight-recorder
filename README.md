@@ -87,6 +87,7 @@ See the [v1 trace contract](docs/trace-contract.md).
 | `app/app.mjs` | Accessible rendering, import, focus, reset, session receipt | Browser platform |
 | `app/data/demo-run.json` | Versioned synthetic sample and legal transition | Repository fixture |
 | `scripts/gpt56_review.py` | Optional submission-time adversarial evidence review | Python stdlib + explicit OpenAI API call |
+| `deploy/nginx-buildweek.conf` | Read-only public static origin contract | Existing Kyn.ist nginx delivery path |
 
 There is one UI entry, one fixture, one graph model, and one mutation path. All
 dynamic values enter the DOM through text nodes. Sensitive-key redaction happens
@@ -198,6 +199,7 @@ validated, explained, replayed, and advanced under explicit local invariants.
 
 ```text
 app/          static application, pure state machine, synthetic fixture
+deploy/       versioned read-only public-origin configuration
 docs/         product, trace, threat, and quality contracts
 evidence/     reproducible reports and browser screenshots
 schema/       machine-readable v1 structural envelope

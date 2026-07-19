@@ -18,6 +18,10 @@ repository, not screenshots copied from the Kynist monorepo.
   line between observed evidence and simulated preview.
 - [`clean-clone-verification.md`](clean-clone-verification.md) — isolated clone,
   complete test/browser run, and clean-worktree result.
+- [`live-browser-verification.json`](live-browser-verification.json) — the same
+  38-check journey executed against the public HTTPS origin.
+- [`live-publication-verification.md`](live-publication-verification.md) — remote,
+  TLS, headers, negative-path, deployment, and publication evidence.
 
 Regenerate the browser report and screenshots from the repository root:
 

@@ -39,7 +39,7 @@ external tool authority. Those are exclusions, not silently assumed controls.
 ## Security headers
 
 Both `serve.py` and the dedicated public static origin send a restrictive Content
-Security Policy, `nosniff`, no-referrer, same-origin opener/resource policy,
+Security Policy, `nosniff`, a strict referrer policy, same-origin opener/resource policy,
 denied framing, a restrictive Permissions Policy, and `Cache-Control: no-store`
 for application and JSON responses. The HTTPS origin additionally sends HSTS.
 These headers are defense in depth; DOM-safe construction and semantic validation
