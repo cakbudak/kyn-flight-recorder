@@ -30,6 +30,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="also execute the 64-node runtime and Chromium load gates",
     )
+    parser.add_argument(
+        "--ablation",
+        action="store_true",
+        help="also prove every guard is load-bearing by disabling one at a time",
+    )
     return parser.parse_args()
 
 
@@ -68,6 +73,8 @@ def main() -> int:
     if args.performance:
         run("runtime-load", [sys.executable, "scripts/performance_verify.py"])
         run("editor-load", [node, "scripts/editor_load_verify.mjs"])
+    if args.ablation:
+        run("guard-ablation", [sys.executable, "scripts/ablation_verify.py"])
 
     print("\nPASS: runtime, database, HTTP, security, server, UI, and requested load contracts are green.")
     return 0
