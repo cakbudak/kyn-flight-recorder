@@ -1,92 +1,136 @@
 # Product contract
 
-Date frozen: 2026-07-18  
-Maturity: `verified standalone demo` (external submission steps pending)
+Date frozen: 2026-07-19  
+Maturity: `backend rebuild in progress; previous static demo is not submission-ready`
 
 ## Promise
 
-Kyn.ist Flight Recorder lets a developer answer three questions about an
-autonomous agent run without reconstructing logs by hand:
+Kyn.ist Flight Recorder turns an agent failure into a bounded, provable recovery loop:
 
-1. Where is the run stuck?
-2. What evidence caused that state?
-3. What controlled intervention can move it forward, and who authorized it?
+1. Compose a flow from versioned agents, prompts, and skills.
+2. Execute that flow against the OpenAI Responses API and real local tools.
+3. Record every material decision and effect in an authoritative SQLite event ledger.
+4. Diagnose the failure from recorded evidence rather than reconstructed logs.
+5. Propose the smallest allow-listed repair.
+6. Require a revision-fenced human approval before the repair can change a flow.
+7. Rerun against a new immutable version and compare the before/after evidence.
 
-The three-minute demo follows one causal thread from an agent step through a
-tool call, queue item, approval boundary, intervention, and append-only audit
-receipt.
+The three-minute judge path is one causal thread from pinned configuration through model
+tool calls, a failed sandbox effect, evidence-grounded diagnosis, bounded repair, approval,
+successful rerun, and hash-linked receipts.
 
-## Standalone boundary
+## Honest standalone boundary
 
-The submission is a hermetic demonstration surface, not a claim that the whole
-Kynist production stack is embedded here. It uses:
+This repository is not the whole Kynist production stack. It is a compact implementation of
+the closed-loop contract, built with:
 
-- one static web application;
-- one deterministic, versioned JSON fixture;
-- browser-local ephemeral state for the intervention rehearsal;
-- a Python standard-library server with no installation step.
+- one Python standard-library HTTP process;
+- one flat SQLite database;
+- the OpenAI Responses API for model inference;
+- a deliberately narrow local sandbox tool surface;
+- a dependency-free browser application.
 
-It does not use a database, authentication provider, external API, LLM call,
-secret, telemetry service, or network dependency. Closing or resetting the demo
-returns it to the signed fixture state.
+It does not import the internal Kynist ontology or PostgreSQL schema. It has no arbitrary
+shell, filesystem, connector, MCP, or production deployment authority. The sample
+`stage_release` tool makes a real, durable change only inside the local `sandbox_releases`
+table. That is a real tool effect and a safe sandbox—not a production release.
 
-## Core user journey
+## First-class resources
 
-1. Open the seeded run `run_01JY7KYN9X4N`.
-2. Read the causal diagnosis: a write-capable tool call is paused at an approval
-   boundary; its queue lease is healthy, so retrying the worker would be wrong.
-3. Inspect each graph node and its correlated evidence.
-4. Preview the only legal command for the current revision.
-5. Enter an operator reason and authorize the intervention.
-6. Observe the command receipt, resumed transitions, completed run, and new audit
-   entries without losing the original evidence.
-7. Reset deterministically for the next judge.
+### Prompt
 
-## State and intervention invariants
+A prompt is a named, immutable template version with declared variables. Rendering fails
+closed on missing or unexpected variables, and the resolved prompt hash is recorded.
 
-- Fixture identity and graph edges never mutate.
-- `blocked` can advance only through the declared `approve_tool_call` command.
-- A command must match run id, current revision, allowed source state, actor, and
-  non-empty reason.
-- Preview has no effect.
-- Apply is idempotent for one command id.
-- Terminal `completed` is absorbing until explicit demo reset.
-- Audit entries are append-only within a demo session.
-- Every rendered event carries the same correlation id.
-- Values classified as secrets are redacted before entering the DOM.
+### Skill
+
+A skill is a named, immutable instruction version plus an allow-list of local tools. Skill
+instructions influence model behavior; the tool allow-list constrains runtime authority.
+
+### Agent
+
+An agent version pins a model, role instructions, one prompt version, and one or more skill
+versions. The runtime derives its callable tools from those pinned skills.
+
+### Flow
+
+A flow version pins executor, diagnostician, and repairer agent versions, input, policy, and
+repair bounds. A run always points to one immutable flow version. Applying a repair creates
+the next version and advances the flow revision atomically.
+
+## Canonical judge journey
+
+The seeded `Release Sentinel` lab intentionally contains one policy defect:
+`production` is requested while the flow permits only `staging`.
+
+1. Create an isolated lab workspace. The server creates and displays its prompt, skill,
+   agent, and flow versions.
+2. Run the flow. The executor agent inspects policy and calls the real local
+   `stage_release` tool.
+3. The tool rejects the effect at its policy boundary and writes a failed receipt. The run
+   becomes `blocked`; no sandbox release exists.
+4. Hand off the immutable evidence packet to the diagnostician agent. Structured output is
+   accepted only if every cited event belongs to the failed run and matches the deterministic
+   fault candidate.
+5. Hand off the diagnosis and current manifest to the repairer agent. Its single JSON patch
+   must target an allow-listed path and value.
+6. Preview and approve the repair with actor, reason, acknowledgement, proposal hash, and
+   expected flow revision.
+7. Apply atomically. The original flow version remains immutable; a successor version is
+   created.
+8. Rerun as a child of the failed run. The same real tool now succeeds and creates one
+   `sandbox_releases` row.
+9. Compare the two runs, their pinned fingerprints, events, receipts, and effect count.
+
+## Invariants
+
+- Resource versions and events cannot be updated or deleted.
+- Event sequence is contiguous per run and each event hash commits to its predecessor.
+- A run pins one flow version before model I/O begins.
+- External model I/O never occurs under an open SQLite write transaction.
+- A model can request only a tool; code validates arguments and owns authorization/effects.
+- A tool not granted by every applicable pinned capability check is rejected.
+- `blocked`, `completed`, and `failed` are absorbing run states.
+- Diagnosis evidence ids must exist on the diagnosed run.
+- Repair operations are count-, path-, operation-, and value-bounded.
+- Applying a repair never mutates an existing flow version.
+- A stale expected revision fails without a partial write.
+- Repeated application of the same authorized proposal returns the original result.
+- A rerun is a new run with `parent_run_id`; history is never rewritten.
+- Secrets are absent from model evidence packets, SQLite rows, logs, and API responses.
 
 ## Quality gates
 
-| Gate | Acceptance criterion | Evidence target |
-| --- | --- | --- |
-| G1 UX | Complete, empty, invalid-fixture, and reset paths; keyboard-only journey; WCAG 2.2 AA | browser journey + manual checklist |
-| G2 contract | Fixture schema version and command contract are explicit; invalid data fails closed | standard-library contract tests |
-| G3 security | No secrets/network writes; command validation and DOM-safe rendering | threat model + negative tests |
-| G4 data | Fixture-only, synthetic, browser-memory/session state deletable by reset | data note + reset test |
-| G5 reliability | Idempotency, revision fence, terminal absorption, deterministic reset | state-machine tests |
-| G6 performance | First meaningful render under 1 s locally; interaction under 100 ms on reference machine | browser measurement |
-| G7 operation | Correlation, source class, timestamps, and receipts visible | UI assertions |
-| G8 agentics | Demo explains the agent boundary but performs no model/tool execution | scope label in UI and README |
-| G9 proof | Positive, negative, boundary, browser, and accessibility evidence | test report |
-| G10 release | One-command run; no migration; forward-only Git history | clean-clone rehearsal |
+| Gate | Acceptance criterion |
+| --- | --- |
+| G1 create | A user can create a lab containing a real flow, prompt, skill, and agent |
+| G2 execute | A real Responses call emits validated local function calls and a durable outcome |
+| G3 record | Ordered hash-linked events, model summaries, receipts, pins, and correlation are visible |
+| G4 diagnose | Structured diagnosis is restricted to existing evidence and deterministic candidates |
+| G5 repair | One allow-listed patch is previewed and applied only through a human revision fence |
+| G6 rerun | A child run uses the successor flow version and proves a changed tool outcome |
+| G7 safety | Same-origin, isolation, input/cost bounds, no secret persistence, no arbitrary tools |
+| G8 reliability | Immutability, terminal absorption, CAS conflict, idempotency, and concurrency tests pass |
+| G9 UX | Keyboard, focus, responsive, loading/error/stale paths, and WCAG 2.2 AA checks pass |
+| G10 proof | Fake-client RED/GREEN suite, real-model sanitized evidence, and local/public Playwright pass |
 
 ## Explicit non-goals
 
-- Connecting to a live Kynist deployment in this cut.
-- Executing real tools or privileged writes.
-- Multi-tenant authentication or authorization.
-- Replacing production logs, traces, queues, or audit storage.
-- Claiming that simulated transitions are production-live.
+- Mirroring Parts, Entities, Bricks, Frames, or the main Kynist database.
+- Shipping the full production queue, MCP, tenant identity, connector, or storage stack.
+- Giving public visitors arbitrary code or network execution.
+- Letting a model directly authorize or apply a repair.
+- Claiming broad superiority over every framework. The measured claim is the closed-loop
+  evidence, bounded repair, revision-fenced approval, and rerun proof delivered here.
 
 ## Build Week provenance
 
-This standalone repository and its core functionality are new work created after
-the OpenAI Build Week start. The repository history is the chronology. The
-primary build thread is recorded under Codex Session ID
-`019f7621-5200-7400-9242-920cb718d09a`.
+The repository history is the forward-only chronology. The primary build thread is Codex
+Session ID `019f7621-5200-7400-9242-920cb718d09a`.
 
-Official event references:
+Official references used for the transport contract:
 
-- <https://openai.com/build-week/>
-- <https://openai.devpost.com/>
-- <https://openai.devpost.com/rules>
+- <https://developers.openai.com/api/docs/guides/function-calling>
+- <https://developers.openai.com/api/docs/guides/structured-outputs>
+- <https://developers.openai.com/api/docs/guides/agents/define-agents>
+- <https://developers.openai.com/api/docs/guides/tools-skills>
