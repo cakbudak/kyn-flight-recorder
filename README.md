@@ -164,7 +164,7 @@ node scripts/browser_verify.mjs \
 
 Current committed proof:
 
-- 40 Python tests across positive, negative, boundary, isolation, revision, and database
+- 43 Python tests across positive, negative, boundary, isolation, concurrency, revision, and database
   invariants;
 - 6 pure browser-state contract tests;
 - 21/21 real Chromium checks across desktop and 390 px mobile;

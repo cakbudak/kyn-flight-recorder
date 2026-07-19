@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from backend.http_api import ApiApplication, ApiRequest
 from backend.service import ControlPlane
 from backend.store import Store
 from serve import DemoRequestHandler, DemoServer, ROOT
@@ -208,6 +209,67 @@ class RuntimeHttpTest(unittest.TestCase):
         )
         self.assertEqual(status, 404)
         self.assertEqual(payload["error"]["code"], "not_found")
+
+
+class BlockingResponsesClient(ScriptedResponsesClient):
+    def __init__(self, store: Store) -> None:
+        super().__init__(store)
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self._blocked_once = False
+
+    def create(self, payload: dict[str, object]) -> dict[str, object]:
+        if not self._blocked_once:
+            self._blocked_once = True
+            self.entered.set()
+            if not self.release.wait(timeout=3):
+                raise AssertionError("concurrency test did not release the provider")
+        return super().create(payload)
+
+
+class RuntimeHttpConcurrencyTest(unittest.TestCase):
+    def test_same_workspace_cannot_start_two_model_actions_concurrently(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Store(Path(temporary) / "concurrency.sqlite3")
+            store.initialize()
+            client = BlockingResponsesClient(store)
+            plane = ControlPlane(store, client)
+            bootstrap = plane.create_workspace(seed=True)
+            workspace_id = bootstrap["workspace_id"]
+            flow_id = bootstrap["snapshot"]["flows"][0]["id"]
+            token = bootstrap["workspace_token"]
+            application = ApiApplication(plane)
+
+            def request() -> ApiRequest:
+                return ApiRequest(
+                    method="POST",
+                    path=f"/api/v1/flows/{flow_id}/runs",
+                    headers={
+                        "Origin": "https://runtime.test",
+                        "Sec-Fetch-Site": "same-origin",
+                        "Content-Type": "application/json",
+                        "Cookie": f"kyn_workspace={token}",
+                    },
+                    body=b"{}",
+                    remote_address="192.0.2.10",
+                    scheme="https",
+                    host="runtime.test",
+                )
+
+            first_response: list[object] = []
+            first = threading.Thread(
+                target=lambda: first_response.append(application.dispatch(request()))
+            )
+            first.start()
+            self.assertTrue(client.entered.wait(timeout=2))
+            concurrent = application.dispatch(request())
+            self.assertEqual(concurrent.status, 429)
+            self.assertIn("already running", concurrent.payload["error"]["message"])
+            client.release.set()
+            first.join(timeout=5)
+            self.assertFalse(first.is_alive())
+            self.assertEqual(first_response[0].status, 201)
+            self.assertEqual(len(plane.snapshot(workspace_id)["runs"]), 1)
 
 
 if __name__ == "__main__":

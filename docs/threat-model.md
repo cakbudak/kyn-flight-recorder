@@ -41,8 +41,8 @@ generic code registry.
 ## Deployment assumptions
 
 - TLS terminates before nginx; `X-Forwarded-Proto=https` is preserved so cookies are Secure.
-- The host runtime port is reachable by the nginx container but blocked from the public
-  internet.
+- The host runtime binds only to the Docker bridge (`172.17.0.1`), so the nginx container can
+  reach it without exposing the port on the public host interface.
 - The ignored `.env` or service environment is readable only by the service account.
 - The operator controls SQLite retention, backups, host logs, firewall, and service updates.
 

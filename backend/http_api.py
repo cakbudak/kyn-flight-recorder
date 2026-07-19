@@ -79,6 +79,8 @@ class ApiApplication:
         self.address_model_call_limit_per_hour = address_model_call_limit_per_hour
         self.rate_limiter = SlidingWindowLimiter()
         self.model_slots = threading.BoundedSemaphore(concurrent_model_actions)
+        self.workspace_model_locks: dict[str, threading.Lock] = {}
+        self.workspace_model_locks_guard = threading.Lock()
 
     def dispatch(self, request: ApiRequest) -> ApiResponse:
         try:
@@ -134,6 +136,11 @@ class ApiApplication:
         body = self._json_body(request)
         if request.path == "/api/v1/workspaces":
             self._require_exact_keys(body, set())
+            self.rate_limiter.require(
+                f"workspace:address:{request.remote_address}",
+                limit=12,
+                window_seconds=3600,
+            )
             bootstrap = self.control_plane.create_workspace(seed=True)
             secure = request.scheme == "https"
             cookie = (
@@ -262,28 +269,37 @@ class ApiApplication:
         status: int,
         operation: Any,
     ) -> ApiResponse:
-        snapshot = self.control_plane.snapshot(workspace_id)
-        used = int(snapshot["workspace"]["model_calls_used"])
-        if used + forecast_calls > self.workspace_model_call_limit:
-            raise RateLimited("workspace model-call budget is exhausted")
-        self.rate_limiter.require(
-            "model:global",
-            limit=self.global_model_call_limit_per_hour,
-            window_seconds=3600,
-            units=forecast_calls,
-        )
-        self.rate_limiter.require(
-            f"model:address:{request.remote_address}",
-            limit=self.address_model_call_limit_per_hour,
-            window_seconds=3600,
-            units=forecast_calls,
-        )
-        if not self.model_slots.acquire(blocking=False):
-            raise RateLimited("model execution capacity is busy; try again shortly")
+        with self.workspace_model_locks_guard:
+            workspace_lock = self.workspace_model_locks.setdefault(
+                workspace_id, threading.Lock()
+            )
+        if not workspace_lock.acquire(blocking=False):
+            raise RateLimited("another model action is already running for this workspace")
         try:
-            return self._ok(operation(), status=status)
+            snapshot = self.control_plane.snapshot(workspace_id)
+            used = int(snapshot["workspace"]["model_calls_used"])
+            if used + forecast_calls > self.workspace_model_call_limit:
+                raise RateLimited("workspace model-call budget is exhausted")
+            self.rate_limiter.require(
+                "model:global",
+                limit=self.global_model_call_limit_per_hour,
+                window_seconds=3600,
+                units=forecast_calls,
+            )
+            self.rate_limiter.require(
+                f"model:address:{request.remote_address}",
+                limit=self.address_model_call_limit_per_hour,
+                window_seconds=3600,
+                units=forecast_calls,
+            )
+            if not self.model_slots.acquire(blocking=False):
+                raise RateLimited("model execution capacity is busy; try again shortly")
+            try:
+                return self._ok(operation(), status=status)
+            finally:
+                self.model_slots.release()
         finally:
-            self.model_slots.release()
+            workspace_lock.release()
 
     @staticmethod
     def _require_same_origin(request: ApiRequest) -> None:

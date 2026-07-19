@@ -175,6 +175,7 @@ class StaticContractTests(unittest.TestCase):
         self.assertIn("client_max_body_size 32k", self.nginx)
         self.assertNotIn("GET|HEAD", self.nginx)
         for directive in (
+            "--host 172.17.0.1 --port 4173",
             "NoNewPrivileges=true",
             "ProtectSystem=strict",
             "StateDirectory=kyn-flight-recorder",
