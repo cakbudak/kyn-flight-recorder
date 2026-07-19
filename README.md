@@ -118,9 +118,11 @@ standalone repository. Codex was used to:
 | `5ddd48a` | Causal flight recorder and guarded intervention |
 | `0065258` | Browser, accessibility, and intervention proof |
 | `94c1261` | Bounded GPT-5.6 evidence-review path |
+| `e967202` | Verified private GitHub release candidate |
+| `7f700ac` | Versioned public origin and live browser proof |
+| `de9d0b6` | Independent Playwright and publication evidence |
 
-The final Devpost entry must include the Codex Session ID returned by `/feedback`
-for this project thread.
+Primary Codex build thread: `019f7621-5200-7400-9242-920cb718d09a`.
 
 ### GPT-5.6
 

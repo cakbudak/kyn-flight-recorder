@@ -1,9 +1,12 @@
 # Live publication verification
 
-Date: 2026-07-19  
-Public origin: <https://buildweek.kyn.ist/app/>  
-Repository: <https://github.com/cakbudak/kyn-flight-recorder>  
-Candidate commit under test: `7f700acb65de90c3c57e193597eeee18229d0543`
+- Date: 2026-07-19
+- Public origin: <https://buildweek.kyn.ist/app/>
+- Public repository: <https://github.com/cakbudak/kyn-flight-recorder>
+- Publication commit under anonymous-clone test:
+  `de9d0b6123cfed6475da0f18059b34bdb776ecd6`
+- Live application and origin configuration introduced at:
+  `7f700acb65de90c3c57e193597eeee18229d0543`
 
 ## Delivery boundary
 
@@ -66,11 +69,15 @@ curl https://buildweek.kyn.ist/healthz
 
 ## Remote artifact proof
 
-Before deployment, an isolated authenticated clone of the private candidate remote
-resolved to the exact commit above. It passed all 28 Python checks, all 25 JavaScript
-checks, and all 38 local Chromium checks, then remained clean. Anonymous cloning is
-deliberately deferred until the repository visibility changes to public; that final
-gate must be appended before submission.
+Before visibility changed, an isolated authenticated clone of the private candidate
+resolved to `de9d0b6`. It passed all 28 Python checks, all 25 JavaScript checks, and
+all 38 local Chromium checks, then remained clean.
 
-Verdict: **LIVE CANDIDATE, NOT YET PUBLICATION-COMPLETE**. The HTTPS demo is working;
-GitHub visibility and anonymous-clone proof remain intentionally open.
+After the repository became public, a second isolated HTTPS clone ran with GitHub
+tokens unset, credential helpers disabled, and interactive prompting disabled. It
+resolved to the same `de9d0b6`, passed the same **28 + 25 + 38** checks, and remained
+clean. The logged-out GitHub page rendered the README, public license, homepage,
+topics, and committed screenshot asset.
+
+Verdict: **PUBLICATION-COMPLETE**. Repository and demo are unrestricted. Video,
+Devpost registration, entry creation, and final submission remain separate gates.

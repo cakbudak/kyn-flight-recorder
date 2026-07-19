@@ -2,7 +2,7 @@
 
 Date: 2026-07-19
 Standalone maturity: verified demo  
-Submission maturity: blocked only on publication and video/upload steps
+Submission maturity: repository/demo publication complete; video and Devpost steps remain
 
 | Gate | Result | Proof | Honest boundary |
 | --- | --- | --- | --- |
@@ -15,7 +15,7 @@ Submission maturity: blocked only on publication and video/upload steps
 | G7 operations | PASS | HTTPS health endpoint; run/correlation/revision/source visible; append-only replay and receipt | synthetic evidence only; no live Kynist backend |
 | G8 agent boundary | PASS | effect boundary and model/tool/approval/queue causality explicit; no model/tool runtime | no claim of live Kynist integration |
 | G9 proof | PASS | 28 Python + 25 Node + 38 local + 38 public-origin browser checks; Playwright cross-check; screenshots, accessibility audit, and sanitized GPT-5.6 review | external review is bounded to the synthetic packet, not runtime proof |
-| G10 release | PASS as private candidate | authenticated isolated clone of `e967202`: 28 Python + 25 Node + 38 browser checks and clean worktree; versioned origin at `7f700ac` | anonymous clone remains required after visibility changes |
+| G10 release | PASS publicly | credential-free anonymous clone of `de9d0b6`: 28 Python + 25 Node + 38 browser checks and clean worktree; logged-out README and screenshot asset visible; versioned origin at `7f700ac` | final evidence-only successor commit gets one last anonymous rehearsal |
 
 ## Reproduce
 
