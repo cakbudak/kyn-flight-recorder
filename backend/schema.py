@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS action_versions (
     action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
     version INTEGER NOT NULL CHECK (version >= 1),
     kind TEXT NOT NULL CHECK (kind IN ('ai', 'template', 'condition', 'approval', 'sandbox')),
+    executor_kind TEXT,
     input_schema_json TEXT NOT NULL,
     output_schema_json TEXT NOT NULL,
     config_json TEXT NOT NULL,
@@ -421,6 +422,67 @@ CREATE TABLE IF NOT EXISTS automation_effects (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS automation_trigger_bindings (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    flow_id TEXT NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
+    flow_version_id TEXT NOT NULL REFERENCES automation_flow_versions(id) ON DELETE RESTRICT,
+    name TEXT NOT NULL,
+    trigger_type TEXT NOT NULL CHECK (trigger_type IN ('webhook', 'schedule')),
+    config_json TEXT NOT NULL,
+    token_hash TEXT UNIQUE,
+    token_hint TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    next_fire_at TEXT,
+    last_fired_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS automation_diagnoses (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    run_id TEXT NOT NULL UNIQUE REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    failed_step_id TEXT REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    action_version_id TEXT REFERENCES action_versions(id) ON DELETE RESTRICT,
+    fault_class TEXT NOT NULL,
+    root_cause TEXT NOT NULL,
+    explanation TEXT NOT NULL,
+    confidence_milli INTEGER NOT NULL CHECK (confidence_milli BETWEEN 0 AND 1000),
+    evidence_event_ids_json TEXT NOT NULL,
+    created_by_agent_version_id TEXT REFERENCES agent_versions(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS automation_repair_proposals (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    diagnosis_id TEXT NOT NULL UNIQUE REFERENCES automation_diagnoses(id) ON DELETE RESTRICT,
+    flow_id TEXT NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
+    action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
+    expected_flow_revision INTEGER NOT NULL CHECK (expected_flow_revision >= 1),
+    expected_action_version INTEGER NOT NULL CHECK (expected_action_version >= 1),
+    patch_json TEXT NOT NULL,
+    proposal_hash TEXT NOT NULL UNIQUE CHECK (length(proposal_hash) = 64),
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'applied')),
+    applied_action_version_id TEXT REFERENCES action_versions(id) ON DELETE RESTRICT,
+    applied_flow_version_id TEXT REFERENCES automation_flow_versions(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL,
+    applied_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS automation_repair_decisions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    proposal_id TEXT NOT NULL UNIQUE REFERENCES automation_repair_proposals(id) ON DELETE RESTRICT,
+    proposal_hash TEXT NOT NULL CHECK (length(proposal_hash) = 64),
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    acknowledged INTEGER NOT NULL CHECK (acknowledged = 1),
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS ix_events_run_sequence ON events(run_id, sequence);
 CREATE INDEX IF NOT EXISTS ix_runs_workspace_created ON runs(workspace_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_one_child
@@ -436,6 +498,8 @@ CREATE INDEX IF NOT EXISTS ix_automation_steps_run
 ON automation_run_steps(run_id, started_at, id);
 CREATE INDEX IF NOT EXISTS ix_automation_events_run_sequence
 ON automation_events(run_id, sequence);
+CREATE INDEX IF NOT EXISTS ix_automation_triggers_due
+ON automation_trigger_bindings(enabled, trigger_type, next_fire_at);
 
 CREATE TRIGGER IF NOT EXISTS trg_prompt_versions_no_update
 BEFORE UPDATE ON prompt_versions BEGIN SELECT RAISE(ABORT, 'prompt version is immutable'); END;
@@ -509,6 +573,14 @@ CREATE TRIGGER IF NOT EXISTS trg_automation_effects_no_update
 BEFORE UPDATE ON automation_effects BEGIN SELECT RAISE(ABORT, 'automation effects are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_automation_effects_no_delete
 BEFORE DELETE ON automation_effects BEGIN SELECT RAISE(ABORT, 'automation effects are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_diagnoses_no_update
+BEFORE UPDATE ON automation_diagnoses BEGIN SELECT RAISE(ABORT, 'automation diagnoses are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_diagnoses_no_delete
+BEFORE DELETE ON automation_diagnoses BEGIN SELECT RAISE(ABORT, 'automation diagnoses are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_repair_decisions_no_update
+BEFORE UPDATE ON automation_repair_decisions BEGIN SELECT RAISE(ABORT, 'automation repair decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_repair_decisions_no_delete
+BEFORE DELETE ON automation_repair_decisions BEGIN SELECT RAISE(ABORT, 'automation repair decisions are append-only'); END;
 
 CREATE TRIGGER IF NOT EXISTS trg_runs_terminal_absorbing
 BEFORE UPDATE OF status ON runs
@@ -577,6 +649,16 @@ CREATE TRIGGER IF NOT EXISTS trg_automation_flows_revision_fence
 BEFORE UPDATE OF revision, current_version ON automation_flows
 WHEN NEW.revision <> OLD.revision + 1 OR NEW.current_version <> OLD.current_version + 1
 BEGIN SELECT RAISE(ABORT, 'automation flow update must advance one revision and version'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_actions_version_fence
+BEFORE UPDATE OF current_version ON actions
+WHEN NEW.current_version <> OLD.current_version + 1
+BEGIN SELECT RAISE(ABORT, 'action update must advance one version'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_repairs_transition
+BEFORE UPDATE OF status ON automation_repair_proposals
+WHEN NEW.status <> OLD.status AND NOT (OLD.status = 'proposed' AND NEW.status = 'applied')
+BEGIN SELECT RAISE(ABORT, 'illegal automation repair transition'); END;
 """
 
 
@@ -600,5 +682,7 @@ IMMUTABLE_TABLES = frozenset(
         "automation_approval_requests",
         "automation_approval_decisions",
         "automation_effects",
+        "automation_diagnoses",
+        "automation_repair_decisions",
     }
 )

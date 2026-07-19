@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from typing import Any, Mapping, Sequence
 
 from .contracts import (
@@ -14,6 +16,7 @@ from .contracts import (
     canonical_json,
     compute_event_hash,
     fingerprint,
+    hash_text,
     new_id,
     redact,
     utc_now,
@@ -26,6 +29,12 @@ TERMINAL_STATUSES = frozenset({"completed", "blocked", "failed", "cancelled"})
 
 def _decode(value: str | None) -> Any:
     return json.loads(value) if value is not None else None
+
+
+def _after_minutes(minutes: int) -> str:
+    return (
+        datetime.now(UTC) + timedelta(minutes=minutes)
+    ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class StudioStore:
@@ -50,6 +59,7 @@ class StudioStore:
         agent_version_id: str | None,
         effect_level: str,
         created_by: str = "user",
+        executor_kind: str | None = None,
     ) -> dict[str, Any]:
         with self.store.write() as connection:
             action_id = self._insert_action(
@@ -65,6 +75,7 @@ class StudioStore:
                 agent_version_id=agent_version_id,
                 effect_level=effect_level,
                 created_by=created_by,
+                executor_kind=executor_kind,
             )
         return self.get_action(workspace_id, action_id)
 
@@ -83,6 +94,7 @@ class StudioStore:
         agent_version_id: str | None,
         effect_level: str,
         created_by: str,
+        executor_kind: str | None = None,
     ) -> str:
         self.store._require_workspace(connection, workspace_id)
         agent_material: dict[str, str] | None = None
@@ -98,7 +110,8 @@ class StudioStore:
         version_id = new_id("actv")
         now = utc_now()
         material = {
-            "kind": kind,
+            "kind": executor_kind or kind,
+            "storage_kind": kind,
             "input_schema": dict(input_schema),
             "output_schema": dict(output_schema),
             "config": dict(config),
@@ -116,16 +129,17 @@ class StudioStore:
         connection.execute(
             """
             INSERT INTO action_versions
-                (id, workspace_id, action_id, version, kind, input_schema_json,
+                (id, workspace_id, action_id, version, kind, executor_kind, input_schema_json,
                  output_schema_json, config_json, agent_version_id, effect_level,
                  fingerprint, created_by, created_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 version_id,
                 workspace_id,
                 action_id,
                 kind,
+                executor_kind,
                 canonical_json(dict(input_schema)),
                 canonical_json(dict(output_schema)),
                 canonical_json(dict(config)),
@@ -140,10 +154,12 @@ class StudioStore:
 
     @staticmethod
     def _action_version_projection(row: sqlite3.Row) -> dict[str, Any]:
+        logical_kind = row["executor_kind"] or row["kind"]
         return {
             "id": row["id"],
             "version": row["version"],
-            "kind": row["kind"],
+            "kind": logical_kind,
+            "storage_kind": row["kind"],
             "input_schema": _decode(row["input_schema_json"]),
             "output_schema": _decode(row["output_schema_json"]),
             "config": _decode(row["config_json"]),
@@ -220,6 +236,25 @@ class StudioStore:
                 raise NotFound("Agent version was not found")
             return self.store._agent_runtime_projection(connection, version_id)
 
+    def find_agent_runtime_by_role(
+        self, workspace_id: str, role: str
+    ) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                """
+                SELECT av.id
+                FROM agent_versions av
+                JOIN agents a ON a.id = av.agent_id AND a.current_version = av.version
+                WHERE av.workspace_id = ? AND av.role = ?
+                ORDER BY a.created_at, a.id
+                LIMIT 1
+                """,
+                (workspace_id, role),
+            ).fetchone()
+            if row is None:
+                raise NotFound(f"No {role} Agent is available")
+            return self.store._agent_runtime_projection(connection, row["id"])
+
     # -- Flows ---------------------------------------------------------
 
     def create_flow(
@@ -265,42 +300,10 @@ class StudioStore:
         created_by: str,
     ) -> str:
         self.store._require_workspace(connection, workspace_id)
-        pinned: list[dict[str, Any]] = []
-        requires_model = False
-        for node in nodes:
-            version_id = str(node["version_id"])
-            if node["type"] == "action":
-                row = connection.execute(
-                    "SELECT id, kind, fingerprint FROM action_versions WHERE id = ? AND workspace_id = ?",
-                    (version_id, workspace_id),
-                ).fetchone()
-                if row is None:
-                    raise ContractViolation("Flow Action version does not belong to the workspace")
-                pinned.append(
-                    {
-                        "node_id": node["id"],
-                        "type": "action",
-                        "version_id": row["id"],
-                        "fingerprint": row["fingerprint"],
-                    }
-                )
-                requires_model = requires_model or row["kind"] == "ai"
-            else:
-                row = connection.execute(
-                    "SELECT id, fingerprint FROM agent_versions WHERE id = ? AND workspace_id = ?",
-                    (version_id, workspace_id),
-                ).fetchone()
-                if row is None:
-                    raise ContractViolation("Flow Agent version does not belong to the workspace")
-                pinned.append(
-                    {
-                        "node_id": node["id"],
-                        "type": "agent",
-                        "version_id": row["id"],
-                        "fingerprint": row["fingerprint"],
-                    }
-                )
-                requires_model = True
+        pinned, requires_model = self._resolve_flow_pins(
+            connection, workspace_id, nodes
+        )
+
         material = {
             "input_schema": dict(input_schema),
             "start_node_id": start_node_id,
@@ -344,6 +347,129 @@ class StudioStore:
             ),
         )
         return flow_id
+
+    @staticmethod
+    def _resolve_flow_pins(
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        nodes: Sequence[Mapping[str, Any]],
+    ) -> tuple[list[dict[str, Any]], bool]:
+        pinned: list[dict[str, Any]] = []
+        requires_model = False
+        for node in nodes:
+            version_id = str(node["version_id"])
+            if node["type"] == "action":
+                row = connection.execute(
+                    "SELECT id, kind, executor_kind, fingerprint FROM action_versions WHERE id = ? AND workspace_id = ?",
+                    (version_id, workspace_id),
+                ).fetchone()
+                if row is None:
+                    raise ContractViolation("Flow Action version does not belong to the workspace")
+                pinned.append(
+                    {
+                        "node_id": node["id"],
+                        "type": "action",
+                        "version_id": row["id"],
+                        "fingerprint": row["fingerprint"],
+                    }
+                )
+                requires_model = requires_model or (row["executor_kind"] or row["kind"]) == "ai"
+            else:
+                row = connection.execute(
+                    "SELECT id, fingerprint FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                    (version_id, workspace_id),
+                ).fetchone()
+                if row is None:
+                    raise ContractViolation("Flow Agent version does not belong to the workspace")
+                pinned.append(
+                    {
+                        "node_id": node["id"],
+                        "type": "agent",
+                        "version_id": row["id"],
+                        "fingerprint": row["fingerprint"],
+                    }
+                )
+                requires_model = True
+        return pinned, requires_model
+
+    def revise_flow(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        expected_revision: int,
+        input_schema: Mapping[str, Any],
+        start_node_id: str,
+        nodes: Sequence[Mapping[str, Any]],
+        routes: Sequence[Mapping[str, Any]],
+        created_by: str = "user",
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            flow = connection.execute(
+                "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+                (flow_id, workspace_id),
+            ).fetchone()
+            if flow is None:
+                raise NotFound("Automation Flow was not found")
+            if int(flow["revision"]) != expected_revision:
+                raise Conflict("Automation Flow revision changed")
+            parent = connection.execute(
+                "SELECT * FROM automation_flow_versions WHERE flow_id = ? AND version = ?",
+                (flow_id, flow["current_version"]),
+            ).fetchone()
+            if parent is None:
+                raise RuntimeError("Automation Flow current version is missing")
+            pinned, requires_model = self._resolve_flow_pins(
+                connection, workspace_id, nodes
+            )
+            next_version = int(flow["current_version"]) + 1
+            version_id = new_id("aflowv")
+            now = utc_now()
+            material = {
+                "input_schema": dict(input_schema),
+                "start_node_id": start_node_id,
+                "nodes": [dict(node) for node in nodes],
+                "routes": [dict(route) for route in routes],
+                "pinned_resources": pinned,
+                "parent_version_id": parent["id"],
+            }
+            connection.execute(
+                """
+                INSERT INTO automation_flow_versions
+                    (id, workspace_id, flow_id, version, input_schema_json, start_node_id,
+                     nodes_json, routes_json, pinned_resources_json, requires_model,
+                     fingerprint, parent_version_id, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    workspace_id,
+                    flow_id,
+                    next_version,
+                    canonical_json(dict(input_schema)),
+                    start_node_id,
+                    canonical_json([dict(node) for node in nodes]),
+                    canonical_json([dict(route) for route in routes]),
+                    canonical_json(pinned),
+                    int(requires_model),
+                    fingerprint(material),
+                    parent["id"],
+                    created_by,
+                    now,
+                ),
+            )
+            cursor = connection.execute(
+                """
+                UPDATE automation_flows
+                SET revision = revision + 1, current_version = current_version + 1,
+                    updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND revision = ?
+                """,
+                (now, flow_id, workspace_id, expected_revision),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("Automation Flow revision changed")
+        return self.get_flow(workspace_id, flow_id)
 
     @staticmethod
     def _flow_version_projection(row: sqlite3.Row) -> dict[str, Any]:
@@ -414,6 +540,182 @@ class StudioStore:
                 "flow": self._flow_projection(connection, flow),
                 "version": self._flow_version_projection(flow_version),
             }
+
+    # -- Trigger bindings ---------------------------------------------
+
+    @staticmethod
+    def _trigger_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "flow_id": row["flow_id"],
+            "flow_version_id": row["flow_version_id"],
+            "name": row["name"],
+            "trigger_type": row["trigger_type"],
+            "config": _decode(row["config_json"]),
+            "token_hint": row["token_hint"],
+            "enabled": bool(row["enabled"]),
+            "revision": row["revision"],
+            "next_fire_at": row["next_fire_at"],
+            "last_fired_at": row["last_fired_at"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def create_trigger(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        name: str,
+        trigger_type: str,
+        config: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        secret: str | None = None
+        with self.store.write() as connection:
+            flow = connection.execute(
+                "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+                (flow_id, workspace_id),
+            ).fetchone()
+            if flow is None:
+                raise NotFound("Automation Flow was not found")
+            version = connection.execute(
+                "SELECT id FROM automation_flow_versions WHERE flow_id = ? AND version = ?",
+                (flow_id, flow["current_version"]),
+            ).fetchone()
+            if version is None:
+                raise RuntimeError("Automation Flow current version is missing")
+            if trigger_type == "webhook":
+                secret = f"hook_{secrets.token_urlsafe(32)}"
+            trigger_id = new_id("atrg")
+            now = utc_now()
+            next_fire_at = (
+                _after_minutes(int(config["interval_minutes"]))
+                if trigger_type == "schedule"
+                else None
+            )
+            connection.execute(
+                """
+                INSERT INTO automation_trigger_bindings
+                    (id, workspace_id, flow_id, flow_version_id, name, trigger_type,
+                     config_json, token_hash, token_hint, enabled, revision,
+                     next_fire_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)
+                """,
+                (
+                    trigger_id,
+                    workspace_id,
+                    flow_id,
+                    version["id"],
+                    name,
+                    trigger_type,
+                    canonical_json(dict(config)),
+                    hash_text(secret) if secret is not None else None,
+                    secret[-6:] if secret is not None else None,
+                    next_fire_at,
+                    now,
+                    now,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM automation_trigger_bindings WHERE id = ?",
+                (trigger_id,),
+            ).fetchone()
+            assert row is not None
+            result = self._trigger_projection(row)
+        if secret is not None:
+            result["secret"] = secret
+            result["hook_path"] = f"/api/v1/hooks/{secret}"
+        return result
+
+    def resolve_webhook(self, secret: str) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM automation_trigger_bindings
+                WHERE token_hash = ? AND trigger_type = 'webhook' AND enabled = 1
+                """,
+                (hash_text(secret),),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Webhook trigger was not found")
+            version = connection.execute(
+                "SELECT version, requires_model FROM automation_flow_versions WHERE id = ?",
+                (row["flow_version_id"],),
+            ).fetchone()
+            if version is None:
+                raise RuntimeError("Webhook Flow version is missing")
+            return {
+                **self._trigger_projection(row),
+                "workspace_id": row["workspace_id"],
+                "flow_version": int(version["version"]),
+                "requires_model": bool(version["requires_model"]),
+            }
+
+    def mark_trigger_fired(self, trigger_id: str) -> None:
+        with self.store.write() as connection:
+            now = utc_now()
+            cursor = connection.execute(
+                """
+                UPDATE automation_trigger_bindings
+                SET last_fired_at = ?, revision = revision + 1, updated_at = ?
+                WHERE id = ? AND enabled = 1
+                """,
+                (now, now, trigger_id),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("Trigger is no longer enabled")
+
+    def claim_due_schedules(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 100:
+            raise ContractViolation("schedule claim limit is invalid")
+        claimed: list[dict[str, Any]] = []
+        with self.store.write() as connection:
+            now = utc_now()
+            rows = list(
+                connection.execute(
+                    """
+                    SELECT * FROM automation_trigger_bindings
+                    WHERE trigger_type = 'schedule' AND enabled = 1
+                      AND next_fire_at IS NOT NULL AND next_fire_at <= ?
+                    ORDER BY next_fire_at, id
+                    LIMIT ?
+                    """,
+                    (now, limit),
+                )
+            )
+            for row in rows:
+                config = _decode(row["config_json"])
+                interval = int(config["interval_minutes"])
+                connection.execute(
+                    """
+                    UPDATE automation_trigger_bindings
+                    SET last_fired_at = ?, next_fire_at = ?, revision = revision + 1,
+                        updated_at = ?
+                    WHERE id = ? AND revision = ? AND enabled = 1
+                    """,
+                    (
+                        now,
+                        _after_minutes(interval),
+                        now,
+                        row["id"],
+                        row["revision"],
+                    ),
+                )
+                version = connection.execute(
+                    "SELECT version, requires_model FROM automation_flow_versions WHERE id = ?",
+                    (row["flow_version_id"],),
+                ).fetchone()
+                if version is None:
+                    continue
+                claimed.append(
+                    {
+                        **self._trigger_projection(row),
+                        "workspace_id": row["workspace_id"],
+                        "flow_version": int(version["version"]),
+                        "requires_model": bool(version["requires_model"]),
+                    }
+                )
+        return claimed
 
     # -- Workspace seed and snapshot ----------------------------------
 
@@ -693,6 +995,13 @@ class StudioStore:
                     (workspace_id,),
                 )
             ]
+            triggers = [
+                self._trigger_projection(row)
+                for row in connection.execute(
+                    "SELECT * FROM automation_trigger_bindings WHERE workspace_id = ? ORDER BY created_at, id",
+                    (workspace_id,),
+                )
+            ]
             run_ids = [
                 row["id"]
                 for row in connection.execute(
@@ -703,9 +1012,19 @@ class StudioStore:
         return {
             "actions": actions,
             "flows": flows,
+            "triggers": triggers,
             "runs": [self.get_run(workspace_id, run_id) for run_id in run_ids],
-            "action_kinds": ["ai", "template", "condition", "approval", "sandbox"],
-            "route_outcomes": ["success", "true", "false", "approved", "rejected"],
+            "action_kinds": [
+                "ai",
+                "template",
+                "transform",
+                "delay",
+                "condition",
+                "assert",
+                "approval",
+                "data_store",
+            ],
+            "route_outcomes": ["success", "true", "false", "approved", "rejected", "error"],
         }
 
     # -- Runs, Steps, and evidence ------------------------------------
@@ -867,6 +1186,67 @@ class StudioStore:
                     "error_code": error_code,
                 },
             )
+
+    def cancel_run(
+        self, workspace_id: str, run_id: str, *, actor: str, reason: str
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            run = connection.execute(
+                "SELECT * FROM automation_runs WHERE id = ? AND workspace_id = ?",
+                (run_id, workspace_id),
+            ).fetchone()
+            if run is None:
+                raise NotFound("Automation Run was not found")
+            if run["status"] in TERMINAL_STATUSES:
+                return self.get_run(workspace_id, run_id)
+            now = utc_now()
+            step = connection.execute(
+                """
+                SELECT * FROM automation_run_steps
+                WHERE run_id = ? AND status IN ('running', 'waiting_approval')
+                ORDER BY started_at DESC, id DESC LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+            if step is not None:
+                step_status = "failed" if step["status"] == "running" else "blocked"
+                connection.execute(
+                    """
+                    UPDATE automation_run_steps
+                    SET status = ?, revision = revision + 1, route_outcome = 'error',
+                        error_code = 'cancelled', error_message = ?, finished_at = ?
+                    WHERE id = ? AND revision = ?
+                    """,
+                    (step_status, reason, now, step["id"], step["revision"]),
+                )
+                self._append_event(
+                    connection,
+                    workspace_id,
+                    run_id,
+                    event_type="step.cancelled",
+                    actor_type="human",
+                    actor_id=actor,
+                    payload={"step_id": step["id"], "node_id": step["node_id"], "reason": reason},
+                )
+            connection.execute(
+                """
+                UPDATE automation_runs
+                SET status = 'cancelled', revision = revision + 1, current_node_id = NULL,
+                    error_code = 'cancelled', error_message = ?, finished_at = ?
+                WHERE id = ? AND revision = ?
+                """,
+                (reason, now, run_id, run["revision"]),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="run.cancelled",
+                actor_type="human",
+                actor_id=actor,
+                payload={"reason": reason, "revision": int(run["revision"]) + 1},
+            )
+        return self.get_run(workspace_id, run_id)
 
     def start_step(
         self,
@@ -1442,6 +1822,514 @@ class StudioStore:
             ).fetchone()
             assert row is not None
             return self._effect_projection(row)
+
+    # -- Evidence-bound maintenance ----------------------------------
+
+    @staticmethod
+    def _diagnosis_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "failed_step_id": row["failed_step_id"],
+            "failed_node_id": None,
+            "action_version_id": row["action_version_id"],
+            "fault_class": row["fault_class"],
+            "root_cause": row["root_cause"],
+            "explanation": row["explanation"],
+            "confidence": int(row["confidence_milli"]) / 1_000,
+            "evidence_event_ids": _decode(row["evidence_event_ids_json"]),
+            "created_by_agent_version_id": row["created_by_agent_version_id"],
+            "created_at": row["created_at"],
+        }
+
+    def record_diagnosis(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        failed_step_id: str,
+        failed_node_id: str,
+        action_version_id: str,
+        fault_class: str,
+        root_cause: str,
+        explanation: str,
+        confidence_milli: int,
+        evidence_event_ids: Sequence[str],
+        created_by_agent_version_id: str | None = None,
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            existing = connection.execute(
+                "SELECT * FROM automation_diagnoses WHERE run_id = ? AND workspace_id = ?",
+                (run_id, workspace_id),
+            ).fetchone()
+            if existing is not None:
+                projection = self._diagnosis_projection(existing)
+                projection["failed_node_id"] = failed_node_id
+                return projection
+            run = connection.execute(
+                "SELECT status FROM automation_runs WHERE id = ? AND workspace_id = ?",
+                (run_id, workspace_id),
+            ).fetchone()
+            if run is None:
+                raise NotFound("Automation Run was not found")
+            if run["status"] not in {"blocked", "failed"}:
+                raise ContractViolation("only a blocked or failed Run can be diagnosed")
+            step = connection.execute(
+                "SELECT node_id FROM automation_run_steps WHERE id = ? AND run_id = ?",
+                (failed_step_id, run_id),
+            ).fetchone()
+            if step is None or step["node_id"] != failed_node_id:
+                raise ContractViolation("diagnosis Step does not belong to the Run")
+            owned_event_ids = {
+                row["id"]
+                for row in connection.execute(
+                    "SELECT id FROM automation_events WHERE run_id = ?",
+                    (run_id,),
+                )
+            }
+            if not evidence_event_ids or not set(evidence_event_ids).issubset(owned_event_ids):
+                raise ContractViolation("diagnosis cites evidence outside its Run")
+            diagnosis_id = new_id("adiag")
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT INTO automation_diagnoses
+                    (id, workspace_id, run_id, failed_step_id, action_version_id,
+                     fault_class, root_cause, explanation, confidence_milli,
+                     evidence_event_ids_json, created_by_agent_version_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    diagnosis_id,
+                    workspace_id,
+                    run_id,
+                    failed_step_id,
+                    action_version_id,
+                    fault_class,
+                    root_cause,
+                    explanation,
+                    confidence_milli,
+                    canonical_json(list(evidence_event_ids)),
+                    created_by_agent_version_id,
+                    now,
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="maintenance.diagnosed",
+                actor_type="agent" if created_by_agent_version_id else "runtime",
+                actor_id=created_by_agent_version_id,
+                payload={
+                    "diagnosis_id": diagnosis_id,
+                    "failed_step_id": failed_step_id,
+                    "failed_node_id": failed_node_id,
+                    "fault_class": fault_class,
+                    "evidence_event_ids": list(evidence_event_ids),
+                },
+            )
+            row = connection.execute(
+                "SELECT * FROM automation_diagnoses WHERE id = ?", (diagnosis_id,)
+            ).fetchone()
+            assert row is not None
+            projection = self._diagnosis_projection(row)
+            projection["failed_node_id"] = failed_node_id
+            return projection
+
+    def get_diagnosis(self, workspace_id: str, diagnosis_id: str) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_diagnoses WHERE id = ? AND workspace_id = ?",
+                (diagnosis_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation diagnosis was not found")
+            step = connection.execute(
+                "SELECT node_id FROM automation_run_steps WHERE id = ?",
+                (row["failed_step_id"],),
+            ).fetchone()
+            projection = self._diagnosis_projection(row)
+            projection["failed_node_id"] = step["node_id"] if step else None
+            return projection
+
+    def find_run_diagnosis(
+        self, workspace_id: str, run_id: str
+    ) -> dict[str, Any] | None:
+        """Return the immutable diagnosis for a Run without creating another model call."""
+
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_diagnoses WHERE run_id = ? AND workspace_id = ?",
+                (run_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                return None
+            step = connection.execute(
+                "SELECT node_id FROM automation_run_steps WHERE id = ?",
+                (row["failed_step_id"],),
+            ).fetchone()
+            projection = self._diagnosis_projection(row)
+            projection["failed_node_id"] = step["node_id"] if step else None
+            return projection
+
+    @staticmethod
+    def _repair_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "diagnosis_id": row["diagnosis_id"],
+            "flow_id": row["flow_id"],
+            "action_id": row["action_id"],
+            "expected_flow_revision": row["expected_flow_revision"],
+            "expected_action_version": row["expected_action_version"],
+            "patch": _decode(row["patch_json"]),
+            "proposal_hash": row["proposal_hash"],
+            "status": row["status"],
+            "applied_action_version_id": row["applied_action_version_id"],
+            "applied_flow_version_id": row["applied_flow_version_id"],
+            "created_at": row["created_at"],
+            "applied_at": row["applied_at"],
+        }
+
+    def propose_repair(
+        self, workspace_id: str, diagnosis_id: str
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            existing = connection.execute(
+                "SELECT * FROM automation_repair_proposals WHERE diagnosis_id = ? AND workspace_id = ?",
+                (diagnosis_id, workspace_id),
+            ).fetchone()
+            if existing is not None:
+                return self._repair_projection(existing)
+            diagnosis = connection.execute(
+                "SELECT * FROM automation_diagnoses WHERE id = ? AND workspace_id = ?",
+                (diagnosis_id, workspace_id),
+            ).fetchone()
+            if diagnosis is None:
+                raise NotFound("Automation diagnosis was not found")
+            run = connection.execute(
+                "SELECT * FROM automation_runs WHERE id = ?",
+                (diagnosis["run_id"],),
+            ).fetchone()
+            action_version = connection.execute(
+                "SELECT * FROM action_versions WHERE id = ? AND workspace_id = ?",
+                (diagnosis["action_version_id"], workspace_id),
+            ).fetchone()
+            if run is None or action_version is None:
+                raise RuntimeError("diagnosed Run or Action is missing")
+            logical_kind = action_version["executor_kind"] or action_version["kind"]
+            config = _decode(action_version["config_json"])
+            if (
+                diagnosis["fault_class"] != "authority_policy"
+                or logical_kind != "data_store"
+                or config.get("write_enabled") is not False
+            ):
+                raise ContractViolation("diagnosis has no bounded automatic repair")
+            flow = connection.execute(
+                "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+                (run["flow_id"], workspace_id),
+            ).fetchone()
+            action = connection.execute(
+                "SELECT * FROM actions WHERE id = ? AND workspace_id = ?",
+                (action_version["action_id"], workspace_id),
+            ).fetchone()
+            if flow is None or action is None:
+                raise RuntimeError("repair target is missing")
+            patch = [
+                {"op": "replace", "path": "/config/write_enabled", "value": True}
+            ]
+            material = {
+                "diagnosis_id": diagnosis_id,
+                "flow_id": flow["id"],
+                "action_id": action["id"],
+                "expected_flow_revision": int(flow["revision"]),
+                "expected_action_version": int(action["current_version"]),
+                "patch": patch,
+            }
+            proposal_id = new_id("arep")
+            proposal_hash = fingerprint(material)
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT INTO automation_repair_proposals
+                    (id, workspace_id, diagnosis_id, flow_id, action_id,
+                     expected_flow_revision, expected_action_version, patch_json,
+                     proposal_hash, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?)
+                """,
+                (
+                    proposal_id,
+                    workspace_id,
+                    diagnosis_id,
+                    flow["id"],
+                    action["id"],
+                    flow["revision"],
+                    action["current_version"],
+                    canonical_json(patch),
+                    proposal_hash,
+                    now,
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run["id"],
+                event_type="maintenance.repair_proposed",
+                actor_type="runtime",
+                actor_id=None,
+                payload={
+                    "proposal_id": proposal_id,
+                    "proposal_hash": proposal_hash,
+                    "expected_flow_revision": flow["revision"],
+                    "expected_action_version": action["current_version"],
+                    "patch": patch,
+                },
+            )
+            row = connection.execute(
+                "SELECT * FROM automation_repair_proposals WHERE id = ?",
+                (proposal_id,),
+            ).fetchone()
+            assert row is not None
+            return self._repair_projection(row)
+
+    def get_repair(self, workspace_id: str, proposal_id: str) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_repair_proposals WHERE id = ? AND workspace_id = ?",
+                (proposal_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation repair proposal was not found")
+            projection = self._repair_projection(row)
+            if row["applied_action_version_id"]:
+                applied_action = connection.execute(
+                    "SELECT version FROM action_versions WHERE id = ?",
+                    (row["applied_action_version_id"],),
+                ).fetchone()
+                projection["applied_action_version"] = (
+                    int(applied_action["version"]) if applied_action else None
+                )
+            if row["applied_flow_version_id"]:
+                applied_flow = connection.execute(
+                    "SELECT version FROM automation_flow_versions WHERE id = ?",
+                    (row["applied_flow_version_id"],),
+                ).fetchone()
+                projection["applied_flow_version"] = (
+                    int(applied_flow["version"]) if applied_flow else None
+                )
+            return projection
+
+    def apply_repair(
+        self,
+        workspace_id: str,
+        proposal_id: str,
+        *,
+        proposal_hash: str,
+        expected_flow_revision: int,
+        expected_action_version: int,
+        actor: str,
+        reason: str,
+        acknowledged: bool,
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            proposal = connection.execute(
+                "SELECT * FROM automation_repair_proposals WHERE id = ? AND workspace_id = ?",
+                (proposal_id, workspace_id),
+            ).fetchone()
+            if proposal is None:
+                raise NotFound("Automation repair proposal was not found")
+            if proposal["status"] == "applied":
+                pass
+            else:
+                if (
+                    proposal_hash != proposal["proposal_hash"]
+                    or expected_flow_revision != proposal["expected_flow_revision"]
+                    or expected_action_version != proposal["expected_action_version"]
+                    or not acknowledged
+                ):
+                    raise Conflict("repair proposal hash, revision fence, or acknowledgement changed")
+                flow = connection.execute(
+                    "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+                    (proposal["flow_id"], workspace_id),
+                ).fetchone()
+                action = connection.execute(
+                    "SELECT * FROM actions WHERE id = ? AND workspace_id = ?",
+                    (proposal["action_id"], workspace_id),
+                ).fetchone()
+                if flow is None or action is None:
+                    raise RuntimeError("repair target is missing")
+                if (
+                    int(flow["revision"]) != expected_flow_revision
+                    or int(action["current_version"]) != expected_action_version
+                ):
+                    raise Conflict("repair target advanced after proposal")
+                old_action_version = connection.execute(
+                    "SELECT * FROM action_versions WHERE action_id = ? AND version = ?",
+                    (action["id"], action["current_version"]),
+                ).fetchone()
+                old_flow_version = connection.execute(
+                    "SELECT * FROM automation_flow_versions WHERE flow_id = ? AND version = ?",
+                    (flow["id"], flow["current_version"]),
+                ).fetchone()
+                diagnosis = connection.execute(
+                    "SELECT * FROM automation_diagnoses WHERE id = ?",
+                    (proposal["diagnosis_id"],),
+                ).fetchone()
+                if old_action_version is None or old_flow_version is None or diagnosis is None:
+                    raise RuntimeError("repair pinned definition is missing")
+                config = _decode(old_action_version["config_json"])
+                if config.get("write_enabled") is not False:
+                    raise Conflict("repair target no longer has the diagnosed policy")
+                config["write_enabled"] = True
+                next_action_version = int(action["current_version"]) + 1
+                action_version_id = new_id("actv")
+                now = utc_now()
+                action_material = {
+                    "kind": old_action_version["executor_kind"] or old_action_version["kind"],
+                    "storage_kind": old_action_version["kind"],
+                    "input_schema": _decode(old_action_version["input_schema_json"]),
+                    "output_schema": _decode(old_action_version["output_schema_json"]),
+                    "config": config,
+                    "agent": None,
+                    "effect_level": old_action_version["effect_level"],
+                    "parent_version_id": old_action_version["id"],
+                }
+                connection.execute(
+                    """
+                    INSERT INTO action_versions
+                        (id, workspace_id, action_id, version, kind, executor_kind,
+                         input_schema_json, output_schema_json, config_json,
+                         agent_version_id, effect_level, fingerprint, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        action_version_id,
+                        workspace_id,
+                        action["id"],
+                        next_action_version,
+                        old_action_version["kind"],
+                        old_action_version["executor_kind"],
+                        old_action_version["input_schema_json"],
+                        old_action_version["output_schema_json"],
+                        canonical_json(config),
+                        old_action_version["agent_version_id"],
+                        old_action_version["effect_level"],
+                        fingerprint(action_material),
+                        actor,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    "UPDATE actions SET current_version = current_version + 1, updated_at = ? WHERE id = ?",
+                    (now, action["id"]),
+                )
+                nodes = _decode(old_flow_version["nodes_json"])
+                failed_step = connection.execute(
+                    "SELECT node_id FROM automation_run_steps WHERE id = ?",
+                    (diagnosis["failed_step_id"],),
+                ).fetchone()
+                if failed_step is None:
+                    raise RuntimeError("diagnosed Step is missing")
+                replaced = 0
+                for node in nodes:
+                    if (
+                        node["id"] == failed_step["node_id"]
+                        and node["version_id"] == old_action_version["id"]
+                    ):
+                        node["version_id"] = action_version_id
+                        replaced += 1
+                if replaced != 1:
+                    raise Conflict("repair target node is no longer uniquely pinned")
+                pinned, requires_model = self._resolve_flow_pins(
+                    connection, workspace_id, nodes
+                )
+                next_flow_version = int(flow["current_version"]) + 1
+                flow_version_id = new_id("aflowv")
+                flow_material = {
+                    "input_schema": _decode(old_flow_version["input_schema_json"]),
+                    "start_node_id": old_flow_version["start_node_id"],
+                    "nodes": nodes,
+                    "routes": _decode(old_flow_version["routes_json"]),
+                    "pinned_resources": pinned,
+                    "parent_version_id": old_flow_version["id"],
+                }
+                connection.execute(
+                    """
+                    INSERT INTO automation_flow_versions
+                        (id, workspace_id, flow_id, version, input_schema_json,
+                         start_node_id, nodes_json, routes_json, pinned_resources_json,
+                         requires_model, fingerprint, parent_version_id, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        flow_version_id,
+                        workspace_id,
+                        flow["id"],
+                        next_flow_version,
+                        old_flow_version["input_schema_json"],
+                        old_flow_version["start_node_id"],
+                        canonical_json(nodes),
+                        old_flow_version["routes_json"],
+                        canonical_json(pinned),
+                        int(requires_model),
+                        fingerprint(flow_material),
+                        old_flow_version["id"],
+                        actor,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE automation_flows
+                    SET revision = revision + 1, current_version = current_version + 1,
+                        updated_at = ?
+                    WHERE id = ? AND revision = ?
+                    """,
+                    (now, flow["id"], expected_flow_revision),
+                )
+                decision_id = new_id("ardec")
+                connection.execute(
+                    """
+                    INSERT INTO automation_repair_decisions
+                        (id, workspace_id, proposal_id, proposal_hash, actor, reason,
+                         acknowledged, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                    """,
+                    (
+                        decision_id,
+                        workspace_id,
+                        proposal_id,
+                        proposal_hash,
+                        actor,
+                        reason,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE automation_repair_proposals
+                    SET status = 'applied', applied_action_version_id = ?,
+                        applied_flow_version_id = ?, applied_at = ?
+                    WHERE id = ? AND status = 'proposed'
+                    """,
+                    (action_version_id, flow_version_id, now, proposal_id),
+                )
+                self._append_event(
+                    connection,
+                    workspace_id,
+                    diagnosis["run_id"],
+                    event_type="maintenance.repair_applied",
+                    actor_type="human",
+                    actor_id=actor,
+                    payload={
+                        "proposal_id": proposal_id,
+                        "proposal_hash": proposal_hash,
+                        "action_version_id": action_version_id,
+                        "flow_version_id": flow_version_id,
+                        "reason": reason,
+                    },
+                )
+        return self.get_repair(workspace_id, proposal_id)
 
     # -- Projections ---------------------------------------------------
 

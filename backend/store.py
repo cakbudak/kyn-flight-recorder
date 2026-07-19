@@ -61,6 +61,11 @@ class Store:
                     "ALTER TABLE skill_versions "
                     "ADD COLUMN allowed_action_version_ids_json TEXT NOT NULL DEFAULT '[]'"
                 )
+            action_version_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(action_versions)")
+            }
+            if "executor_kind" not in action_version_columns:
+                connection.execute("ALTER TABLE action_versions ADD COLUMN executor_kind TEXT")
         finally:
             connection.close()
 

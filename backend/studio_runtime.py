@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from .contracts import (
+    ActionBlocked,
     PLACEHOLDER_RE,
     Conflict,
     ContractViolation,
@@ -26,8 +29,11 @@ from .studio_store import StudioStore
 
 
 NODE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
-ROUTE_OUTCOMES = frozenset({"success", "true", "false", "approved", "rejected"})
-CALLABLE_ACTION_KINDS = frozenset({"template", "condition", "sandbox"})
+ROUTE_OUTCOMES = frozenset({"success", "true", "false", "approved", "rejected", "error"})
+CALLABLE_ACTION_KINDS = frozenset({"template", "condition", "sandbox", "transform", "assert"})
+RETRYABLE_ERROR_CODES = frozenset(
+    {"provider_failure", "action_blocked", "contract_violation"}
+)
 PROVIDER_DETAIL_FIELDS = frozenset(
     {"provider_code", "provider_type", "provider_param", "status", "request_id"}
 )
@@ -52,7 +58,9 @@ def _safe_provider_detail(error: ProviderFailure) -> dict[str, Any]:
     return detail
 
 
-def _public_error_message(error: ContractViolation | ProviderFailure) -> str:
+def _public_error_message(
+    error: ContractViolation | ProviderFailure | ActionBlocked,
+) -> str:
     if not isinstance(error, ProviderFailure):
         return str(error)
     detail = _safe_provider_detail(error)
@@ -78,12 +86,13 @@ def validate_flow_definition(
     normalized_nodes: list[dict[str, Any]] = []
     ids: set[str] = set()
     for index, node in enumerate(nodes):
-        if not isinstance(node, dict) or set(node) != {
-            "id",
-            "type",
-            "version_id",
-            "input_mapping",
-        }:
+        required_node_keys = {"id", "type", "version_id", "input_mapping"}
+        optional_node_keys = {"position", "settings"}
+        if (
+            not isinstance(node, dict)
+            or not required_node_keys.issubset(node)
+            or not set(node).issubset(required_node_keys | optional_node_keys)
+        ):
             raise ContractViolation(f"Flow node {index} has an invalid shape")
         node_id = require_string(node["id"], f"Flow node {index} id", maximum=64)
         if not NODE_ID_RE.fullmatch(node_id) or node_id in ids:
@@ -134,12 +143,73 @@ def validate_flow_definition(
                     "node_id": source_node,
                     "path": _normalize_path(source["path"], f"Flow node {node_id} Step path"),
                 }
+        position = node.get(
+            "position",
+            {"x": 160 + (index % 4) * 260, "y": 140 + (index // 4) * 180},
+        )
+        if not isinstance(position, dict) or set(position) != {"x", "y"}:
+            raise ContractViolation(f"Flow node {node_id} position is invalid")
+        normalized_position: dict[str, int] = {}
+        for axis in ("x", "y"):
+            coordinate = position[axis]
+            if (
+                not isinstance(coordinate, (int, float))
+                or isinstance(coordinate, bool)
+                or not math.isfinite(coordinate)
+                or not 0 <= coordinate <= 4_000
+            ):
+                raise ContractViolation(f"Flow node {node_id} position is out of bounds")
+            normalized_position[axis] = int(round(coordinate))
+        settings = node.get(
+            "settings",
+            {
+                "max_attempts": 1,
+                "backoff_seconds": 0,
+                "retry_on": ["provider_failure"],
+                "on_error": "fail",
+            },
+        )
+        if not isinstance(settings, dict) or set(settings) != {
+            "max_attempts",
+            "backoff_seconds",
+            "retry_on",
+            "on_error",
+        }:
+            raise ContractViolation(f"Flow node {node_id} settings are invalid")
+        max_attempts = settings["max_attempts"]
+        backoff_seconds = settings["backoff_seconds"]
+        retry_on = settings["retry_on"]
+        on_error = settings["on_error"]
+        if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 3:
+            raise ContractViolation(f"Flow node {node_id} max_attempts must be between one and three")
+        if (
+            not isinstance(backoff_seconds, (int, float))
+            or isinstance(backoff_seconds, bool)
+            or not 0 <= backoff_seconds <= 5
+        ):
+            raise ContractViolation(f"Flow node {node_id} backoff_seconds is invalid")
+        if (
+            not isinstance(retry_on, list)
+            or len(retry_on) > 3
+            or any(item not in RETRYABLE_ERROR_CODES for item in retry_on)
+            or len(set(retry_on)) != len(retry_on)
+        ):
+            raise ContractViolation(f"Flow node {node_id} retry_on is invalid")
+        if on_error not in {"fail", "continue"}:
+            raise ContractViolation(f"Flow node {node_id} on_error is invalid")
         normalized_nodes.append(
             {
                 "id": node_id,
                 "type": node_type,
                 "version_id": version_id,
                 "input_mapping": normalized_mapping,
+                "position": normalized_position,
+                "settings": {
+                    "max_attempts": max_attempts,
+                    "backoff_seconds": float(backoff_seconds),
+                    "retry_on": list(retry_on),
+                    "on_error": on_error,
+                },
             }
         )
     if start not in ids:
@@ -250,6 +320,32 @@ class StudioRuntime:
         correlation_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
+        run = self.prepare(
+            workspace_id,
+            flow_id,
+            input_data=input_data,
+            flow_version=flow_version,
+            parent_run_id=parent_run_id,
+            correlation_id=correlation_id,
+            idempotency_key=idempotency_key,
+        )
+        if run["status"] != "created":
+            return run
+        return self.continue_run(workspace_id, run["id"])
+
+    def prepare(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        input_data: Mapping[str, Any],
+        flow_version: int | None = None,
+        parent_run_id: str | None = None,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist a fully pinned Run before any worker or provider call starts."""
+
         context = self.repository.flow_context(workspace_id, flow_id, flow_version)
         validated_input = validate_json_schema(
             dict(input_data), context["version"]["input_schema"], "Run input"
@@ -265,12 +361,30 @@ class StudioRuntime:
         )
         if not created:
             return self.repository.get_run(workspace_id, run_id)
-        self.repository.transition_run(
+        self.repository.append_event(
             workspace_id,
             run_id,
-            status="running",
-            current_node_id=context["version"]["start_node_id"],
+            event_type="run.queued",
+            actor_type="runtime",
+            actor_id=None,
+            payload={"current_node_id": context["version"]["start_node_id"]},
         )
+        return self.repository.get_run(workspace_id, run_id)
+
+    def continue_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
+        run = self.repository.get_run(workspace_id, run_id)
+        if run["status"] == "created":
+            context = self.repository.flow_context(
+                workspace_id, run["flow_id"], int(run["flow_version"])
+            )
+            self.repository.transition_run(
+                workspace_id,
+                run_id,
+                status="running",
+                current_node_id=context["version"]["start_node_id"],
+            )
+        elif run["status"] != "running":
+            return run
         return self._drive(workspace_id, run_id)
 
     def resume_after_approval(self, workspace_id: str, run_id: str) -> dict[str, Any]:
@@ -278,6 +392,82 @@ class StudioRuntime:
         if run["status"] != "running":
             return run
         return self._drive(workspace_id, run_id)
+
+    def explain_diagnosis(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        agent_version_id: str,
+        candidate: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Let a pinned diagnostician explain code-owned evidence without widening it."""
+
+        agent = self.repository.get_agent_runtime(workspace_id, agent_version_id)
+        schema = {
+            "type": "object",
+            "properties": {
+                "root_cause": {"type": "string", "minLength": 12, "maxLength": 500},
+                "explanation": {"type": "string", "minLength": 20, "maxLength": 1500},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "evidence_event_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 12,
+                },
+            },
+            "required": [
+                "root_cause",
+                "explanation",
+                "confidence",
+                "evidence_event_ids",
+            ],
+            "additionalProperties": False,
+        }
+        payload = {
+            "model": agent["model"],
+            "instructions": (
+                "You are the pinned Kyn.ist diagnostician. Explain only the supplied "
+                "code-owned causal candidate. Every claim must cite supplied event IDs. "
+                "Do not invent a different fault class, authority, effect, or repair path."
+            ),
+            "input": [
+                {
+                    "role": "user",
+                    "content": canonical_json(dict(candidate)),
+                }
+            ],
+            "tool_choice": "none",
+            "parallel_tool_calls": False,
+            "max_output_tokens": min(self.max_output_tokens, 1_200),
+            "store": False,
+            "reasoning": {"effort": "medium"},
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "kyn_grounded_diagnosis",
+                    "schema": schema,
+                    "strict": True,
+                }
+            },
+            "metadata": {
+                "kyn_surface": "agent-studio",
+                "run_id": run_id,
+                "step_id": step_id,
+                "agent_version_id": agent["id"],
+                "operation": "diagnosis",
+            },
+        }
+        response = self._call_and_record(
+            workspace_id, run_id, step_id, agent, payload
+        )
+        try:
+            parsed = json.loads(extract_output_text(response))
+        except json.JSONDecodeError:
+            raise ContractViolation("diagnostician output is not valid JSON") from None
+        return validate_json_schema(parsed, schema, "diagnostician output")
 
     def _drive(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         run = self.repository.get_run(workspace_id, run_id)
@@ -319,6 +509,29 @@ class StudioRuntime:
                 mapped_input = validate_json_schema(
                     mapped_input, input_schema, f"node {node_id} input"
                 )
+            except (ContractViolation, ProviderFailure, ActionBlocked) as error:
+                return self._fail_run(
+                    workspace_id,
+                    run_id,
+                    error.code,
+                    _public_error_message(error),
+                    status="blocked" if isinstance(error, ActionBlocked) else "failed",
+                )
+
+            settings = node.get(
+                "settings",
+                {
+                    "max_attempts": 1,
+                    "backoff_seconds": 0,
+                    "retry_on": ["provider_failure"],
+                    "on_error": "fail",
+                },
+            )
+            continued_after_error = False
+            for attempt in range(1, int(settings["max_attempts"]) + 1):
+                live_run = self.repository.get_run(workspace_id, run_id)
+                if live_run["status"] != "running":
+                    return live_run
                 step_id = self.repository.start_step(
                     workspace_id,
                     run_id,
@@ -327,28 +540,81 @@ class StudioRuntime:
                     target_version_id=node["version_id"],
                     input_data=mapped_input,
                 )
-                if node["type"] == "action":
-                    action = self.repository.get_action_version(
-                        workspace_id, node["version_id"]
-                    )
-                    result = self._invoke_action(
+                try:
+                    if node["type"] == "action":
+                        action = self.repository.get_action_version(
+                            workspace_id, node["version_id"]
+                        )
+                        result = self._invoke_action(
+                            workspace_id,
+                            run_id,
+                            step_id,
+                            node_id=node_id,
+                            action=action,
+                            input_data=mapped_input,
+                            attempt=attempt,
+                            invocation_key=f"node:{node_id}:attempt:{attempt}",
+                        )
+                    else:
+                        result = self._invoke_agent_node(
+                            workspace_id,
+                            run_id,
+                            step_id,
+                            node_id=node_id,
+                            agent_version_id=node["version_id"],
+                            input_data=mapped_input,
+                        )
+                except (ContractViolation, ProviderFailure, ActionBlocked) as error:
+                    public_message = _public_error_message(error)
+                    try:
+                        self.repository.finish_step(
+                            workspace_id,
+                            run_id,
+                            step_id,
+                            status="failed",
+                            output=None,
+                            route_outcome="error",
+                            error_code=error.code,
+                            error_message=public_message,
+                        )
+                    except (Conflict, ContractViolation):
+                        return self.repository.get_run(workspace_id, run_id)
+                    if (
+                        attempt < int(settings["max_attempts"])
+                        and error.code in settings["retry_on"]
+                    ):
+                        self.repository.append_event(
+                            workspace_id,
+                            run_id,
+                            event_type="step.retry_scheduled",
+                            actor_type="runtime",
+                            actor_id=None,
+                            payload={
+                                "node_id": node_id,
+                                "failed_attempt": attempt,
+                                "next_attempt": attempt + 1,
+                                "error_code": error.code,
+                                "backoff_seconds": settings["backoff_seconds"],
+                            },
+                        )
+                        if float(settings["backoff_seconds"]) > 0:
+                            time.sleep(float(settings["backoff_seconds"]))
+                        continue
+                    error_target = self._next_node(routes, node_id, "error")
+                    if settings["on_error"] == "continue" and error_target is not None:
+                        last_output = {
+                            "error": {"code": error.code, "message": public_message}
+                        }
+                        completed_outputs[node_id] = last_output
+                        node_id = error_target
+                        continued_after_error = True
+                        break
+                    return self._fail_run(
                         workspace_id,
                         run_id,
-                        step_id,
-                        node_id=node_id,
-                        action=action,
-                        input_data=mapped_input,
-                        attempt=1,
-                        invocation_key=f"node:{node_id}:attempt:1",
-                    )
-                else:
-                    result = self._invoke_agent_node(
-                        workspace_id,
-                        run_id,
-                        step_id,
-                        node_id=node_id,
-                        agent_version_id=node["version_id"],
-                        input_data=mapped_input,
+                        error.code,
+                        public_message,
+                        status="blocked" if isinstance(error, ActionBlocked) else "failed",
                     )
                 if result.paused:
                     next_node = self._next_node(routes, node_id, "approved")
@@ -402,25 +668,9 @@ class StudioRuntime:
                     )
                     return self.repository.get_run(workspace_id, run_id)
                 node_id = next_node
-            except (ContractViolation, ProviderFailure) as error:
-                public_message = _public_error_message(error)
-                if step_id is not None:
-                    try:
-                        self.repository.finish_step(
-                            workspace_id,
-                            run_id,
-                            step_id,
-                            status="failed",
-                            output=None,
-                            route_outcome=None,
-                            error_code=error.code,
-                            error_message=public_message,
-                        )
-                    except (Conflict, ContractViolation):
-                        pass
-                return self._fail_run(
-                    workspace_id, run_id, error.code, public_message
-                )
+                break
+            if continued_after_error:
+                continue
         self.repository.transition_run(
             workspace_id,
             run_id,
@@ -431,7 +681,13 @@ class StudioRuntime:
         return self.repository.get_run(workspace_id, run_id)
 
     def _fail_run(
-        self, workspace_id: str, run_id: str, code: str, message: str
+        self,
+        workspace_id: str,
+        run_id: str,
+        code: str,
+        message: str,
+        *,
+        status: str = "failed",
     ) -> dict[str, Any]:
         run = self.repository.get_run(workspace_id, run_id)
         if run["status"] not in {"running", "created"}:
@@ -439,7 +695,7 @@ class StudioRuntime:
         self.repository.transition_run(
             workspace_id,
             run_id,
-            status="failed",
+            status=status,
             current_node_id=None,
             error_code=code,
             error_message=message[:500],
@@ -554,70 +810,116 @@ class StudioRuntime:
             }
         )
         kind = action["kind"]
-        if kind == "template":
-            template = action["config"]["template"]
-            variables = sorted(set(PLACEHOLDER_RE.findall(template)))
-            output = {
-                "text": render_prompt(
+        try:
+            if kind == "template":
+                template = action["config"]["template"]
+                variables = sorted(set(PLACEHOLDER_RE.findall(template)))
+                output = {
+                    "text": render_prompt(
+                        template,
+                        declared_variables=variables,
+                        values={variable: validated_input[variable] for variable in variables},
+                    )
+                }
+                result = ActionResult(output=output, route_outcome="success")
+            elif kind == "transform":
+                transformed: dict[str, Any] = {}
+                for target, source in action["config"]["mappings"].items():
+                    if source["source"] == "literal":
+                        transformed[target] = json.loads(canonical_json(source["value"]))
+                    else:
+                        transformed[target] = _value_at(
+                            validated_input,
+                            source["path"],
+                            field=f"Action {action['slug']} mapping for {target}",
+                        )
+                result = ActionResult(output=transformed, route_outcome="success")
+            elif kind == "delay":
+                milliseconds = int(action["config"]["milliseconds"])
+                if milliseconds:
+                    time.sleep(milliseconds / 1_000)
+                result = ActionResult(
+                    output=json.loads(canonical_json(validated_input)),
+                    route_outcome="success",
+                )
+            elif kind in {"condition", "assert"}:
+                actual = _value_at(
+                    validated_input,
+                    action["config"]["path"],
+                    field=f"Action {action['slug']} condition",
+                )
+                matched = self._compare(
+                    actual, action["config"]["operator"], action["config"]["value"]
+                )
+                if kind == "assert" and not matched:
+                    raise ActionBlocked(action["config"]["message"])
+                result = ActionResult(
+                    output=(
+                        {"passed": True, "actual": actual}
+                        if kind == "assert"
+                        else {"matched": matched, "actual": actual}
+                    ),
+                    route_outcome=("success" if kind == "assert" else ("true" if matched else "false")),
+                )
+            elif kind == "approval":
+                template = action["config"]["message_template"]
+                variables = sorted(set(PLACEHOLDER_RE.findall(template)))
+                message = render_prompt(
                     template,
                     declared_variables=variables,
                     values={variable: validated_input[variable] for variable in variables},
+                    maximum_output=2_000,
                 )
-            }
-            result = ActionResult(output=output, route_outcome="success")
-        elif kind == "condition":
-            actual = _value_at(
-                validated_input,
-                action["config"]["path"],
-                field=f"Action {action['slug']} condition",
-            )
-            matched = self._compare(
-                actual, action["config"]["operator"], action["config"]["value"]
-            )
-            result = ActionResult(
-                output={"matched": matched, "actual": actual},
-                route_outcome="true" if matched else "false",
-            )
-        elif kind == "approval":
-            template = action["config"]["message_template"]
-            variables = sorted(set(PLACEHOLDER_RE.findall(template)))
-            message = render_prompt(
-                template,
-                declared_variables=variables,
-                values={variable: validated_input[variable] for variable in variables},
-                maximum_output=2_000,
-            )
-            result = ActionResult(
-                output={"pending": True},
-                route_outcome="approved",
-                paused=True,
-                approval_message=message,
-            )
-        elif kind == "sandbox":
-            effect = self.repository.create_effect(
-                workspace_id,
-                run_id,
-                step_id,
-                action_version_id=action["id"],
-                collection=action["config"]["collection"],
-                payload=validated_input,
-                idempotency_key=receipt_key,
-            )
-            result = ActionResult(
-                output={"effect_id": effect["id"], "collection": effect["collection"]},
-                route_outcome="success",
-            )
-        elif kind == "ai":
-            result = self._invoke_ai_action(
+                result = ActionResult(
+                    output={"pending": True},
+                    route_outcome="approved",
+                    paused=True,
+                    approval_message=message,
+                )
+            elif kind in {"sandbox", "data_store"}:
+                if action["config"].get("write_enabled", True) is not True:
+                    raise ActionBlocked(
+                        "The pinned Data Store Action policy does not authorize this write."
+                    )
+                effect = self.repository.create_effect(
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    action_version_id=action["id"],
+                    collection=action["config"]["collection"],
+                    payload=validated_input,
+                    idempotency_key=receipt_key,
+                )
+                result = ActionResult(
+                    output={"effect_id": effect["id"], "collection": effect["collection"]},
+                    route_outcome="success",
+                )
+            elif kind == "ai":
+                result = self._invoke_ai_action(
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    node_id=node_id,
+                    action=action,
+                    input_data=validated_input,
+                )
+            else:
+                raise ContractViolation("Action kind is not implemented")
+        except (ContractViolation, ProviderFailure, ActionBlocked) as error:
+            self.repository.record_receipt(
                 workspace_id,
                 run_id,
                 step_id,
                 node_id=node_id,
-                action=action,
+                action_version_id=action["id"],
+                attempt=attempt,
+                outcome="denied" if isinstance(error, ActionBlocked) else "failed",
                 input_data=validated_input,
+                output={"error": {"code": error.code, "message": _public_error_message(error)}},
+                error_code=error.code,
+                idempotency_key=receipt_key,
             )
-        else:
-            raise ContractViolation("Action kind is not implemented")
+            raise
         if not result.paused:
             validate_json_schema(
                 result.output,

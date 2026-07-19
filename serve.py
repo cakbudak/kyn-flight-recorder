@@ -8,6 +8,8 @@ import json
 import os
 import re
 import sys
+import threading
+import time
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -271,6 +273,7 @@ class DemoServer(ThreadingHTTPServer):
         model_configured: bool = False,
         workspace_model_call_limit: int = 12,
     ) -> None:
+        self.control_plane = control_plane
         self.database_ready = control_plane is not None
         self.model_configured = model_configured
         self.api = (
@@ -281,7 +284,31 @@ class DemoServer(ThreadingHTTPServer):
             if control_plane is not None
             else None
         )
+        self._scheduler_stop = threading.Event()
+        self._scheduler_thread: threading.Thread | None = None
         super().__init__(server_address, request_handler)
+        if control_plane is not None:
+            self._scheduler_thread = threading.Thread(
+                target=self._schedule_loop,
+                name="kyn-schedule-pump",
+                daemon=True,
+            )
+            self._scheduler_thread.start()
+
+    def _schedule_loop(self) -> None:
+        while not self._scheduler_stop.wait(2.0):
+            try:
+                assert self.control_plane is not None
+                self.control_plane.fire_due_studio_schedules()
+            except Exception:
+                # A schedule fault must not take down the HTTP control plane.
+                time.sleep(0.1)
+
+    def server_close(self) -> None:
+        self._scheduler_stop.set()
+        if self._scheduler_thread is not None:
+            self._scheduler_thread.join(timeout=2.5)
+        super().server_close()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

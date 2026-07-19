@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 import json
+import threading
 from typing import Any, Callable
 
 from .contracts import (
     ContractViolation,
     PLACEHOLDER_RE,
+    new_id,
     normalize_json_schema,
     require_slug,
     require_string,
@@ -46,6 +48,9 @@ class ControlPlane:
         self.runtime = AgentRuntime(store, client, self.tools)
         self.studio = StudioStore(store)
         self.studio_runtime = StudioRuntime(self.studio, client)
+        self._active_studio_runs: set[str] = set()
+        self._active_studio_runs_lock = threading.Lock()
+        self._studio_worker_slots = threading.BoundedSemaphore(2)
 
     def client_for_browser_key(self, api_key: str) -> ResponseTransport:
         if self.client_factory is None:
@@ -181,9 +186,24 @@ class ControlPlane:
         effect_levels = {
             "ai": "model",
             "template": "none",
+            "transform": "none",
+            "delay": "none",
             "condition": "none",
+            "assert": "none",
             "approval": "approval",
             "sandbox": "sandbox_write",
+            "data_store": "sandbox_write",
+        }
+        storage_kinds = {
+            "ai": "ai",
+            "template": "template",
+            "transform": "template",
+            "delay": "template",
+            "condition": "condition",
+            "assert": "condition",
+            "approval": "approval",
+            "sandbox": "sandbox",
+            "data_store": "sandbox",
         }
         if normalized_kind not in effect_levels:
             raise ContractViolation("Action kind is not supported")
@@ -216,6 +236,41 @@ class ControlPlane:
             normalized_config["template"] = template
             if set(normalized_output["properties"]) != {"text"}:
                 raise ContractViolation("template Action output must contain only text")
+        elif normalized_kind == "transform":
+            if normalized_agent is not None or set(normalized_config) != {
+                "operation",
+                "mappings",
+            }:
+                raise ContractViolation("transform Action config is invalid")
+            if normalized_config["operation"] != "map":
+                raise ContractViolation("transform Action operation is not supported")
+            mappings = normalized_config["mappings"]
+            if not isinstance(mappings, dict) or set(mappings) != set(normalized_output["properties"]):
+                raise ContractViolation("transform mappings must define every output property")
+            normalized_mappings: dict[str, dict[str, Any]] = {}
+            for target, source in mappings.items():
+                if not isinstance(source, dict) or source.get("source") not in {"input", "literal"}:
+                    raise ContractViolation(f"transform mapping {target} is invalid")
+                if source["source"] == "literal":
+                    if set(source) != {"source", "value"}:
+                        raise ContractViolation(f"transform literal mapping {target} is invalid")
+                    normalized_mappings[target] = json.loads(json.dumps(source))
+                else:
+                    if set(source) != {"source", "path"}:
+                        raise ContractViolation(f"transform input mapping {target} is invalid")
+                    path = require_string(source["path"], f"transform path {target}", maximum=160)
+                    if not re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*", path):
+                        raise ContractViolation(f"transform path {target} is invalid")
+                    normalized_mappings[target] = {"source": "input", "path": path}
+            normalized_config["mappings"] = normalized_mappings
+        elif normalized_kind == "delay":
+            if normalized_agent is not None or set(normalized_config) != {"milliseconds"}:
+                raise ContractViolation("delay Action config is invalid")
+            milliseconds = normalized_config["milliseconds"]
+            if not isinstance(milliseconds, int) or isinstance(milliseconds, bool) or not 0 <= milliseconds <= 5_000:
+                raise ContractViolation("delay Action milliseconds must be between zero and 5000")
+            if normalized_input != normalized_output:
+                raise ContractViolation("delay Action output schema must equal its input schema")
         elif normalized_kind == "condition":
             if normalized_agent is not None or set(normalized_config) != {
                 "path",
@@ -236,6 +291,32 @@ class ControlPlane:
                 "lte",
             }:
                 raise ContractViolation("condition operator is invalid")
+        elif normalized_kind == "assert":
+            if normalized_agent is not None or set(normalized_config) != {
+                "path",
+                "operator",
+                "value",
+                "message",
+            }:
+                raise ContractViolation("assert Action config is invalid")
+            path = require_string(normalized_config["path"], "assert path", maximum=160)
+            if not re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*", path):
+                raise ContractViolation("assert path is invalid")
+            if normalized_config["operator"] not in {
+                "equals",
+                "not_equals",
+                "contains",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+            }:
+                raise ContractViolation("assert operator is invalid")
+            normalized_config["message"] = require_string(
+                normalized_config["message"], "assert message", maximum=500
+            )
+            if set(normalized_output["properties"]) != {"passed", "actual"}:
+                raise ContractViolation("assert Action output must contain passed and actual")
         elif normalized_kind == "approval":
             if normalized_agent is not None or set(normalized_config) != {"message_template"}:
                 raise ContractViolation("approval Action config is invalid")
@@ -249,27 +330,40 @@ class ControlPlane:
                 raise ContractViolation("approval message variables must exist in its input schema")
             normalized_config["message_template"] = template
         else:
-            if normalized_agent is not None or set(normalized_config) != {
-                "operation",
-                "collection",
+            allowed_keys = {"operation", "collection"}
+            if normalized_kind == "data_store":
+                allowed_keys.add("write_enabled")
+            if normalized_agent is not None or frozenset(normalized_config) not in {
+                frozenset({"operation", "collection"}),
+                frozenset(allowed_keys),
             }:
-                raise ContractViolation("sandbox Action config is invalid")
+                raise ContractViolation("Data Store Action config is invalid")
             if normalized_config["operation"] != "append_record":
-                raise ContractViolation("sandbox Action operation is not supported")
+                raise ContractViolation("Data Store Action operation is not supported")
             normalized_config["collection"] = require_slug(
                 normalized_config["collection"], "sandbox collection"
             )
+            if normalized_kind == "data_store":
+                write_enabled = normalized_config.get("write_enabled", True)
+                if not isinstance(write_enabled, bool):
+                    raise ContractViolation("Data Store write_enabled must be a boolean")
+                normalized_config["write_enabled"] = write_enabled
         return self.studio.create_action(
             workspace_id,
             name=require_string(name, "Action name", maximum=100),
             slug=require_slug(slug),
             description=require_string(description, "Action description", maximum=500),
-            kind=normalized_kind,
+            kind=storage_kinds[normalized_kind],
             input_schema=normalized_input,
             output_schema=normalized_output,
             config=normalized_config,
             agent_version_id=normalized_agent,
             effect_level=effect_levels[normalized_kind],
+            executor_kind=(
+                normalized_kind
+                if storage_kinds[normalized_kind] != normalized_kind
+                else None
+            ),
         )
 
     def create_studio_flow(
@@ -322,6 +416,63 @@ class ControlPlane:
             routes=normalized_routes,
         )
 
+    def revise_studio_flow(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        expected_revision: Any,
+        input_schema: Any,
+        start_node_id: Any,
+        nodes: Any,
+        routes: Any,
+    ) -> dict[str, Any]:
+        if (
+            not isinstance(expected_revision, int)
+            or isinstance(expected_revision, bool)
+            or expected_revision < 1
+        ):
+            raise ContractViolation("expected Flow revision is invalid")
+        normalized_schema = normalize_json_schema(input_schema, "Flow input schema")
+        if normalized_schema["type"] != "object":
+            raise ContractViolation("Flow input schema must be an object")
+        start, normalized_nodes, normalized_routes = validate_flow_definition(
+            start_node_id=start_node_id,
+            nodes=nodes,
+            routes=routes,
+        )
+        for node in normalized_nodes:
+            if node["type"] == "action":
+                expected = self.studio.get_action_version(
+                    workspace_id, node["version_id"]
+                )["input_schema"]
+            else:
+                agent = self.studio.get_agent_runtime(
+                    workspace_id, node["version_id"]
+                )
+                expected = {
+                    "properties": {
+                        variable: {} for variable in agent["prompt"]["variables"]
+                    },
+                    "required": list(agent["prompt"]["variables"]),
+                }
+            mapped = set(node["input_mapping"])
+            properties = set(expected["properties"])
+            required = set(expected["required"])
+            if not required.issubset(mapped) or not mapped.issubset(properties):
+                raise ContractViolation(
+                    f"Flow node {node['id']} mapping does not satisfy its pinned input contract"
+                )
+        return self.studio.revise_flow(
+            workspace_id,
+            flow_id,
+            expected_revision=expected_revision,
+            input_schema=normalized_schema,
+            start_node_id=start,
+            nodes=normalized_nodes,
+            routes=normalized_routes,
+        )
+
     def start_studio_run(
         self,
         workspace_id: str,
@@ -344,6 +495,117 @@ class ControlPlane:
             input_data=input_data,
             idempotency_key=normalized_key,
         )
+
+    def prepare_studio_run(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        input_data: Any,
+        client: ResponseTransport | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(input_data, dict):
+            raise ContractViolation("Run input must be an object")
+        normalized_key = (
+            require_string(idempotency_key, "Run idempotency key", maximum=100)
+            if idempotency_key is not None
+            else None
+        )
+        return self._studio_runtime(client).prepare(
+            workspace_id,
+            flow_id,
+            input_data=input_data,
+            idempotency_key=normalized_key,
+        )
+
+    def continue_studio_run(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        client: ResponseTransport | None = None,
+    ) -> dict[str, Any]:
+        return self._studio_runtime(client).continue_run(workspace_id, run_id)
+
+    def enqueue_studio_run(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        input_data: Any,
+        client: ResponseTransport | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        runtime = self._studio_runtime(client)
+        run = self.prepare_studio_run(
+            workspace_id,
+            flow_id,
+            input_data=input_data,
+            client=client,
+            idempotency_key=idempotency_key,
+        )
+        return self.enqueue_existing_studio_run(
+            workspace_id, run["id"], client=client, runtime=runtime
+        )
+
+    def enqueue_existing_studio_run(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        client: ResponseTransport | None = None,
+        runtime: StudioRuntime | None = None,
+    ) -> dict[str, Any]:
+        runtime = runtime or self._studio_runtime(client)
+        run = self.studio.get_run(workspace_id, run_id)
+        if run["status"] not in {"created", "running"}:
+            return run
+        with self._active_studio_runs_lock:
+            if run["id"] in self._active_studio_runs:
+                return run
+            self._active_studio_runs.add(run["id"])
+        worker = threading.Thread(
+            target=self._drive_studio_run_background,
+            args=(runtime, workspace_id, run["id"]),
+            name=f"kyn-run-{run['id'][-8:]}",
+            daemon=True,
+        )
+        worker.start()
+        return self.studio.get_run(workspace_id, run["id"])
+
+    def _drive_studio_run_background(
+        self, runtime: StudioRuntime, workspace_id: str, run_id: str
+    ) -> None:
+        try:
+            with self._studio_worker_slots:
+                runtime.continue_run(workspace_id, run_id)
+        except Exception:
+            # Unknown worker failures become bounded evidence, never a silent dead Run.
+            try:
+                run = self.studio.get_run(workspace_id, run_id)
+                if run["status"] in {"created", "running"}:
+                    self.studio.append_event(
+                        workspace_id,
+                        run_id,
+                        event_type="run.worker_failed",
+                        actor_type="runtime",
+                        actor_id=None,
+                        payload={"error_code": "worker_failure"},
+                    )
+                    self.studio.transition_run(
+                        workspace_id,
+                        run_id,
+                        status="failed",
+                        current_node_id=None,
+                        error_code="worker_failure",
+                        error_message="The bounded Run worker failed unexpectedly.",
+                    )
+            except Exception:
+                pass
+        finally:
+            with self._active_studio_runs_lock:
+                self._active_studio_runs.discard(run_id)
 
     def decide_studio_approval(
         self,
@@ -394,6 +656,209 @@ class ControlPlane:
     def get_studio_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         return self.studio.get_run(workspace_id, run_id)
 
+    def cancel_studio_run(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        actor: Any,
+        reason: Any,
+    ) -> dict[str, Any]:
+        return self.studio.cancel_run(
+            workspace_id,
+            run_id,
+            actor=require_string(actor, "cancel actor", maximum=100),
+            reason=require_string(reason, "cancel reason", minimum=8, maximum=500),
+        )
+
+    def diagnose_studio_run(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        client: ResponseTransport | None = None,
+    ) -> dict[str, Any]:
+        existing = self.studio.find_run_diagnosis(workspace_id, run_id)
+        if existing is not None:
+            return existing
+        run = self.studio.get_run(workspace_id, run_id)
+        if run["status"] not in {"blocked", "failed"}:
+            raise ContractViolation("only a blocked or failed Run can be diagnosed")
+        failed = next(
+            (
+                step
+                for step in reversed(run["steps"])
+                if step["status"] in {"failed", "blocked"}
+            ),
+            None,
+        )
+        if failed is None or failed["node_type"] != "action":
+            raise ContractViolation("Run has no diagnosable failed Action Step")
+        action = self.studio.get_action_version(
+            workspace_id, failed["target_version_id"]
+        )
+        if (
+            action["kind"] == "data_store"
+            and action["config"].get("write_enabled") is False
+            and failed["error_code"] == "action_blocked"
+        ):
+            fault_class = "authority_policy"
+            root_cause = "The pinned Data Store Action denies its own bounded write."
+            explanation = (
+                "The Action receipt records a denied invocation and no effect row exists. "
+                "The only repairable mismatch is the immutable write_enabled policy on "
+                f"Action {action['slug']} v{action['version']}."
+            )
+            confidence_milli = 990
+        else:
+            fault_class = (
+                "provider_failure"
+                if failed["error_code"] == "provider_failure"
+                else "data_contract"
+                if failed["error_code"] == "contract_violation"
+                else "runtime_failure"
+            )
+            root_cause = failed["error_message"] or "The failed Step recorded no message."
+            explanation = (
+                "The diagnosis is bounded to the failed Step and its authoritative Run events."
+            )
+            confidence_milli = 850
+        evidence = [
+            event["id"]
+            for event in run["events"]
+            if event["type"] in {
+                "action.receipted",
+                "step.failed",
+                "step.blocked",
+                "run.status_changed",
+            }
+            and (
+                event["payload"].get("step_id") in {None, failed["id"]}
+                or event["type"] == "run.status_changed"
+            )
+        ]
+        if not evidence:
+            evidence = [run["events"][-1]["id"]]
+
+        created_by_agent_version_id = None
+        if client is not None:
+            diagnostician = self.studio.find_agent_runtime_by_role(
+                workspace_id, "diagnostician"
+            )
+            grounded = self._studio_runtime(client).explain_diagnosis(
+                workspace_id,
+                run_id,
+                failed["id"],
+                agent_version_id=diagnostician["id"],
+                candidate={
+                    "fault_class": fault_class,
+                    "root_cause": root_cause,
+                    "explanation": explanation,
+                    "failed_node_id": failed["node_id"],
+                    "action": {
+                        "slug": action["slug"],
+                        "kind": action["kind"],
+                        "version": action["version"],
+                    },
+                    "evidence_event_ids": evidence,
+                },
+            )
+            cited = grounded["evidence_event_ids"]
+            if not set(cited).issubset(set(evidence)):
+                raise ContractViolation(
+                    "diagnostician cited evidence outside the code-owned candidate"
+                )
+            root_cause = grounded["root_cause"]
+            explanation = grounded["explanation"]
+            confidence_milli = int(round(float(grounded["confidence"]) * 1_000))
+            evidence = cited
+            created_by_agent_version_id = diagnostician["id"]
+        return self.studio.record_diagnosis(
+            workspace_id,
+            run_id,
+            failed_step_id=failed["id"],
+            failed_node_id=failed["node_id"],
+            action_version_id=action["id"],
+            fault_class=fault_class,
+            root_cause=root_cause,
+            explanation=explanation,
+            confidence_milli=confidence_milli,
+            evidence_event_ids=evidence,
+            created_by_agent_version_id=created_by_agent_version_id,
+        )
+
+    def propose_studio_repair(
+        self, workspace_id: str, diagnosis_id: str
+    ) -> dict[str, Any]:
+        return self.studio.propose_repair(workspace_id, diagnosis_id)
+
+    def apply_studio_repair(
+        self,
+        workspace_id: str,
+        proposal_id: str,
+        *,
+        proposal_hash: Any,
+        expected_flow_revision: Any,
+        expected_action_version: Any,
+        actor: Any,
+        reason: Any,
+        acknowledged: Any,
+    ) -> dict[str, Any]:
+        normalized_hash = require_string(
+            proposal_hash, "repair proposal hash", maximum=64
+        )
+        if not HEX_64_RE.fullmatch(normalized_hash):
+            raise ContractViolation("repair proposal hash is invalid")
+        for value, field in (
+            (expected_flow_revision, "expected Flow revision"),
+            (expected_action_version, "expected Action version"),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ContractViolation(f"{field} is invalid")
+        if not isinstance(acknowledged, bool):
+            raise ContractViolation("repair acknowledgement must be a boolean")
+        return self.studio.apply_repair(
+            workspace_id,
+            proposal_id,
+            proposal_hash=normalized_hash,
+            expected_flow_revision=expected_flow_revision,
+            expected_action_version=expected_action_version,
+            actor=require_string(actor, "repair actor", maximum=100),
+            reason=require_string(reason, "repair reason", minimum=12, maximum=500),
+            acknowledged=acknowledged,
+        )
+
+    def prove_studio_repair(
+        self,
+        workspace_id: str,
+        proposal_id: str,
+        *,
+        input_data: Any,
+        idempotency_key: Any,
+        client: ResponseTransport | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(input_data, dict):
+            raise ContractViolation("repair proof input must be an object")
+        proposal = self.studio.get_repair(workspace_id, proposal_id)
+        if proposal["status"] != "applied" or not proposal.get("applied_flow_version"):
+            raise ContractViolation("repair must be applied before its proof Run")
+        diagnosis = self.studio.get_diagnosis(
+            workspace_id, proposal["diagnosis_id"]
+        )
+        parent = self.studio.get_run(workspace_id, diagnosis["run_id"])
+        key = require_string(
+            idempotency_key, "repair proof idempotency key", maximum=100
+        )
+        return self._studio_runtime(client).execute(
+            workspace_id,
+            proposal["flow_id"],
+            input_data=input_data,
+            flow_version=int(proposal["applied_flow_version"]),
+            parent_run_id=parent["id"],
+            correlation_id=parent["correlation_id"],
+            idempotency_key=f"repair-proof:{proposal_id}:{key}",
+        )
+
     def get_studio_action(self, workspace_id: str, action_id: str) -> dict[str, Any]:
         return self.studio.get_action(workspace_id, action_id)
 
@@ -402,6 +867,106 @@ class ControlPlane:
 
     def studio_snapshot(self, workspace_id: str) -> dict[str, Any]:
         return self.studio.snapshot(workspace_id)
+
+    def create_studio_trigger(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        name: Any,
+        trigger_type: Any,
+        config: Any,
+    ) -> dict[str, Any]:
+        normalized_type = require_string(
+            trigger_type, "trigger type", maximum=24
+        )
+        if normalized_type not in {"webhook", "schedule"}:
+            raise ContractViolation("trigger type must be webhook or schedule")
+        if not isinstance(config, dict):
+            raise ContractViolation("trigger config must be an object")
+        normalized_config = json.loads(json.dumps(config))
+        if normalized_type == "webhook":
+            if normalized_config:
+                raise ContractViolation("webhook trigger config must be empty")
+        else:
+            if set(normalized_config) != {"interval_minutes", "input"}:
+                raise ContractViolation("schedule trigger config is invalid")
+            interval = normalized_config["interval_minutes"]
+            if (
+                not isinstance(interval, int)
+                or isinstance(interval, bool)
+                or not 1 <= interval <= 10_080
+            ):
+                raise ContractViolation(
+                    "schedule interval must be between one minute and seven days"
+                )
+            if not isinstance(normalized_config["input"], dict):
+                raise ContractViolation("schedule input must be an object")
+        return self.studio.create_trigger(
+            workspace_id,
+            flow_id,
+            name=require_string(name, "trigger name", maximum=100),
+            trigger_type=normalized_type,
+            config=normalized_config,
+        )
+
+    def fire_studio_webhook(
+        self, secret: Any, input_data: Any
+    ) -> dict[str, Any]:
+        normalized_secret = require_string(secret, "webhook token", maximum=128)
+        if not isinstance(input_data, dict):
+            raise ContractViolation("webhook payload must be an object")
+        trigger = self.studio.resolve_webhook(normalized_secret)
+        if trigger["requires_model"]:
+            raise ContractViolation(
+                "This webhook Flow requires a browser-owned OpenAI credential and must be started from the Studio"
+            )
+        run = self.studio_runtime.execute(
+            trigger["workspace_id"],
+            trigger["flow_id"],
+            input_data=input_data,
+            flow_version=trigger["flow_version"],
+            idempotency_key=f"webhook:{trigger['id']}:{new_id('delivery')}",
+        )
+        self.studio.mark_trigger_fired(trigger["id"])
+        return {"trigger_id": trigger["id"], "run": run}
+
+    def fire_due_studio_schedules(self) -> list[dict[str, Any]]:
+        """Claim due schedules once; model-backed Runs wait for a visitor credential."""
+
+        results: list[dict[str, Any]] = []
+        for trigger in self.studio.claim_due_schedules():
+            idempotency_key = (
+                f"schedule:{trigger['id']}:{trigger['next_fire_at']}"
+            )
+            if trigger["requires_model"]:
+                run = self.studio_runtime.prepare(
+                    trigger["workspace_id"],
+                    trigger["flow_id"],
+                    input_data=trigger["config"]["input"],
+                    flow_version=trigger["flow_version"],
+                    idempotency_key=idempotency_key,
+                )
+                if run["status"] == "created":
+                    self.studio.append_event(
+                        trigger["workspace_id"],
+                        run["id"],
+                        event_type="run.credential_required",
+                        actor_type="runtime",
+                        actor_id=None,
+                        payload={"trigger_id": trigger["id"], "reason": "browser_byok"},
+                    )
+                    run = self.studio.get_run(trigger["workspace_id"], run["id"])
+            else:
+                run = self.studio_runtime.execute(
+                    trigger["workspace_id"],
+                    trigger["flow_id"],
+                    input_data=trigger["config"]["input"],
+                    flow_version=trigger["flow_version"],
+                    idempotency_key=idempotency_key,
+                )
+            results.append({"trigger_id": trigger["id"], "run": run})
+        return results
 
     def studio_flow_model_call_forecast(
         self,
@@ -461,6 +1026,17 @@ class ControlPlane:
         run = self.studio.get_run(workspace_id, run_id)
         return self.studio_flow_model_call_forecast(
             workspace_id, run["flow_id"], version=int(run["flow_version"])
+        )
+
+    def studio_continue_model_call_forecast(
+        self, workspace_id: str, run_id: str
+    ) -> int:
+        run = self.studio.get_run(workspace_id, run_id)
+        return self.studio_flow_model_call_forecast(
+            workspace_id,
+            run["flow_id"],
+            version=int(run["flow_version"]),
+            start_node_id=run["current_node_id"],
         )
 
     def create_agent(

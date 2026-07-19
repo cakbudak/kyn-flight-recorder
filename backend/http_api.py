@@ -26,6 +26,7 @@ from .service import ControlPlane
 
 MAX_API_BODY = 32 * 1024
 RESOURCE_ID = r"([a-z]+_[0-9a-f]{32})"
+WEBHOOK_PATH = re.compile(r"/api/v1/hooks/(hook_[A-Za-z0-9_-]{32,80})")
 
 
 @dataclass(frozen=True)
@@ -97,9 +98,17 @@ class ApiApplication:
             if request.body_too_large:
                 raise PayloadTooLarge("request body exceeds 32 KiB")
             if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-                self._require_same_origin(request)
+                is_public_webhook = WEBHOOK_PATH.fullmatch(request.path) is not None
+                if not is_public_webhook:
+                    self._require_same_origin(request)
                 self.rate_limiter.require(
-                    f"mutation:{request.remote_address}", limit=120, window_seconds=60
+                    (
+                        f"webhook:{request.remote_address}"
+                        if is_public_webhook
+                        else f"mutation:{request.remote_address}"
+                    ),
+                    limit=60 if is_public_webhook else 120,
+                    window_seconds=60,
                 )
             if request.method == "GET":
                 return self._get(request)
@@ -178,6 +187,13 @@ class ApiApplication:
             }
             return self._ok(public, status=HTTPStatus.CREATED, headers={"Set-Cookie": cookie})
 
+        webhook_match = WEBHOOK_PATH.fullmatch(request.path)
+        if webhook_match:
+            return self._ok(
+                self.control_plane.fire_studio_webhook(webhook_match.group(1), body),
+                status=HTTPStatus.ACCEPTED,
+            )
+
         workspace_id = self._workspace_id(request)
         if request.path == "/api/v1/studio/actions":
             self._require_exact_keys(
@@ -213,6 +229,60 @@ class ApiApplication:
             return self._ok(
                 self.control_plane.create_studio_flow(workspace_id, **body),
                 status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/flows/{RESOURCE_ID}/versions", request.path
+        )
+        if match:
+            self._require_exact_keys(
+                body,
+                {
+                    "expected_revision",
+                    "input_schema",
+                    "start_node_id",
+                    "nodes",
+                    "routes",
+                },
+            )
+            return self._ok(
+                self.control_plane.revise_studio_flow(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/flows/{RESOURCE_ID}/triggers", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"name", "trigger_type", "config"})
+            return self._ok(
+                self.control_plane.create_studio_trigger(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/flows/{RESOURCE_ID}/runs:enqueue", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"input", "idempotency_key"})
+            flow_id = match.group(1)
+            forecast = self.control_plane.studio_flow_model_call_forecast(
+                workspace_id, flow_id
+            )
+            operation = lambda client: self.control_plane.enqueue_studio_run(
+                workspace_id,
+                flow_id,
+                input_data=body["input"],
+                idempotency_key=body["idempotency_key"],
+                client=client,
+            )
+            return self._studio_execution(
+                request,
+                workspace_id,
+                forecast_calls=forecast,
+                status=HTTPStatus.ACCEPTED,
+                operation=operation,
             )
         match = re.fullmatch(
             rf"/api/v1/studio/flows/{RESOURCE_ID}/runs", request.path
@@ -273,6 +343,105 @@ class ApiApplication:
             operation = lambda client: self.control_plane.rerun_studio_run(
                 workspace_id,
                 run_id,
+                input_data=body["input"],
+                idempotency_key=body["idempotency_key"],
+                client=client,
+            )
+            return self._studio_execution(
+                request,
+                workspace_id,
+                forecast_calls=forecast,
+                status=HTTPStatus.CREATED,
+                operation=operation,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/runs/{RESOURCE_ID}:continue", request.path
+        )
+        if match:
+            self._require_exact_keys(body, set())
+            run_id = match.group(1)
+            forecast = self.control_plane.studio_continue_model_call_forecast(
+                workspace_id, run_id
+            )
+            operation = lambda client: self.control_plane.enqueue_existing_studio_run(
+                workspace_id, run_id, client=client
+            )
+            return self._studio_execution(
+                request,
+                workspace_id,
+                forecast_calls=forecast,
+                status=HTTPStatus.ACCEPTED,
+                operation=operation,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/runs/{RESOURCE_ID}:cancel", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"actor", "reason"})
+            return self._ok(
+                self.control_plane.cancel_studio_run(
+                    workspace_id, match.group(1), **body
+                )
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/runs/{RESOURCE_ID}/diagnoses", request.path
+        )
+        if match:
+            self._require_exact_keys(body, set())
+            return self._model_action(
+                request,
+                workspace_id,
+                forecast_calls=1,
+                status=HTTPStatus.CREATED,
+                operation=lambda client: self.control_plane.diagnose_studio_run(
+                    workspace_id, match.group(1), client=client
+                ),
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/diagnoses/{RESOURCE_ID}/repairs", request.path
+        )
+        if match:
+            self._require_exact_keys(body, set())
+            return self._ok(
+                self.control_plane.propose_studio_repair(
+                    workspace_id, match.group(1)
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/repairs/{RESOURCE_ID}/apply", request.path
+        )
+        if match:
+            self._require_exact_keys(
+                body,
+                {
+                    "proposal_hash",
+                    "expected_flow_revision",
+                    "expected_action_version",
+                    "actor",
+                    "reason",
+                    "acknowledged",
+                },
+            )
+            return self._ok(
+                self.control_plane.apply_studio_repair(
+                    workspace_id, match.group(1), **body
+                )
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/repairs/{RESOURCE_ID}/proof", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"input", "idempotency_key"})
+            proposal = self.control_plane.studio.get_repair(
+                workspace_id, match.group(1)
+            )
+            forecast = self.control_plane.studio_flow_model_call_forecast(
+                workspace_id, proposal["flow_id"]
+            )
+            operation = lambda client: self.control_plane.prove_studio_repair(
+                workspace_id,
+                match.group(1),
                 input_data=body["input"],
                 idempotency_key=body["idempotency_key"],
                 client=client,

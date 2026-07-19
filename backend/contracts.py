@@ -74,6 +74,13 @@ class ProviderFailure(RuntimeErrorBase):
     http_status = 502
 
 
+class ActionBlocked(RuntimeErrorBase):
+    """A bounded executor deliberately refused an effect or violated its guard."""
+
+    code = "action_blocked"
+    http_status = 409
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
