@@ -1,7 +1,7 @@
 # Product contract
 
 Date frozen: 2026-07-19  
-Maturity: `implemented and locally verified; public backend deployment pending`
+Maturity: `implemented; local, real-model, and public HTTPS journeys verified`
 
 ## Promise
 

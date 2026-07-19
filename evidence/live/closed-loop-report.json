@@ -1,0 +1,233 @@
+{
+  "generated_at": "2026-07-19T10:17:02.203Z",
+  "surface": "Kyn.ist Flight Recorder closed-loop browser journey",
+  "runtime": {
+    "chromium": "/usr/bin/chromium",
+    "provider": "deployed OpenAI runtime",
+    "base_url": "https://buildweek.kyn.ist",
+    "viewport_matrix": [
+      "1440x1000",
+      "390x844"
+    ]
+  },
+  "summary": {
+    "checks": 21,
+    "passed": 21,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "name": "runtime health exposes SQLite and configured model transport",
+      "status": "pass",
+      "detail": {
+        "status": "ok",
+        "mode": "closed-loop-agent-runtime",
+        "sqlite": "ready",
+        "openai_configured": true
+      }
+    },
+    {
+      "name": "onboarding explains the complete causal loop",
+      "status": "pass",
+      "detail": {
+        "heading": "From agent failureto proven repair.",
+        "steps": 7,
+        "overflow": 0,
+        "unnamedButtons": 0
+      }
+    },
+    {
+      "name": "desktop onboarding has no horizontal overflow",
+      "status": "pass",
+      "detail": 0
+    },
+    {
+      "name": "every browser control has an accessible name",
+      "status": "pass",
+      "detail": 0
+    },
+    {
+      "name": "workspace renders versioned agents prompts and skills",
+      "status": "pass",
+      "detail": {
+        "prompts": 3,
+        "skills": 3,
+        "agents": 3,
+        "model": "gpt-5.6",
+        "policy": "staging",
+        "requested": "Production"
+      }
+    },
+    {
+      "name": "composed v1 manifest makes the intended mismatch visible",
+      "status": "pass",
+      "detail": {
+        "prompts": 3,
+        "skills": 3,
+        "agents": 3,
+        "model": "gpt-5.6",
+        "policy": "staging",
+        "requested": "Production"
+      }
+    },
+    {
+      "name": "real executor flow reaches an authoritative blocked state",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "forensic agent diagnosis is evidence-grounded",
+      "status": "pass",
+      "detail": {
+        "visible": true,
+        "fault": "Policy Mismatch",
+        "confidence": "High",
+        "citations": "2 owned events"
+      }
+    },
+    {
+      "name": "repair agent is limited to one manifest path and revision",
+      "status": "pass",
+      "detail": {
+        "visible": true,
+        "path": "/policy/allowed_environments",
+        "revision": "1",
+        "patch": "+ [\"staging\",\"production\"]"
+      }
+    },
+    {
+      "name": "human fence opens focused and pins hash plus revision",
+      "status": "pass",
+      "detail": {
+        "focused": "approval-actor",
+        "revision": "1 → 2",
+        "proposalHash": "c7123af9ab64bbb2e5d874b3805dc5bc83a43a0e0581f46f898a205bad083aa6",
+        "acknowledged": false
+      }
+    },
+    {
+      "name": "human command creates immutable flow v2",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "child rerun proves a changed effect without rewriting v1",
+      "status": "pass",
+      "detail": {
+        "rootStatus": "blocked",
+        "childStatus": "completed",
+        "rootVersion": 1,
+        "childVersion": 2,
+        "linked": true,
+        "rootEffects": 0,
+        "childEffects": 1,
+        "diagnosisOwned": true,
+        "approved": true,
+        "approvalActor": "build-week-judge",
+        "chains": true,
+        "runCards": 2,
+        "ledgerSwitches": 2,
+        "selectedLedger": "Child rerun",
+        "phase": "Outcome changed · proof complete"
+      }
+    },
+    {
+      "name": "diagnosis citations approval and both hash chains remain authoritative",
+      "status": "pass",
+      "detail": {
+        "rootStatus": "blocked",
+        "childStatus": "completed",
+        "rootVersion": 1,
+        "childVersion": 2,
+        "linked": true,
+        "rootEffects": 0,
+        "childEffects": 1,
+        "diagnosisOwned": true,
+        "approved": true,
+        "approvalActor": "build-week-judge",
+        "chains": true,
+        "runCards": 2,
+        "ledgerSwitches": 2,
+        "selectedLedger": "Child rerun",
+        "phase": "Outcome changed · proof complete"
+      }
+    },
+    {
+      "name": "UI exposes before after proof and both ledgers",
+      "status": "pass",
+      "detail": {
+        "rootStatus": "blocked",
+        "childStatus": "completed",
+        "rootVersion": 1,
+        "childVersion": 2,
+        "linked": true,
+        "rootEffects": 0,
+        "childEffects": 1,
+        "diagnosisOwned": true,
+        "approved": true,
+        "approvalActor": "build-week-judge",
+        "chains": true,
+        "runCards": 2,
+        "ledgerSwitches": 2,
+        "selectedLedger": "Child rerun",
+        "phase": "Outcome changed · proof complete"
+      }
+    },
+    {
+      "name": "accessibility tree exposes named buttons",
+      "status": "pass",
+      "detail": {
+        "buttons": 16
+      }
+    },
+    {
+      "name": "reduced motion collapses interaction transitions",
+      "status": "pass",
+      "detail": "0.001s"
+    },
+    {
+      "name": "390px reload preserves proof without document overflow",
+      "status": "pass",
+      "detail": {
+        "viewport": 390,
+        "scrollWidth": 390,
+        "railHidden": true,
+        "actionWidth": 284,
+        "errorHidden": true
+      }
+    },
+    {
+      "name": "server sends restrictive security and no-store headers",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "browser makes no cross-origin runtime request",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no failed requests",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no console or page errors",
+      "status": "pass",
+      "detail": []
+    }
+  ],
+  "diagnostics": {
+    "server_output": [
+      ""
+    ],
+    "browser_output": [
+      "DevTools listening on ws://127.0.0.1:33269/devtools/browser/d9fc47f5-a2db-4f34-9f0c-876ef3a3c4cc",
+      "[1586105:1586236:0719/121641.748636:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+      "[1586105:1586236:0719/121641.772492:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+      "[1586105:1586236:0719/121641.774357:ERROR:google_apis/gcm/engine/mcs_client.cc:700]   Error code: 401  Error message: Authentication Failed: wrong_secret",
+      "[1586105:1586236:0719/121641.774372:ERROR:google_apis/gcm/engine/mcs_client.cc:702] Failed to log in to GCM, resetting connection.",
+      "[1586105:1586236:0719/121641.775272:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR"
+    ]
+  }
+}

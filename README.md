@@ -169,13 +169,14 @@ Current committed proof:
 - 6 pure browser-state contract tests;
 - 21/21 real Chromium checks across desktop and 390 px mobile;
 - 21/21 of the same checks completed against real `gpt-5.6` Responses calls;
+- 21/21 again through the public HTTPS proxy/service deployment;
 - a blocked v1 run with zero effects and completed linked v2 run with one effect;
 - owned diagnosis citations, human approval, two valid event chains, no browser console error,
   no failed browser request, and no cross-origin browser runtime request.
 
-The real-model report and screenshots are in [`evidence/real-model/`](evidence/real-model/).
-They retain safe ids, hashes, statuses, and UI state—not keys, cookies, prompts, raw provider
-bodies, or hidden reasoning.
+The real-model and public reports are in [`evidence/real-model/`](evidence/real-model/) and
+[`evidence/live/`](evidence/live/). They retain safe ids, hashes, statuses, and UI state—not
+keys, cookies, prompts, raw provider bodies, or hidden reasoning.
 
 ## Codex provenance
 

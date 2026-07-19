@@ -17,7 +17,7 @@ Date: 2026-07-19
 | cost | turn/tool/output, per-workspace/address/global, and model concurrency bounds | PASS |
 | browser | desktop + 390 px, reduced motion, named AX controls, no overflow/console/request failure | PASS |
 | real model | identical 21-check Chromium journey against configured gpt-5.6 runtime | PASS |
-| public HTTPS | deployment and public full-loop rerun | PENDING until current backend commit is deployed |
+| public HTTPS | Cloudflare → Traefik → nginx → service; real gpt-5.6 full-loop 21/21 | PASS |
 | assistive tech | physical screen-reader pass | NOT RUN |
 
 ## Reproduction
@@ -31,6 +31,9 @@ The deterministic browser run uses a provider-shaped test seam but the real HTTP
 control plane, SQLite store, tools, UI, and Chromium. The separate
 [`evidence/real-model/closed-loop-report.json`](../evidence/real-model/closed-loop-report.json)
 was produced by the same runner against live gpt-5.6 calls.
+
+[`evidence/live/closed-loop-report.json`](../evidence/live/closed-loop-report.json) proves the
+identical path through the public HTTPS deployment.
 
 Green UI checks alone are not accepted as runtime proof. Database invariants, negative
 contract tests, authoritative receipts, real-model compatibility, and the linked effect

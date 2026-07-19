@@ -38,6 +38,18 @@ Screenshots:
 - [`real-model/03-proven-repair.png`](real-model/03-proven-repair.png)
 - [`real-model/04-mobile-proof.png`](real-model/04-mobile-proof.png)
 
+## Public HTTPS proof
+
+[`live/closed-loop-report.json`](live/closed-loop-report.json) repeats the same 21 checks
+through `https://buildweek.kyn.ist`: Cloudflare, Traefik, nginx, the persistent user service,
+SQLite, and real gpt-5.6. It passed 21/21 with a Secure/HttpOnly/SameSite workspace cookie,
+no browser cross-origin runtime request, and the same blocked-v1/completed-v2 effect proof.
+
+- [`live/01-compose.png`](live/01-compose.png)
+- [`live/02-blocked.png`](live/02-blocked.png)
+- [`live/03-proven-repair.png`](live/03-proven-repair.png)
+- [`live/04-mobile-proof.png`](live/04-mobile-proof.png)
+
 ## Reproduce
 
 ```bash
