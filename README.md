@@ -215,7 +215,10 @@ The browser verifier exercises the real same-origin HTTP and SQLite stack throug
 workspace creation, Action definition, Flow composition, deterministic execution,
 AI execution, approval/resume, evidence inspection, linked rerun, and Repair Lab.
 Provider-shaped deterministic responses are used locally; the same journey can be
-run against the deployed OpenAI-backed service.
+run against the deployed OpenAI-backed service. The committed
+[`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json)
+and [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
+both pass 21/21; the latter is the public HTTPS journey with real GPT-5.6 calls.
 
 ## Codex provenance
 

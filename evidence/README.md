@@ -20,14 +20,16 @@ Expected screenshots:
 - `browser/04-repair-proven.png`
 - `browser/05-mobile-studio.png`
 
-## Real-model proof
+## Public HTTPS + real-model proof
 
-`real-model/agent-studio-report.json` runs the same browser journey against an
-actual service that has no operator key. The verifier enters the key through the
-Configuration UI, and Chromium itself is launched without `OPENAI_API_KEY` in its
+[`live/agent-studio-report.json`](live/agent-studio-report.json) runs the same
+21-check browser journey through `https://buildweek.kyn.ist`: Cloudflare, the
+same-origin proxy, persistent service, flat SQLite runtime, and actual OpenAI
+Responses calls. The service has no operator key. The verifier enters the key
+through Configuration, and Chromium is launched without `OPENAI_API_KEY` in its
 environment.
 
-The expected proof is:
+The committed proof shows:
 
 - a user-defined deterministic Flow runs without a key;
 - a real GPT‑5.6 AI Action emits strict typed output;
@@ -37,11 +39,13 @@ The expected proof is:
 - Prompt, Skill, and Agent creation work in the browser;
 - Repair Lab proves its before/after outcome.
 
-## Public HTTPS proof
+Screenshots:
 
-`live/agent-studio-report.json` repeats the same checks through
-`https://buildweek.kyn.ist`, including the edge proxy, nginx, persistent service,
-Secure/HttpOnly workspace cookie, SQLite, and official OpenAI SDK.
+- [`live/01-agent-studio.png`](live/01-agent-studio.png)
+- [`live/02-waiting-approval.png`](live/02-waiting-approval.png)
+- [`live/03-run-evidence.png`](live/03-run-evidence.png)
+- [`live/04-repair-proven.png`](live/04-repair-proven.png)
+- [`live/05-mobile-studio.png`](live/05-mobile-studio.png)
 
 ## Reproduce
 

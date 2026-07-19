@@ -21,7 +21,7 @@ class ScriptedResponsesClient:
         store: Store,
         *,
         mode: str = "closed_loop",
-        api_key: str = "sk-test-never-persist-this",
+        api_key: str = "test-browser-key-never-persist-this",
     ) -> None:
         self.store = store
         self.mode = mode

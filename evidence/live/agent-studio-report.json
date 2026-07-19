@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-07-19T13:34:47.101Z",
+  "generated_at": "2026-07-19T13:33:46.343Z",
   "surface": "Kyn.ist Agent Studio full Playwright journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
-    "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:37209",
+    "provider": "deployed OpenAI runtime",
+    "base_url": "https://buildweek.kyn.ist",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
@@ -48,11 +48,11 @@
         "actions": 5,
         "flows": 1,
         "kinds": [
-          "template",
-          "condition",
           "approval",
           "ai",
-          "sandbox"
+          "sandbox",
+          "condition",
+          "template"
         ]
       }
     },
@@ -60,15 +60,15 @@
       "name": "browser can define a typed immutable Action",
       "status": "pass",
       "detail": {
-        "id": "act_6e68f554da704bd3a4eedae9bd66764c",
-        "version": "actv_48601daaef2c47acba7042157e2540e3"
+        "id": "act_6a260a7dc68e4d4aa78bd233c2b3bcc0",
+        "version": "actv_3eb64d3ab7724b7ba6bbcb11d2aebd1c"
       }
     },
     {
       "name": "browser composes a user-defined version-pinned Flow",
       "status": "pass",
       "detail": {
-        "id": "aflow_6a107fd88eb145a2b2f7ba01396e6c17",
+        "id": "aflow_62045b396ce24673bc33d9287c929432",
         "nodes": 1
       }
     },
@@ -76,7 +76,7 @@
       "name": "deterministic Flow executes without a credential and emits authoritative evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_181e4e1c9c964b9c9f3ce631683f8747",
+        "id": "arun_3931cdcb1e7b49bfa5f5410290d94fa8",
         "status": "completed",
         "model_calls": 0,
         "receipts": 1
@@ -93,7 +93,7 @@
       "name": "AI Flow uses pinned Agent stack and pauses at a real Human approval",
       "status": "pass",
       "detail": {
-        "id": "arun_e16ff64109d1458aad0268caec94a36d",
+        "id": "arun_de892e5809b04023a334c26686471f71",
         "status": "waiting_approval",
         "steps": [
           "completed",
@@ -117,9 +117,9 @@
       "name": "rerun creates a linked child against the same immutable Flow version",
       "status": "pass",
       "detail": {
-        "id": "arun_003a2263bd654708bd03a09abd74388d",
-        "parent": "arun_e16ff64109d1458aad0268caec94a36d",
-        "flow_version_id": "aflowv_a2e4bdfed1df40d3860d29d86e177764"
+        "id": "arun_66ad1058b01b4909b0b15cbcae822fa1",
+        "parent": "arun_de892e5809b04023a334c26686471f71",
+        "flow_version_id": "aflowv_28afddf2117c4c43a70c6b2659853a43"
       }
     },
     {
@@ -196,20 +196,7 @@
   ],
   "diagnostics": {
     "server_output": [
-      "19/Jul/2026 15:34:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:45 127.0.0.1 \"POST /api/v1/repairs/rpr_cfe95c2b63ec4186ba1cdc183b96d2f7/apply HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"POST /api/v1/runs/run_7201f8efee774799a2f56cbed3768c7c/rerun HTTP/1.1\" 201 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/state.mjs HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 15:34:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      ""
     ],
     "page_errors": [],
     "failed_requests": []
