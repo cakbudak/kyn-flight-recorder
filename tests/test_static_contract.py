@@ -91,9 +91,44 @@ class StaticContractTests(unittest.TestCase):
     def test_workspace_authority_stays_in_the_httponly_cookie(self) -> None:
         combined = f"{self.client}\n{self.state}"
         self.assertNotIn("localStorage", combined)
-        self.assertNotIn("sessionStorage", combined)
         self.assertNotIn("document.cookie", combined)
+        self.assertIn("sessionStorage", self.client)
+        self.assertIn('const OPENAI_KEY_SLOT = "kyn.openai.api-key.v1"', self.client)
         self.assertIn('credentials: "same-origin"', self.client)
+
+    def test_browser_key_is_attached_only_to_same_origin_model_actions(self) -> None:
+        self.assertIn('"X-OpenAI-API-Key"', self.client)
+        self.assertIn("modelAction = false", self.client)
+        for route in ("/runs`,", "/diagnoses`,", "/repairs`,", "/rerun`,"):
+            with self.subTest(route=route):
+                start = self.client.index(route)
+                call = self.client[start : start + 180]
+                self.assertIn("modelAction: true", call)
+        apply_start = self.client.index("/apply`,")
+        self.assertNotIn("modelAction: true", self.client[apply_start : apply_start + 260])
+
+    def test_configuration_and_live_documentation_explain_the_real_boundary(self) -> None:
+        for phrase in (
+            "Use your own OpenAI API key",
+            "this browser tab only",
+            "never written to SQLite",
+            "official OpenAI SDK",
+            "What actually happens",
+            "Why this is more than a trace viewer",
+            "What is deliberately bounded",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.index)
+        for control in (
+            'id="config-view"',
+            'id="openai-api-key"',
+            'type="password"',
+            'id="save-api-key"',
+            'id="clear-api-key"',
+            'id="open-config"',
+        ):
+            with self.subTest(control=control):
+                self.assertIn(control, self.index)
 
     def test_motion_rules_are_bounded_and_reduced_motion_is_present(self) -> None:
         self.assertNotRegex(self.styles, r"transition\s*:\s*all\b")
@@ -172,6 +207,18 @@ class StaticContractTests(unittest.TestCase):
         self.assertNotIn("OPENAI_API_KEY", combined)
         self.assertNotRegex(combined, r"sk-[A-Za-z0-9_-]{12,}")
 
+    def test_server_has_no_operator_api_key_fallback_and_uses_the_official_sdk(self) -> None:
+        server = (ROOT / "serve.py").read_text(encoding="utf-8")
+        transport = (ROOT / "backend" / "openai_client.py").read_text(encoding="utf-8")
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+        self.assertNotIn('os.environ.get("OPENAI_API_KEY"', server)
+        self.assertNotIn('"OPENAI_API_KEY",', transport)
+        self.assertNotIn("urllib", transport)
+        self.assertRegex(transport, r"^from openai import ", msg="official SDK must own transport")
+        self.assertRegex(requirements, r"(?m)^openai==[0-9]+\.[0-9]+\.[0-9]+$")
+        self.assertNotIn("OPENAI_API_KEY", env_example)
+
     def test_deployment_proxies_the_same_origin_api_to_a_hardened_service(self) -> None:
         self.assertIn("proxy_pass http://host.docker.internal:4173", self.nginx)
         self.assertIn("proxy_set_header X-Forwarded-Proto", self.nginx)
@@ -179,6 +226,7 @@ class StaticContractTests(unittest.TestCase):
         self.assertNotIn("GET|HEAD", self.nginx)
         for directive in (
             "--host 172.17.0.1 --port 4173",
+            ".venv/bin/python",
             "NoNewPrivileges=true",
             "ProtectSystem=strict",
             "UMask=0077",

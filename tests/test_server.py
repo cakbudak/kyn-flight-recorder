@@ -47,7 +47,8 @@ class DemoServerTests(unittest.TestCase):
                     "status": "ok",
                     "mode": "closed-loop-agent-runtime",
                     "sqlite": "unavailable",
-                    "openai_configured": False,
+                    "credential_mode": "browser-session-byok",
+                    "openai_transport": "official-python-sdk",
                 },
             )
 

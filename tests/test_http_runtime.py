@@ -23,13 +23,18 @@ class RuntimeHttpTest(unittest.TestCase):
         store = Store(Path(cls.temporary.name) / "http.sqlite3")
         store.initialize()
         cls.client = ScriptedResponsesClient(store)
-        plane = ControlPlane(store, cls.client)
+        cls.received_api_keys: list[str] = []
+
+        def client_factory(api_key: str) -> ScriptedResponsesClient:
+            cls.received_api_keys.append(api_key)
+            return cls.client
+
+        plane = ControlPlane(store, cls.client, client_factory=client_factory)
         handler = partial(DemoRequestHandler, directory=str(ROOT))
         cls.server = DemoServer(
             ("127.0.0.1", 0),
             handler,
             control_plane=plane,
-            model_configured=True,
             workspace_model_call_limit=16,
         )
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -52,6 +57,7 @@ class RuntimeHttpTest(unittest.TestCase):
         cookie: str | None = None,
         origin: str | None = None,
         raw_body: bytes | None = None,
+        api_key: str | None = None,
     ) -> tuple[int, dict[str, object], object]:
         data = raw_body
         headers: dict[str, str] = {}
@@ -63,6 +69,8 @@ class RuntimeHttpTest(unittest.TestCase):
         if origin:
             headers["Origin"] = origin
             headers["Sec-Fetch-Site"] = "same-origin"
+        if api_key:
+            headers["X-OpenAI-API-Key"] = api_key
         request = Request(f"{self.base_url}{path}", data=data, method=method, headers=headers)
         try:
             response = urlopen(request, timeout=10)  # noqa: S310 - loopback fixture
@@ -86,7 +94,8 @@ class RuntimeHttpTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["mode"], "closed-loop-agent-runtime")
         self.assertEqual(payload["sqlite"], "ready")
-        self.assertTrue(payload["openai_configured"])
+        self.assertEqual(payload["credential_mode"], "browser-session-byok")
+        self.assertEqual(payload["openai_transport"], "official-python-sdk")
         serialized = json.dumps(payload).lower()
         self.assertNotIn("api_key", serialized)
         self.assertNotIn("sk-", serialized)
@@ -116,6 +125,7 @@ class RuntimeHttpTest(unittest.TestCase):
             body={},
             cookie=cookie,
             origin=self.base_url,
+            api_key="test-browser-owned-key-for-http-contract",
         )
         self.assertEqual(status, 201)
         blocked = payload["data"]
@@ -127,6 +137,7 @@ class RuntimeHttpTest(unittest.TestCase):
             body={},
             cookie=cookie,
             origin=self.base_url,
+            api_key="test-browser-owned-key-for-http-contract",
         )
         self.assertEqual(status, 201)
         diagnosis = payload["data"]
@@ -137,6 +148,7 @@ class RuntimeHttpTest(unittest.TestCase):
             body={},
             cookie=cookie,
             origin=self.base_url,
+            api_key="test-browser-owned-key-for-http-contract",
         )
         self.assertEqual(status, 201)
         repair = payload["data"]
@@ -153,6 +165,7 @@ class RuntimeHttpTest(unittest.TestCase):
             },
             cookie=cookie,
             origin=self.base_url,
+            api_key="test-browser-owned-key-for-http-contract",
         )
         self.assertEqual(status, 200)
         self.assertEqual(payload["data"]["flow_version"], 2)
@@ -190,6 +203,34 @@ class RuntimeHttpTest(unittest.TestCase):
         self.assertEqual(
             self.client.store.count_rows("sandbox_releases"), releases_before_retry
         )
+        self.assertGreaterEqual(len(self.received_api_keys), 4)
+        database_bytes = Path(self.temporary.name, "http.sqlite3").read_bytes()
+        self.assertNotIn(b"test-browser-owned-key-for-http-contract", database_bytes)
+
+    def test_new_model_action_requires_a_valid_browser_owned_key(self) -> None:
+        cookie, bootstrap = self.create_workspace()
+        flow_id = bootstrap["snapshot"]["flows"][0]["id"]
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/flows/{flow_id}/runs",
+            body={},
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"]["code"], "openai_key_required")
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/flows/{flow_id}/runs",
+            body={},
+            cookie=cookie,
+            origin=self.base_url,
+            api_key="short",
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"]["code"], "openai_key_required")
 
     def test_mutations_reject_cross_origin_missing_cookie_and_oversize_body(self) -> None:
         status, _headers, payload = self.request(
@@ -221,6 +262,7 @@ class RuntimeHttpTest(unittest.TestCase):
             body={},
             cookie=first_cookie,
             origin=self.base_url,
+            api_key="test-browser-owned-key-for-isolation-contract",
         )
         self.assertEqual(status, 201)
         run_id = payload["data"]["id"]
@@ -270,6 +312,7 @@ class RuntimeHttpConcurrencyTest(unittest.TestCase):
                         "Sec-Fetch-Site": "same-origin",
                         "Content-Type": "application/json",
                         "Cookie": f"kyn_workspace={token}",
+                        "X-OpenAI-API-Key": "test-browser-owned-key-for-concurrency-contract",
                     },
                     body=b"{}",
                     remote_address="192.0.2.10",
