@@ -484,10 +484,11 @@ function renderResources() {
 
 function renderRunCard(container, run, label) {
   container.replaceChildren();
+  const isBefore = label.startsWith("Before");
   if (!run) {
     const empty = make("div", "run-card-empty");
-    empty.append(make("span", "", label === "Before" ? "01" : "02"));
-    empty.append(make("p", "", label === "Before" ? "Failed run will remain here after the repair." : "Child rerun will prove the changed outcome."));
+    empty.append(make("span", "", isBefore ? "01" : "02"));
+    empty.append(make("p", "", isBefore ? "Failed run will remain here after the repair." : "Child rerun will prove the changed outcome."));
     container.append(empty);
     return;
   }
@@ -508,7 +509,7 @@ function renderRunCard(container, run, label) {
     metrics.append(item);
   });
   const foot = make("footer", "run-card-foot");
-  foot.append(make("span", "", label === "Before" ? "Preserved evidence" : "Linked child run"));
+  foot.append(make("span", "", isBefore ? "Preserved evidence" : "Linked child run"));
   foot.append(make("code", "", short(run.flow_fingerprint, 16)));
   container.append(header, metrics, foot);
 }

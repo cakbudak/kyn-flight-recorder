@@ -1,0 +1,239 @@
+{
+  "generated_at": "2026-07-19T10:00:48.674Z",
+  "surface": "Kyn.ist Flight Recorder closed-loop browser journey",
+  "runtime": {
+    "chromium": "/usr/bin/chromium",
+    "provider": "deterministic provider-shaped seam",
+    "base_url": "http://127.0.0.1:42177",
+    "viewport_matrix": [
+      "1440x1000",
+      "390x844"
+    ]
+  },
+  "summary": {
+    "checks": 21,
+    "passed": 21,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "name": "runtime health exposes SQLite and configured model transport",
+      "status": "pass",
+      "detail": {
+        "status": "ok",
+        "mode": "closed-loop-agent-runtime",
+        "sqlite": "ready",
+        "openai_configured": true
+      }
+    },
+    {
+      "name": "onboarding explains the complete causal loop",
+      "status": "pass",
+      "detail": {
+        "heading": "From agent failureto proven repair.",
+        "steps": 7,
+        "overflow": 0,
+        "unnamedButtons": 0
+      }
+    },
+    {
+      "name": "desktop onboarding has no horizontal overflow",
+      "status": "pass",
+      "detail": 0
+    },
+    {
+      "name": "every browser control has an accessible name",
+      "status": "pass",
+      "detail": 0
+    },
+    {
+      "name": "workspace renders versioned agents prompts and skills",
+      "status": "pass",
+      "detail": {
+        "prompts": 3,
+        "skills": 3,
+        "agents": 3,
+        "model": "gpt-5.6",
+        "policy": "staging",
+        "requested": "Production"
+      }
+    },
+    {
+      "name": "composed v1 manifest makes the intended mismatch visible",
+      "status": "pass",
+      "detail": {
+        "prompts": 3,
+        "skills": 3,
+        "agents": 3,
+        "model": "gpt-5.6",
+        "policy": "staging",
+        "requested": "Production"
+      }
+    },
+    {
+      "name": "real executor flow reaches an authoritative blocked state",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "forensic agent diagnosis is evidence-grounded",
+      "status": "pass",
+      "detail": {
+        "visible": true,
+        "fault": "Policy Mismatch",
+        "confidence": "High",
+        "citations": "2 owned events"
+      }
+    },
+    {
+      "name": "repair agent is limited to one manifest path and revision",
+      "status": "pass",
+      "detail": {
+        "visible": true,
+        "path": "/policy/allowed_environments",
+        "revision": "1",
+        "patch": "+ [\"staging\",\"production\"]"
+      }
+    },
+    {
+      "name": "human fence opens focused and pins hash plus revision",
+      "status": "pass",
+      "detail": {
+        "focused": "approval-actor",
+        "revision": "1 → 2",
+        "proposalHash": "87fb762a937f1f26f1339d051541ef04101b191f95d166b28bcdd4a5f159c335",
+        "acknowledged": false
+      }
+    },
+    {
+      "name": "human command creates immutable flow v2",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "child rerun proves a changed effect without rewriting v1",
+      "status": "pass",
+      "detail": {
+        "rootStatus": "blocked",
+        "childStatus": "completed",
+        "rootVersion": 1,
+        "childVersion": 2,
+        "linked": true,
+        "rootEffects": 0,
+        "childEffects": 1,
+        "diagnosisOwned": true,
+        "approved": true,
+        "approvalActor": "build-week-judge",
+        "chains": true,
+        "runCards": 2,
+        "ledgerSwitches": 2,
+        "selectedLedger": "Child rerun",
+        "phase": "Outcome changed · proof complete"
+      }
+    },
+    {
+      "name": "diagnosis citations approval and both hash chains remain authoritative",
+      "status": "pass",
+      "detail": {
+        "rootStatus": "blocked",
+        "childStatus": "completed",
+        "rootVersion": 1,
+        "childVersion": 2,
+        "linked": true,
+        "rootEffects": 0,
+        "childEffects": 1,
+        "diagnosisOwned": true,
+        "approved": true,
+        "approvalActor": "build-week-judge",
+        "chains": true,
+        "runCards": 2,
+        "ledgerSwitches": 2,
+        "selectedLedger": "Child rerun",
+        "phase": "Outcome changed · proof complete"
+      }
+    },
+    {
+      "name": "UI exposes before after proof and both ledgers",
+      "status": "pass",
+      "detail": {
+        "rootStatus": "blocked",
+        "childStatus": "completed",
+        "rootVersion": 1,
+        "childVersion": 2,
+        "linked": true,
+        "rootEffects": 0,
+        "childEffects": 1,
+        "diagnosisOwned": true,
+        "approved": true,
+        "approvalActor": "build-week-judge",
+        "chains": true,
+        "runCards": 2,
+        "ledgerSwitches": 2,
+        "selectedLedger": "Child rerun",
+        "phase": "Outcome changed · proof complete"
+      }
+    },
+    {
+      "name": "accessibility tree exposes named buttons",
+      "status": "pass",
+      "detail": {
+        "buttons": 16
+      }
+    },
+    {
+      "name": "reduced motion collapses interaction transitions",
+      "status": "pass",
+      "detail": "0.001s"
+    },
+    {
+      "name": "390px reload preserves proof without document overflow",
+      "status": "pass",
+      "detail": {
+        "viewport": 390,
+        "scrollWidth": 390,
+        "railHidden": true,
+        "actionWidth": 284,
+        "errorHidden": true
+      }
+    },
+    {
+      "name": "server sends restrictive security and no-store headers",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "browser makes no cross-origin runtime request",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no failed requests",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no console or page errors",
+      "status": "pass",
+      "detail": []
+    }
+  ],
+  "diagnostics": {
+    "server_output": [
+      "19/Jul/2026 12:00:47 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:47 127.0.0.1 \"POST /api/v1/runs/run_b800af4b4d5946329cf8ce0d45ba15c0/rerun HTTP/1.1\" 201 -",
+      "19/Jul/2026 12:00:47 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:47 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /app/state.mjs HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 12:00:48 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+    ],
+    "browser_output": [
+      "DevTools listening on ws://127.0.0.1:41501/devtools/browser/54437ef6-31f0-4643-a37a-3c8164996660"
+    ]
+  }
+}
