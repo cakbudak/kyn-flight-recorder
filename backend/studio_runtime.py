@@ -12,11 +12,13 @@ from typing import Any, Mapping, Sequence
 from .contracts import (
     ActionBlocked,
     PLACEHOLDER_RE,
+    RETRYABLE_ERROR_CODES,
     BrakeEngaged,
     Conflict,
     ContractViolation,
     ProviderFailure,
     canonical_json,
+    default_node_settings,
     extract_output_text,
     fingerprint,
     function_calls,
@@ -33,9 +35,6 @@ from .studio_store import StudioStore
 NODE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 CALLABLE_ACTION_KINDS = frozenset(
     {"template", "condition", "router", "sandbox", "transform", "assert"}
-)
-RETRYABLE_ERROR_CODES = frozenset(
-    {"provider_failure", "action_blocked", "contract_violation"}
 )
 PROVIDER_DETAIL_FIELDS = frozenset(
     {"provider_code", "provider_type", "provider_param", "status", "request_id"}
@@ -164,15 +163,7 @@ def validate_flow_definition(
             ):
                 raise ContractViolation(f"Flow node {node_id} position is out of bounds")
             normalized_position[axis] = int(round(coordinate))
-        settings = node.get(
-            "settings",
-            {
-                "max_attempts": 1,
-                "backoff_seconds": 0,
-                "retry_on": ["provider_failure"],
-                "on_error": "fail",
-            },
-        )
+        settings = node.get("settings", default_node_settings())
         if not isinstance(settings, dict) or set(settings) != {
             "max_attempts",
             "backoff_seconds",
@@ -576,15 +567,7 @@ class StudioRuntime:
                     node_id=node_id,
                 )
 
-            settings = node.get(
-                "settings",
-                {
-                    "max_attempts": 1,
-                    "backoff_seconds": 0,
-                    "retry_on": ["provider_failure"],
-                    "on_error": "fail",
-                },
-            )
+            settings = node.get("settings", default_node_settings())
             continued_after_error = False
             for attempt in range(1, int(settings["max_attempts"]) + 1):
                 live_run = self.repository.get_run(workspace_id, run_id)

@@ -7,6 +7,7 @@ import json
 import re
 import uuid
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
 
@@ -117,6 +118,36 @@ def hash_text(value: str) -> str:
 RATIFICATION_STATES = ("proposed", "confirmed", "canonical")
 CONFIRMED_DISTINCT_RUNS = 2
 CANONICAL_DISTINCT_RUNS = 3
+
+# The per-node retry contract. `RETRYABLE_ERROR_CODES` bounds which failures a
+# node may re-attempt at all, and `DEFAULT_NODE_SETTINGS` is the effective policy
+# of a node that declares none. Both live here because the runtime enforces them
+# at publish time, the repair policy reasons about them, and the store applies a
+# repair to them — one definition, so the three cannot drift.
+
+RETRYABLE_ERROR_CODES = frozenset(
+    {"provider_failure", "action_blocked", "contract_violation"}
+)
+MAX_NODE_ATTEMPTS = 3
+DEFAULT_NODE_SETTINGS: Mapping[str, Any] = MappingProxyType(
+    {
+        "max_attempts": 1,
+        "backoff_seconds": 0,
+        "retry_on": ("provider_failure",),
+        "on_error": "fail",
+    }
+)
+
+
+def default_node_settings() -> dict[str, Any]:
+    """Return a mutable copy of the default node retry policy."""
+
+    return {
+        "max_attempts": DEFAULT_NODE_SETTINGS["max_attempts"],
+        "backoff_seconds": DEFAULT_NODE_SETTINGS["backoff_seconds"],
+        "retry_on": list(DEFAULT_NODE_SETTINGS["retry_on"]),
+        "on_error": DEFAULT_NODE_SETTINGS["on_error"],
+    }
 
 _ISO_TIMESTAMP_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:?\d{2})?"

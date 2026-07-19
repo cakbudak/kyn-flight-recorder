@@ -16,6 +16,7 @@ from .contracts import (
     canonical_json,
     compute_event_hash,
     dead_end_fingerprint,
+    default_node_settings,
     default_outcomes_for_kind,
     fingerprint,
     hash_text,
@@ -25,6 +26,7 @@ from .contracts import (
     redact,
     utc_now,
 )
+from .repair_policy import ResolvedRepair, resolve_repair
 from .store import Store
 
 
@@ -2528,6 +2530,174 @@ class StudioStore:
             "applied_at": row["applied_at"],
         }
 
+    @staticmethod
+    def _patched_node_settings(
+        settings: Mapping[str, Any], patch: Sequence[Mapping[str, Any]]
+    ) -> dict[str, Any]:
+        """Apply a `flow_node_settings` patch to one node's retry policy.
+
+        A node that declared no settings still ran under the publish-time default,
+        so the patch is applied to that effective policy. The policy already
+        bounded the paths and values; this refuses anything that does not address
+        a known settings key, so a malformed patch can never introduce a field the
+        publish-time contract would have rejected.
+        """
+
+        patched = default_node_settings()
+        patched.update(settings)
+        for operation in patch:
+            parts = str(operation["path"]).split("/")
+            if len(parts) != 3 or parts[0] != "" or parts[1] != "settings":
+                raise Conflict("repair patch does not address the pinned Flow node")
+            key = parts[2]
+            if key not in patched:
+                raise Conflict("repair patch does not address the pinned Flow node")
+            patched[key] = operation["value"]
+        return patched
+
+    def _publish_repaired_action_version(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        *,
+        action: sqlite3.Row,
+        old_action_version: sqlite3.Row,
+        patch: Sequence[Mapping[str, Any]],
+        actor: str,
+        now: str,
+    ) -> str:
+        """Mint the immutable Action successor an `action_config` repair requires."""
+
+        config = _decode(old_action_version["config_json"]) or {}
+        for operation in patch:
+            parts = str(operation["path"]).split("/")
+            if len(parts) != 3 or parts[0] != "" or parts[1] != "config":
+                raise Conflict("repair patch does not address the pinned Action config")
+            config[parts[2]] = operation["value"]
+        next_action_version = int(action["current_version"]) + 1
+        action_version_id = new_id("actv")
+        logical_kind = old_action_version["executor_kind"] or old_action_version["kind"]
+        action_material = {
+            "kind": logical_kind,
+            "storage_kind": old_action_version["kind"],
+            "input_schema": _decode(old_action_version["input_schema_json"]),
+            "output_schema": _decode(old_action_version["output_schema_json"]),
+            "outcomes": (
+                _decode(old_action_version["outcomes_json"])
+                if old_action_version["outcomes_json"]
+                else default_outcomes_for_kind(logical_kind)
+            ),
+            "config": config,
+            "agent": None,
+            "effect_level": old_action_version["effect_level"],
+            "parent_version_id": old_action_version["id"],
+        }
+        connection.execute(
+            """
+            INSERT INTO action_versions
+                (id, workspace_id, action_id, version, kind, executor_kind,
+                 input_schema_json, output_schema_json, outcomes_json, config_json,
+                 agent_version_id, effect_level, fingerprint, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                action_version_id,
+                workspace_id,
+                action["id"],
+                next_action_version,
+                old_action_version["kind"],
+                old_action_version["executor_kind"],
+                old_action_version["input_schema_json"],
+                old_action_version["output_schema_json"],
+                old_action_version["outcomes_json"],
+                canonical_json(config),
+                old_action_version["agent_version_id"],
+                old_action_version["effect_level"],
+                fingerprint(action_material),
+                actor,
+                now,
+            ),
+        )
+        connection.execute(
+            "UPDATE actions SET current_version = current_version + 1, updated_at = ? WHERE id = ?",
+            (now, action["id"]),
+        )
+        return action_version_id
+
+    def _resolve_diagnosed_repair(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        diagnosis: sqlite3.Row,
+        *,
+        action_version: sqlite3.Row | None = None,
+    ) -> dict[str, Any]:
+        """Gather the diagnosed material and resolve it against the repair policy.
+
+        The decision itself lives in `backend.repair_policy`, which is pure. This
+        only reads the pinned rows the policy needs. Proposal and application both
+        call it, so the post-condition recheck is literally the same computation
+        that produced the acknowledged proposal.
+        """
+
+        run = connection.execute(
+            "SELECT * FROM automation_runs WHERE id = ?",
+            (diagnosis["run_id"],),
+        ).fetchone()
+        pinned_action_version = action_version
+        if pinned_action_version is None:
+            pinned_action_version = connection.execute(
+                "SELECT * FROM action_versions WHERE id = ? AND workspace_id = ?",
+                (diagnosis["action_version_id"], workspace_id),
+            ).fetchone()
+        if run is None or pinned_action_version is None:
+            raise RuntimeError("diagnosed Run or Action is missing")
+        flow = connection.execute(
+            "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+            (run["flow_id"], workspace_id),
+        ).fetchone()
+        action = connection.execute(
+            "SELECT * FROM actions WHERE id = ? AND workspace_id = ?",
+            (pinned_action_version["action_id"], workspace_id),
+        ).fetchone()
+        if flow is None or action is None:
+            raise RuntimeError("repair target is missing")
+        flow_version = connection.execute(
+            "SELECT * FROM automation_flow_versions WHERE flow_id = ? AND version = ?",
+            (flow["id"], flow["current_version"]),
+        ).fetchone()
+        failed_step = connection.execute(
+            "SELECT node_id, error_code FROM automation_run_steps WHERE id = ?",
+            (diagnosis["failed_step_id"],),
+        ).fetchone()
+        if flow_version is None or failed_step is None:
+            raise RuntimeError("repair pinned definition is missing")
+        nodes = _decode(flow_version["nodes_json"])
+        node = next(
+            (item for item in nodes if item["id"] == failed_step["node_id"]), None
+        )
+        if node is None:
+            raise Conflict("the diagnosed Flow node is no longer part of the Flow")
+        resolved = resolve_repair(
+            fault_class=diagnosis["fault_class"],
+            executor_kind=(
+                pinned_action_version["executor_kind"] or pinned_action_version["kind"]
+            ),
+            action_config=_decode(pinned_action_version["config_json"]) or {},
+            node_settings=node.get("settings") or {},
+            error_code=failed_step["error_code"] or "",
+        )
+        return {
+            "resolved": resolved,
+            "run": run,
+            "flow": flow,
+            "flow_version": flow_version,
+            "action": action,
+            "action_version": pinned_action_version,
+            "nodes": nodes,
+            "failed_node_id": failed_step["node_id"],
+        }
+
     def propose_repair(
         self, workspace_id: str, diagnosis_id: str
     ) -> dict[str, Any]:
@@ -2544,37 +2714,13 @@ class StudioStore:
             ).fetchone()
             if diagnosis is None:
                 raise NotFound("Automation diagnosis was not found")
-            run = connection.execute(
-                "SELECT * FROM automation_runs WHERE id = ?",
-                (diagnosis["run_id"],),
-            ).fetchone()
-            action_version = connection.execute(
-                "SELECT * FROM action_versions WHERE id = ? AND workspace_id = ?",
-                (diagnosis["action_version_id"], workspace_id),
-            ).fetchone()
-            if run is None or action_version is None:
-                raise RuntimeError("diagnosed Run or Action is missing")
-            logical_kind = action_version["executor_kind"] or action_version["kind"]
-            config = _decode(action_version["config_json"])
-            if (
-                diagnosis["fault_class"] != "authority_policy"
-                or logical_kind != "data_store"
-                or config.get("write_enabled") is not False
-            ):
-                raise ContractViolation("diagnosis has no bounded automatic repair")
-            flow = connection.execute(
-                "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
-                (run["flow_id"], workspace_id),
-            ).fetchone()
-            action = connection.execute(
-                "SELECT * FROM actions WHERE id = ? AND workspace_id = ?",
-                (action_version["action_id"], workspace_id),
-            ).fetchone()
-            if flow is None or action is None:
-                raise RuntimeError("repair target is missing")
-            patch = [
-                {"op": "replace", "path": "/config/write_enabled", "value": True}
-            ]
+            material_rows = self._resolve_diagnosed_repair(
+                connection, workspace_id, diagnosis
+            )
+            run = material_rows["run"]
+            flow = material_rows["flow"]
+            action = material_rows["action"]
+            patch = material_rows["resolved"].patch
             material = {
                 "diagnosis_id": diagnosis_id,
                 "flow_id": flow["id"],
@@ -2714,76 +2860,55 @@ class StudioStore:
                 ).fetchone()
                 if old_action_version is None or old_flow_version is None or diagnosis is None:
                     raise RuntimeError("repair pinned definition is missing")
-                config = _decode(old_action_version["config_json"])
-                if config.get("write_enabled") is not False:
-                    raise Conflict("repair target no longer has the diagnosed policy")
-                config["write_enabled"] = True
-                next_action_version = int(action["current_version"]) + 1
-                action_version_id = new_id("actv")
-                now = utc_now()
-                action_material = {
-                    "kind": old_action_version["executor_kind"] or old_action_version["kind"],
-                    "storage_kind": old_action_version["kind"],
-                    "input_schema": _decode(old_action_version["input_schema_json"]),
-                    "output_schema": _decode(old_action_version["output_schema_json"]),
-                    "outcomes": (
-                        _decode(old_action_version["outcomes_json"])
-                        if old_action_version["outcomes_json"]
-                        else default_outcomes_for_kind(
-                            old_action_version["executor_kind"]
-                            or old_action_version["kind"]
-                        )
-                    ),
-                    "config": config,
-                    "agent": None,
-                    "effect_level": old_action_version["effect_level"],
-                    "parent_version_id": old_action_version["id"],
-                }
-                connection.execute(
-                    """
-                    INSERT INTO action_versions
-                        (id, workspace_id, action_id, version, kind, executor_kind,
-                         input_schema_json, output_schema_json, outcomes_json, config_json,
-                         agent_version_id, effect_level, fingerprint, created_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        action_version_id,
+                # Post-condition recheck. The diagnosed policy must still hold, and
+                # it must still resolve to exactly the patch the operator saw and
+                # acknowledged. Anything else is a stale proposal.
+                try:
+                    recheck = self._resolve_diagnosed_repair(
+                        connection,
                         workspace_id,
-                        action["id"],
-                        next_action_version,
-                        old_action_version["kind"],
-                        old_action_version["executor_kind"],
-                        old_action_version["input_schema_json"],
-                        old_action_version["output_schema_json"],
-                        old_action_version["outcomes_json"],
-                        canonical_json(config),
-                        old_action_version["agent_version_id"],
-                        old_action_version["effect_level"],
-                        fingerprint(action_material),
-                        actor,
-                        now,
-                    ),
-                )
-                connection.execute(
-                    "UPDATE actions SET current_version = current_version + 1, updated_at = ? WHERE id = ?",
-                    (now, action["id"]),
-                )
+                        diagnosis,
+                        action_version=old_action_version,
+                    )
+                except ContractViolation as error:
+                    raise Conflict(
+                        "repair target no longer has the diagnosed policy"
+                    ) from error
+                resolved: ResolvedRepair = recheck["resolved"]
+                if canonical_json(resolved.patch) != canonical_json(
+                    _decode(proposal["patch_json"])
+                ):
+                    raise Conflict("repair target no longer has the diagnosed policy")
+                failed_node_id = recheck["failed_node_id"]
                 nodes = _decode(old_flow_version["nodes_json"])
-                failed_step = connection.execute(
-                    "SELECT node_id FROM automation_run_steps WHERE id = ?",
-                    (diagnosis["failed_step_id"],),
-                ).fetchone()
-                if failed_step is None:
-                    raise RuntimeError("diagnosed Step is missing")
-                replaced = 0
-                for node in nodes:
-                    if (
-                        node["id"] == failed_step["node_id"]
-                        and node["version_id"] == old_action_version["id"]
-                    ):
-                        node["version_id"] = action_version_id
-                        replaced += 1
+                now = utc_now()
+                action_version_id: str | None = None
+                if resolved.target == "action_config":
+                    action_version_id = self._publish_repaired_action_version(
+                        connection,
+                        workspace_id,
+                        action=action,
+                        old_action_version=old_action_version,
+                        patch=resolved.patch,
+                        actor=actor,
+                        now=now,
+                    )
+                    replaced = 0
+                    for node in nodes:
+                        if (
+                            node["id"] == failed_node_id
+                            and node["version_id"] == old_action_version["id"]
+                        ):
+                            node["version_id"] = action_version_id
+                            replaced += 1
+                else:
+                    replaced = 0
+                    for node in nodes:
+                        if node["id"] == failed_node_id:
+                            node["settings"] = self._patched_node_settings(
+                                node.get("settings") or {}, resolved.patch
+                            )
+                            replaced += 1
                 if replaced != 1:
                     raise Conflict("repair target node is no longer uniquely pinned")
                 pinned, requires_model = self._resolve_flow_pins(
