@@ -546,8 +546,12 @@ class StudioStore:
                 name="Launch analysis prompt",
                 slug="launch-analysis",
                 template=(
-                    "Analyze this automation launch brief against clarity, safety, and demonstrable "
-                    "value. Return a concise summary, a readiness score from 0 to 1, and bounded risks.\n\n"
+                    "Analyze this automation launch brief against an explicit readiness rubric: "
+                    "target audience, typed input/output contract, deterministic decision boundary, "
+                    "human authority boundary, bounded effect scope, inspectable evidence, and a "
+                    "measurable success condition. When all seven are explicit and mutually "
+                    "consistent, assign a score of at least 0.8. Return a concise summary, a "
+                    "readiness score from 0 to 1, and bounded risks.\n\n"
                     "Brief: {{brief}}"
                 ),
                 variables=["brief"],

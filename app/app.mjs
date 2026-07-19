@@ -1158,7 +1158,15 @@ function exampleForSchema(schema, property = "") {
   if (schema.type === "boolean") return true;
   if (schema.type === "null") return null;
   if (property === "brief") {
-    return "Demonstrate a configurable Agent Flow with typed Actions, human approval, authoritative evidence, and a bounded sandbox effect.";
+    return (
+      "Launch a Build Week preview for judges. A 20–4000 character brief enters a " +
+      "pinned GPT-5.6 Agent, which must return summary:string, score:number from 0 to 1, " +
+      "and risks:string[]. A deterministic gate requires score >= 0.75. Passing work " +
+      "must pause for an attributable human decision; approval may append exactly one " +
+      "idempotent row only to this workspace's SQLite approved_launches sandbox. Success " +
+      "means the model call, typed Steps, Action receipts, decision, hash-linked events, " +
+      "and effect are inspectable, with zero effects before approval."
+    );
   }
   if (property === "name") return "Ada";
   if (property === "summary") return "A bounded automation result ready for review.";

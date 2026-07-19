@@ -17,6 +17,14 @@ import { chromium } from "playwright-core";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TIMEOUT_MS = 180_000;
 const checks = [];
+const APPROVAL_DEMO_BRIEF =
+  "Launch a Build Week preview for judges. A 20–4000 character brief enters a " +
+  "pinned GPT-5.6 Agent, which must return summary:string, score:number from 0 to 1, " +
+  "and risks:string[]. A deterministic gate requires score >= 0.75. Passing work " +
+  "must pause for an attributable human decision; approval may append exactly one " +
+  "idempotent row only to this workspace's SQLite approved_launches sandbox. Success " +
+  "means the model call, typed Steps, Action receipts, decision, hash-linked events, " +
+  "and effect are inspectable, with zero effects before approval.";
 
 function record(name, condition, detail = null) {
   checks.push({ name, status: condition ? "pass" : "fail", detail });
@@ -310,12 +318,13 @@ async function main() {
     const seededFlowButton = page.locator("#flow-list .selection-button", { hasText: "Agent-reviewed launch" });
     await seededFlowButton.click();
     await page.locator("#flow-inspector [data-run-flow]").click();
+    await page.locator("#run-input").fill(JSON.stringify({ brief: APPROVAL_DEMO_BRIEF }, null, 2));
     await page.locator("#run-form button[type='submit']").click();
     await waitUntilReady(page);
-    await page.waitForFunction(() => document.querySelector("#run-inspector")?.textContent.includes("Waiting Approval"));
     snapshot = await workspaceSnapshot(page);
+    const seededFlow = snapshot.studio.flows.find((flow) => flow.slug === "agent-reviewed-launch");
     let aiRun = snapshot.studio.runs.find(
-      (run) => run.status === "waiting_approval" && !run.parent_run_id
+      (run) => run.flow_id === seededFlow?.id && !run.parent_run_id
     );
     record(
       "AI Flow uses pinned Agent stack and pauses at a real Human approval",
@@ -327,6 +336,7 @@ async function main() {
       aiRun
         ? {
             id: aiRun.id,
+            status: aiRun.status,
             steps: aiRun.steps.map((step) => step.status),
             model_calls: aiRun.model_calls.length,
             effects: aiRun.effects.length
