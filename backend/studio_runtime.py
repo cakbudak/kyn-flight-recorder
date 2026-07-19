@@ -22,6 +22,7 @@ from .contracts import (
     render_prompt,
     require_string,
     safe_response_summary,
+    stateless_replay_items,
     validate_json_schema,
 )
 from .runtime import ResponseTransport
@@ -1310,10 +1311,7 @@ class StudioRuntime:
                 return ActionResult(output=output, route_outcome=route_outcome)
             if used_tool_calls + len(calls) > max_tool_calls:
                 raise ContractViolation("Agent exceeded the pinned Action-call budget")
-            response_output = response.get("output")
-            if not isinstance(response_output, list):
-                raise ProviderFailure("OpenAI response output is missing")
-            input_items.extend(response_output)
+            input_items.extend(stateless_replay_items(response))
             for call in calls:
                 name = call.get("name")
                 call_id = call.get("call_id")

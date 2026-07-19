@@ -97,6 +97,14 @@ class ScriptedResponsesClient:
         input_items = payload.get("input")
         if not isinstance(input_items, list):
             raise AssertionError("Responses input must be a list")
+        replayed_provider_items = [
+            item
+            for item in input_items
+            if isinstance(item, dict)
+            and item.get("type") in {"reasoning", "function_call"}
+        ]
+        if any("status" in item for item in replayed_provider_items):
+            raise AssertionError("response-only item status crossed the replay boundary")
         outputs = [item for item in input_items if isinstance(item, dict) and item.get("type") == "function_call_output"]
 
         if self.mode == "prose_claim" and not outputs:
@@ -110,6 +118,7 @@ class ScriptedResponsesClient:
                         "type": "function_call",
                         "name": "run_shell",
                         "arguments": '{"command":"true"}',
+                        "status": "completed",
                     }
                 ],
                 "executor",
@@ -123,6 +132,7 @@ class ScriptedResponsesClient:
                         "type": "function_call",
                         "name": "inspect_release_policy",
                         "arguments": "{}",
+                        "status": "completed",
                     }
                 ],
                 "executor",
@@ -136,6 +146,7 @@ class ScriptedResponsesClient:
                         "type": "function_call",
                         "name": "stage_release",
                         "arguments": '{"environment":"production","artifact":"kyn-console@buildweek"}',
+                        "status": "completed",
                     }
                 ],
                 "executor",

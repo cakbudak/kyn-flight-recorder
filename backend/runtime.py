@@ -17,6 +17,7 @@ from .contracts import (
     require_string_list,
     render_prompt,
     safe_response_summary,
+    stateless_replay_items,
 )
 from .store import Store
 from .tools import ToolRegistry
@@ -227,10 +228,7 @@ class AgentRuntime:
                 )
                 if name == "stage_release":
                     stage_receipt = receipt
-                response_output = response.get("output")
-                if not isinstance(response_output, list):
-                    raise ExecutionFailure("invalid_model_response", "response output is missing")
-                input_items.extend(response_output)
+                input_items.extend(stateless_replay_items(response))
                 input_items.append(
                     {
                         "type": "function_call_output",

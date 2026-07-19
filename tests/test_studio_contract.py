@@ -84,6 +84,7 @@ class ToolCallingStudioResponsesClient:
                         "type": "reasoning",
                         "encrypted_content": "opaque-provider-reasoning",
                         "summary": [],
+                        "status": "completed",
                     },
                     {
                         "id": "fc_tool_turn",
@@ -256,9 +257,19 @@ class AgentStudioRuntimeContractTest(unittest.TestCase):
             self.assertEqual(len(request["tools"]), 1)
         self.assertEqual(client.requests[0]["tool_choice"], "auto")
         second_input = client.requests[1]["input"]
-        self.assertTrue(
-            any(item.get("type") == "reasoning" for item in second_input)
+        reasoning_item = next(
+            item for item in second_input if item.get("type") == "reasoning"
         )
+        self.assertEqual(
+            reasoning_item["encrypted_content"], "opaque-provider-reasoning"
+        )
+        replayed_provider_items = [
+            item
+            for item in second_input
+            if item.get("type") in {"reasoning", "function_call"}
+        ]
+        self.assertTrue(replayed_provider_items)
+        self.assertTrue(all("status" not in item for item in replayed_provider_items))
         self.assertTrue(
             any(item.get("type") == "function_call_output" for item in second_input)
         )

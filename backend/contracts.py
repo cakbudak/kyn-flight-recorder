@@ -516,6 +516,29 @@ def function_calls(response: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [dict(item) for item in output if isinstance(item, dict) and item.get("type") == "function_call"]
 
 
+def stateless_replay_items(response: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Copy Responses output items across the stateless input boundary.
+
+    The API's output envelope includes a top-level item ``status`` field. GPT-5.6
+    currently rejects that response-only field when the same JSON object is replayed
+    as an input item, even though the SDK response model exposes it. Preserve every
+    output item required for reasoning/tool continuity while dropping only that
+    provider-owned response annotation.
+    """
+
+    output = response.get("output")
+    if not isinstance(output, list):
+        raise ProviderFailure("OpenAI response output is missing")
+    replay: list[dict[str, Any]] = []
+    for item in output:
+        if not isinstance(item, dict):
+            raise ProviderFailure("OpenAI response output item is invalid")
+        normalized = dict(item)
+        normalized.pop("status", None)
+        replay.append(normalized)
+    return replay
+
+
 def safe_response_summary(response: Mapping[str, Any]) -> dict[str, Any]:
     output = response.get("output")
     output_types = [item.get("type") for item in output if isinstance(item, dict)] if isinstance(output, list) else []
