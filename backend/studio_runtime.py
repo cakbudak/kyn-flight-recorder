@@ -481,6 +481,10 @@ class StudioRuntime:
         return validate_json_schema(parsed, schema, "diagnostician output")
 
     def _drive(self, workspace_id: str, run_id: str) -> dict[str, Any]:
+        with self.repository.store.operation_session():
+            return self._drive_in_session(workspace_id, run_id)
+
+    def _drive_in_session(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         run = self.repository.get_run(workspace_id, run_id)
         context = self.repository.flow_context(
             workspace_id, run["flow_id"], int(run["flow_version"])

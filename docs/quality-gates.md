@@ -25,6 +25,7 @@ reports are superseded and are not accepted as evidence for this product surface
 | isolation | opaque HttpOnly workspace cookie, same-origin mutations, cross-workspace 404, bounded bodies and usage | PASS |
 | credential | browser-tab `sessionStorage` only; server has no operator-key fallback and never persists the key | PASS |
 | browser | desktop + 390 px, reduced motion, named controls, no overflow, failed request, or console error | PASS |
+| maximum graph | 64 nodes/63 routes: 20 complete Runs, 30 loaded snapshots, 64-node Chromium render and Fit View remain below release thresholds | PASS |
 | real model | real GPT-5.6 analysis pauses, approves, and commits exactly one bounded SQLite effect | PASS |
 | public HTTPS | full real-model Studio journey through the deployed origin | PASS |
 | assistive tech | physical screen-reader pass | NOT RUN |
@@ -32,12 +33,21 @@ reports are superseded and are not accepted as evidence for this product surface
 ## Current verification
 
 ```text
-68 Python runtime/database/HTTP/security/UI contract tests: PASS
+70 Python runtime/database/HTTP/security/UI contract tests: PASS
  7 pure browser-state tests:                              PASS
 30 Chromium full-stack Studio checks:                    PASS
 30 public HTTPS + real GPT-5.6 Chromium checks:          PASS
+ 7 maximum-graph Chromium load checks:                   PASS
  0 npm audit vulnerabilities:                            PASS
 ```
+
+The maximum-graph gate measures the product's declared 64-node limit, rather
+than a reduced sample. Twenty deterministic Runs produced 64 completed Steps
+and 197 valid hash-linked events each. On the release host, Run p95 was
+241.096 ms against a 2,000 ms limit and loaded-workspace snapshot p95 was
+111.806 ms against a 250 ms limit. Chromium rendered 64 nodes and 63 edges in
+198.185 ms and completed Fit View in 131.81 ms, with zero document overflow,
+failed requests, or page errors.
 
 The public real-model proof executed the official Python SDK with a per-operation
 browser key, produced a strict typed analysis, crossed a deterministic condition,
@@ -55,7 +65,7 @@ field returned by GPT-5.6.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/verify.py
+.venv/bin/python scripts/verify.py --performance
 npm ci
 node scripts/browser_verify.mjs
 ```

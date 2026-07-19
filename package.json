@@ -6,7 +6,8 @@
     "build": "vite build",
     "dev": "vite --host 127.0.0.1",
     "test:state": "node --test tests/core.test.mjs",
-    "test:browser": "node scripts/browser_verify.mjs"
+    "test:browser": "node scripts/browser_verify.mjs",
+    "test:performance:editor": "node scripts/editor_load_verify.mjs"
   },
   "dependencies": {
     "@xyflow/react": "12.8.5",

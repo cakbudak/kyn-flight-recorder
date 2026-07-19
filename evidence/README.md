@@ -55,6 +55,20 @@ Screenshots:
 - [`live/07-maintenance-proof.png`](live/07-maintenance-proof.png)
 - [`live/08-mobile-workbench.png`](live/08-mobile-workbench.png)
 
+## Maximum-graph release-host proof
+
+[`performance-report.json`](performance-report.json) records twenty complete
+deterministic Runs through all 64 supported nodes plus thirty snapshots of the
+accumulated workspace. Every Run owns 64 completed Steps, 197 valid hash-linked
+events, and zero provider calls. Run p95 is 241.096 ms and snapshot p95 is
+111.806 ms.
+
+[`editor-performance-report.json`](editor-performance-report.json) records the
+same 64-node/63-edge graph in Chromium: 198.185 ms to render, 131.81 ms for Fit
+View, 128 independently addressable source handles, zero overflow, and no page
+or request errors. The corresponding full-workbench image is
+[`editor-performance-64-node.png`](editor-performance-64-node.png).
+
 ## Reproduce
 
 ```bash
@@ -65,6 +79,12 @@ npm ci
 node scripts/browser_verify.mjs \
   --report evidence/browser/agent-studio-report.json \
   --artifacts evidence/browser
+
+.venv/bin/python scripts/performance_verify.py \
+  --report evidence/performance-report.json
+node scripts/editor_load_verify.mjs \
+  --report evidence/editor-performance-report.json \
+  --screenshot evidence/editor-performance-64-node.png
 
 # Configured external service; the key is entered through the browser UI:
 OPENAI_API_KEY=... node scripts/browser_verify.mjs \

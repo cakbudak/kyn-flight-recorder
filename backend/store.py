@@ -40,7 +40,7 @@ def _row_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
 
 
 class Store:
-    """Connection-per-operation store with explicit, short write transactions."""
+    """SQLite store with explicit short writes and bounded connection reuse."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).resolve()
@@ -190,32 +190,77 @@ class Store:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=5000")
+        # `synchronous` is connection-local. Setting NORMAL only during
+        # initialization leaves every operation connection at SQLite's FULL
+        # default and turns each short WAL transaction into an avoidable fsync.
+        connection.execute("PRAGMA synchronous=NORMAL")
         return connection
 
     @contextmanager
     def read(self) -> Iterator[sqlite3.Connection]:
-        connection = self._connect()
+        connection = getattr(self._transaction_state, "operation_connection", None)
+        owns_connection = connection is None
+        if owns_connection:
+            connection = self._connect()
         try:
             yield connection
         finally:
-            connection.close()
+            if owns_connection:
+                connection.close()
 
     @contextmanager
     def write(self) -> Iterator[sqlite3.Connection]:
         if self.in_write_transaction():
             raise RuntimeError("nested SQLite write transactions are forbidden")
-        connection = self._connect()
-        connection.execute("BEGIN IMMEDIATE")
-        self._transaction_state.write_depth = 1
+        connection = getattr(self._transaction_state, "operation_connection", None)
+        owns_connection = connection is None
+        if owns_connection:
+            connection = self._connect()
         try:
-            yield connection
-        except BaseException:
-            connection.rollback()
-            raise
-        else:
-            connection.commit()
+            connection.execute("BEGIN IMMEDIATE")
+            self._transaction_state.write_depth = 1
+            try:
+                yield connection
+            except BaseException:
+                connection.rollback()
+                raise
+            else:
+                connection.commit()
+            finally:
+                self._transaction_state.write_depth = 0
         finally:
+            if owns_connection:
+                connection.close()
+
+    @contextmanager
+    def operation_session(self) -> Iterator[None]:
+        """Reuse one idle connection across a bounded synchronous operation.
+
+        Transactions remain short and explicit; only connection setup/teardown is
+        amortized. The cache is thread-local, so concurrent workers never share a
+        sqlite connection.
+        """
+
+        existing = getattr(self._transaction_state, "operation_connection", None)
+        if existing is not None:
+            self._transaction_state.operation_depth += 1
+            try:
+                yield
+            finally:
+                self._transaction_state.operation_depth -= 1
+            return
+
+        connection = self._connect()
+        self._transaction_state.operation_connection = connection
+        self._transaction_state.operation_depth = 1
+        try:
+            yield
+        finally:
+            if connection.in_transaction:
+                connection.rollback()
             self._transaction_state.write_depth = 0
+            del self._transaction_state.operation_connection
+            del self._transaction_state.operation_depth
             connection.close()
 
     def in_write_transaction(self) -> bool:

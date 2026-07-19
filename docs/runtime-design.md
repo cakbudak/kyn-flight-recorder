@@ -114,6 +114,13 @@ At most two Studio workers execute concurrently per process. The HTTP command
 returns the prepared Run, while the operations console polls the authoritative
 projection until it reaches a pause or terminal state.
 
+A synchronous Run drive owns one thread-local SQLite operation connection.
+Individual mutations still use separate short `BEGIN IMMEDIATE` transactions
+and commit before the next executor step; the connection is merely kept idle
+between them to amortize setup. It is never shared across workers, and no
+transaction remains open during OpenAI or other provider I/O. Every operational
+connection explicitly applies WAL's `synchronous=NORMAL` policy.
+
 ## 6. Evidence ledger
 
 Every event has unique `(run_id, sequence)`. `event_hash` is SHA-256 over the
@@ -173,3 +180,8 @@ Release evidence additionally runs the same browser journey through public HTTPS
 with a real visitor credential. Sanitized reports may retain IDs, model, usage,
 hashes, event types, and outcomes; they must never contain keys, cookies, raw
 provider requests, or hidden reasoning.
+
+The release-host load gate separately publishes the maximum supported 64-node
+graph, executes it twenty times, measures thirty accumulated workspace
+snapshots, and loads the same graph in Chromium. This guards both authoritative
+runtime throughput and editor interactivity at the declared product boundary.

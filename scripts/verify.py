@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="also execute the complete deterministic Chromium journey",
     )
+    parser.add_argument(
+        "--performance",
+        action="store_true",
+        help="also execute the 64-node runtime and Chromium load gates",
+    )
     return parser.parse_args()
 
 
@@ -53,14 +58,18 @@ def main() -> int:
         return 2
     run("node-state", [node, "--test", "tests/core.test.mjs"])
 
-    if args.browser:
+    if args.browser or args.performance:
         chromium = shutil.which("chromium") or shutil.which("chromium-browser")
         if chromium is None:
-            print("\n[browser] Chromium was requested but not found", file=sys.stderr)
+            print("\n[browser] requested verification needs Chromium", file=sys.stderr)
             return 2
+    if args.browser:
         run("chromium", [node, "scripts/browser_verify.mjs"])
+    if args.performance:
+        run("runtime-load", [sys.executable, "scripts/performance_verify.py"])
+        run("editor-load", [node, "scripts/editor_load_verify.mjs"])
 
-    print("\nPASS: runtime, database, HTTP, security, server, and UI contracts are green.")
+    print("\nPASS: runtime, database, HTTP, security, server, UI, and requested load contracts are green.")
     return 0
 
 

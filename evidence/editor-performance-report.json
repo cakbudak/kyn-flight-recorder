@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-07-19T19:04:46.983Z",
+  "surface": "Kyn.ist Agent Studio maximum-graph Chromium load gate",
+  "runtime": {
+    "chromium": "/usr/bin/chromium",
+    "viewport": "1440x1000",
+    "provider_calls": 0
+  },
+  "workload": {
+    "nodes": 64,
+    "edges": 63,
+    "source_handles": 128
+  },
+  "measurements": {
+    "graph_render_ms": 198.185,
+    "fit_view_control_ms": 131.81,
+    "document_overflow_px": 0
+  },
+  "thresholds": {
+    "graph_render_below_ms": 2000,
+    "fit_view_control_below_ms": 250
+  },
+  "diagnostics": {
+    "page_errors": [],
+    "failed_requests": [],
+    "server_tail": [
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /app/assets/studio-CYxS16vB.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /app/assets/studio-nFJ5q2j8.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "19/Jul/2026 21:04:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -"
+    ]
+  },
+  "checks": {
+    "all_nodes_rendered": true,
+    "all_edges_rendered": true,
+    "independent_output_handles": true,
+    "graph_render_within_limit": true,
+    "fit_view_within_limit": true,
+    "no_document_overflow": true,
+    "no_browser_or_request_errors": true
+  },
+  "summary": {
+    "checks": 7,
+    "passed": 7,
+    "failed": 0
+  }
+}

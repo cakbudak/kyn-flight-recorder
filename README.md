@@ -243,6 +243,22 @@ node scripts/browser_verify.mjs \
   --artifacts evidence/browser
 ```
 
+Run the maximum supported 64-node release-host and Chromium load gates:
+
+```bash
+.venv/bin/python scripts/verify.py --performance
+```
+
+The committed load proof executes twenty complete 64-node Runs (197
+hash-linked events each), snapshots the accumulated workspace thirty times,
+renders the same 64-node/63-edge graph in Chromium, and exercises Fit View. On
+the release host, complete deterministic Runs measured 241.096 ms p95,
+snapshots 111.806 ms p95, initial graph rendering 198.185 ms, and Fit View
+131.81 ms—each below its declared threshold and without model calls, overflow,
+failed requests, or page errors. See
+[`evidence/performance-report.json`](evidence/performance-report.json) and
+[`evidence/editor-performance-report.json`](evidence/editor-performance-report.json).
+
 The browser verifier exercises the real same-origin HTTP and SQLite stack through
 workspace creation; Action, Prompt, Skill, and Agent authoring; multi-output Flow
 composition; deterministic execution; canvas successor publication; reusable

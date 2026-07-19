@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-07-19T19:04:43Z",
+  "host": {
+    "platform": "Linux-6.12.74+deb13+1-amd64-x86_64-with-glibc2.41",
+    "python": "3.13.5"
+  },
+  "measurements": {
+    "complete_64_node_run": {
+      "maximum_ms": 243.198,
+      "median_ms": 196.551,
+      "minimum_ms": 162.302,
+      "p95_ms": 241.096
+    },
+    "flow_publication_ms": 85.872,
+    "workspace_snapshot_after_load": {
+      "maximum_ms": 132.936,
+      "median_ms": 88.819,
+      "minimum_ms": 72.433,
+      "p95_ms": 111.806
+    }
+  },
+  "summary": {
+    "run_gate": "pass",
+    "snapshot_gate": "pass"
+  },
+  "surface": "Kyn.ist Agent Studio maximum-graph release-host load gate",
+  "thresholds": {
+    "run_p95_below_ms": 2000.0,
+    "snapshot_p95_below_ms": 250.0
+  },
+  "workload": {
+    "database_bytes": 5439488,
+    "events_in_last_run": 197,
+    "measured_runs": 20,
+    "measured_snapshots": 30,
+    "nodes_per_flow": 64,
+    "persisted_runs_in_snapshot": 20,
+    "provider_calls": 0,
+    "routes_per_flow": 63
+  }
+}

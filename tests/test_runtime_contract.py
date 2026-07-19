@@ -430,6 +430,24 @@ class DatabaseInvariantTest(unittest.TestCase):
             with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
                 connection.execute("DELETE FROM events WHERE run_id = ?", (run["id"],))
 
+    def test_every_operation_connection_enforces_the_declared_wal_policy(self) -> None:
+        with self.store.read() as connection:
+            journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+            synchronous = connection.execute("PRAGMA synchronous").fetchone()[0]
+        self.assertEqual(str(journal_mode).lower(), "wal")
+        self.assertEqual(synchronous, 1)
+
+    def test_bounded_operation_session_reuses_one_thread_local_connection(self) -> None:
+        with self.store.operation_session():
+            with self.store.read() as first:
+                first_id = id(first)
+            with self.store.write() as second:
+                second.execute("SELECT 1")
+                second_id = id(second)
+            with self.store.read() as third:
+                third_id = id(third)
+        self.assertEqual({first_id, second_id, third_id}, {first_id})
+
     def test_terminal_status_is_absorbing_in_the_database(self) -> None:
         run = self.plane.run_flow(self.workspace_id, self.flow_id)
         with closing(sqlite3.connect(self.database_path)) as connection:
