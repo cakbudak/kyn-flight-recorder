@@ -115,6 +115,145 @@ class RuntimeHttpTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["data"]["workspace"]["id"], bootstrap["workspace_id"])
 
+    def test_http_agent_studio_defines_flows_runs_approvals_and_reruns(self) -> None:
+        cookie, bootstrap = self.create_workspace()
+        studio = bootstrap["snapshot"]["studio"]
+
+        status, _headers, payload = self.request(
+            "GET", "/api/v1/studio", cookie=cookie
+        )
+        self.assertEqual(status, 200)
+        self.assertGreaterEqual(len(payload["data"]["actions"]), 5)
+
+        status, _headers, payload = self.request(
+            "POST",
+            "/api/v1/studio/actions",
+            body={
+                "name": "HTTP greeting",
+                "slug": "http-greeting",
+                "description": "A user-defined deterministic Action created over HTTP.",
+                "kind": "template",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                    "additionalProperties": False,
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                    "additionalProperties": False,
+                },
+                "config": {"template": "Hello {{name}}"},
+                "agent_version_id": None,
+            },
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 201)
+        action = payload["data"]
+
+        status, _headers, payload = self.request(
+            "POST",
+            "/api/v1/studio/flows",
+            body={
+                "name": "HTTP greeting flow",
+                "slug": "http-greeting-flow",
+                "description": "A configurable one-Action Flow created over HTTP.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                    "additionalProperties": False,
+                },
+                "start_node_id": "greet",
+                "nodes": [
+                    {
+                        "id": "greet",
+                        "type": "action",
+                        "version_id": action["version"]["id"],
+                        "input_mapping": {
+                            "name": {"source": "input", "path": "name"}
+                        },
+                    }
+                ],
+                "routes": [],
+            },
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 201)
+        deterministic_flow = payload["data"]
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/flows/{deterministic_flow['id']}/runs",
+            body={"input": {"name": "Ada"}, "idempotency_key": "http-greeting-1"},
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(payload["data"]["status"], "completed")
+        self.assertEqual(payload["data"]["output"], {"text": "Hello Ada"})
+
+        seeded_flow = studio["flows"][0]
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/flows/{seeded_flow['id']}/runs",
+            body={
+                "input": {
+                    "brief": (
+                        "Run the configurable Agent Studio flow through a real human "
+                        "approval and bounded sandbox effect."
+                    )
+                },
+                "idempotency_key": "http-agent-flow-1",
+            },
+            cookie=cookie,
+            origin=self.base_url,
+            api_key="test-browser-owned-key-for-studio-http",
+        )
+        self.assertEqual(status, 201)
+        waiting = payload["data"]
+        self.assertEqual(waiting["status"], "waiting_approval")
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/approvals/{waiting['pending_approval']['id']}/decisions",
+            body={
+                "approved": True,
+                "actor": "http-reviewer",
+                "reason": "The pinned plan and bounded sandbox effect are acceptable.",
+            },
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        completed = payload["data"]
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(len(completed["effects"]), 1)
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/runs/{completed['id']}/reruns",
+            body={
+                "input": completed["input"],
+                "idempotency_key": "http-agent-rerun-1",
+            },
+            cookie=cookie,
+            origin=self.base_url,
+            api_key="test-browser-owned-key-for-studio-http",
+        )
+        self.assertEqual(status, 201)
+        rerun = payload["data"]
+        self.assertEqual(rerun["status"], "waiting_approval")
+        self.assertEqual(rerun["parent_run_id"], completed["id"])
+        self.assertEqual(rerun["flow_version_id"], completed["flow_version_id"])
+
+        database_bytes = Path(self.temporary.name, "http.sqlite3").read_bytes()
+        self.assertNotIn(b"test-browser-owned-key-for-studio-http", database_bytes)
+
     def test_http_closed_loop_uses_version_fenced_commands(self) -> None:
         cookie, bootstrap = self.create_workspace()
         flow_id = bootstrap["snapshot"]["flows"][0]["id"]
@@ -176,6 +315,7 @@ class RuntimeHttpTest(unittest.TestCase):
             body={},
             cookie=cookie,
             origin=self.base_url,
+            api_key="test-browser-owned-key-for-http-contract",
         )
         self.assertEqual(status, 201)
         rerun = payload["data"]

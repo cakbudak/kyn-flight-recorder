@@ -1,21 +1,21 @@
-"""Minimal server-side OpenAI Responses transport with no runtime dependency."""
+"""Official OpenAI Responses transport for browser-owned, per-operation keys."""
 
 from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any, Mapping
+
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 from .contracts import ProviderFailure
 
 
-RESPONSES_URL = "https://api.openai.com/v1/responses"
+MAX_REQUEST_BYTES = 256 * 1024
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 ALLOWED_ENVIRONMENT_KEYS = frozenset(
     {
-        "OPENAI_API_KEY",
         "OPENAI_MODEL",
         "KYN_DATABASE_PATH",
         "KYN_PUBLIC_MODEL_CALLS_PER_HOUR",
@@ -25,7 +25,7 @@ ALLOWED_ENVIRONMENT_KEYS = frozenset(
 
 
 def load_env_file(path: str | Path) -> None:
-    """Load only runtime allow-listed keys without echoing values."""
+    """Load non-secret runtime settings; operator OpenAI keys are ignored."""
 
     env_path = Path(path)
     if not env_path.is_file():
@@ -47,77 +47,96 @@ def load_env_file(path: str | Path) -> None:
 
 
 class ResponsesClient:
+    """Small adapter that keeps the official SDK as the sole network transport."""
+
     def __init__(
         self,
         api_key: str,
         *,
         timeout_seconds: float = 45.0,
-        url: str = RESPONSES_URL,
+        sdk_client: Any | None = None,
     ) -> None:
-        if not isinstance(api_key, str) or not api_key.strip():
-            raise ProviderFailure("OPENAI_API_KEY is not configured")
-        if url != RESPONSES_URL:
-            raise ProviderFailure("OpenAI endpoint override is not permitted")
-        self._api_key = api_key.strip()
-        self.timeout_seconds = timeout_seconds
-        self.url = url
+        normalized_key = api_key.strip() if isinstance(api_key, str) else ""
+        if len(normalized_key) < 20 or any(character.isspace() for character in normalized_key):
+            raise ProviderFailure("a valid browser-owned OpenAI API key is required")
+        if not isinstance(timeout_seconds, (int, float)) or not 1 <= timeout_seconds <= 180:
+            raise ProviderFailure("OpenAI timeout is outside the supported range")
+        # Do not retain the key separately. The SDK client is ephemeral for the bounded
+        # model action and its repr does not expose credentials.
+        self._client = sdk_client or OpenAI(
+            api_key=normalized_key,
+            timeout=float(timeout_seconds),
+            max_retries=1,
+        )
+        self.timeout_seconds = float(timeout_seconds)
 
     @property
     def configured(self) -> bool:
-        return bool(self._api_key)
+        return True
 
     def create(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        if len(body) > 256 * 1024:
+        material = dict(payload)
+        encoded = json.dumps(
+            material, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        if len(encoded) > MAX_REQUEST_BYTES:
             raise ProviderFailure("OpenAI request exceeds the runtime limit")
-        request = urllib.request.Request(
-            self.url,
-            data=body,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "kyn-flight-recorder-buildweek/2",
-            },
-        )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                raw = response.read(2 * 1024 * 1024 + 1)
-        except urllib.error.HTTPError as error:
-            provider_code = "http_error"
-            try:
-                error_body = error.read(64 * 1024)
-                parsed = json.loads(error_body)
-                candidate = parsed.get("error", {}).get("type")
+            response = self._client.responses.create(**material)
+        except APIStatusError as error:
+            provider_code = "api_status_error"
+            body = getattr(error, "body", None)
+            if isinstance(body, dict):
+                candidate = body.get("type") or body.get("code")
                 if isinstance(candidate, str) and candidate:
                     provider_code = candidate[:80]
-            except (OSError, ValueError, TypeError, AttributeError):
-                pass
             raise ProviderFailure(
-                f"OpenAI request failed with status {error.code}",
-                detail={"provider_code": provider_code, "status": error.code},
+                f"OpenAI request failed with status {error.status_code}",
+                detail={
+                    "provider_code": provider_code,
+                    "status": int(error.status_code),
+                    "request_id": getattr(error, "request_id", None),
+                },
             ) from None
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
+        except (APITimeoutError, APIConnectionError) as error:
             raise ProviderFailure(
                 "OpenAI request could not be completed",
                 detail={"provider_code": type(error).__name__},
             ) from None
-        if len(raw) > 2 * 1024 * 1024:
-            raise ProviderFailure("OpenAI response exceeds the runtime limit")
-        try:
-            result = json.loads(raw)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise ProviderFailure("OpenAI returned invalid JSON") from None
+        except Exception as error:
+            # Test seams may raise plain transport errors. Do not leak their message,
+            # because third-party exception text can contain request material.
+            raise ProviderFailure(
+                "OpenAI SDK transport failed",
+                detail={"provider_code": type(error).__name__},
+            ) from None
+
+        if isinstance(response, dict):
+            result = dict(response)
+        elif hasattr(response, "model_dump"):
+            result = response.model_dump(mode="json")
+        elif hasattr(response, "to_dict"):
+            result = response.to_dict()
+        else:
+            raise ProviderFailure("OpenAI returned an invalid response envelope")
         if not isinstance(result, dict):
             raise ProviderFailure("OpenAI returned an invalid response envelope")
+        request_id = getattr(response, "_request_id", None)
+        if isinstance(request_id, str) and request_id:
+            result["_request_id"] = request_id[:128]
+        response_size = len(
+            json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
+        if response_size > MAX_RESPONSE_BYTES:
+            raise ProviderFailure("OpenAI response exceeds the runtime limit")
         return result
 
 
 class UnavailableResponsesClient:
-    """Fail-loud transport used only when the server starts without a configured key."""
+    """Fail-loud default used until a browser supplies its key for a model action."""
 
     configured = False
 
     def create(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         del payload
-        raise ProviderFailure("OPENAI_API_KEY is not configured")
+        raise ProviderFailure("a browser-owned OpenAI API key is required for this action")

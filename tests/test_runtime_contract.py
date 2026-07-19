@@ -38,6 +38,15 @@ class ScriptedResponsesClient:
         metadata = payload.get("metadata")
         if not isinstance(metadata, dict):
             raise AssertionError("runtime did not identify the pinned agent role")
+        if metadata.get("kyn_surface") == "agent-studio":
+            result = {
+                "summary": "The launch brief is concrete, bounded, and ready for review.",
+                "score": 0.91,
+                "risks": ["A human must authorize the sandbox effect."],
+            }
+            return self._message(
+                json.dumps(result, separators=(",", ":")), "studio"
+            )
         role = metadata.get("kyn_role")
 
         if role == "executor":

@@ -235,7 +235,11 @@ class StaticContractTests(unittest.TestCase):
         self.assertNotIn('os.environ.get("OPENAI_API_KEY"', server)
         self.assertNotIn('"OPENAI_API_KEY",', transport)
         self.assertNotIn("urllib", transport)
-        self.assertRegex(transport, r"^from openai import ", msg="official SDK must own transport")
+        self.assertRegex(
+            transport,
+            r"(?m)^from openai import ",
+            msg="official SDK must own transport",
+        )
         self.assertRegex(requirements, r"(?m)^openai==[0-9]+\.[0-9]+\.[0-9]+$")
         self.assertNotIn("OPENAI_API_KEY", env_example)
 

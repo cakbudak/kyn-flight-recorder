@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the standalone Kyn.ist closed-loop runtime with the Python standard library."""
+"""Serve the standalone Kyn.ist Agent Studio."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from backend.store import Store
 
 ROOT = Path(__file__).resolve().parent
 APP_ENTRY = ROOT / "app" / "index.html"
-DEFAULT_DATABASE = ROOT / "var" / "kyn-flight-recorder.sqlite3"
+DEFAULT_DATABASE = ROOT / "var" / "kyn-agent-studio.sqlite3"
 HOST_RE = re.compile(r"^[A-Za-z0-9.:-]{1,255}$")
 
 SECURITY_HEADERS = {
@@ -56,7 +56,7 @@ SECURITY_HEADERS = {
 class DemoRequestHandler(SimpleHTTPRequestHandler):
     """Static application plus a thin same-origin JSON API adapter."""
 
-    server_version = "KynFlightRecorder/2.0"
+    server_version = "KynAgentStudio/3.0"
 
     @property
     def runtime_server(self) -> "DemoServer":
@@ -80,7 +80,8 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
                 "status": "ok",
                 "mode": "closed-loop-agent-runtime",
                 "sqlite": "ready" if self.runtime_server.database_ready else "unavailable",
-                "openai_configured": self.runtime_server.model_configured,
+                "credential_mode": "browser-session-byok",
+                "openai_transport": "official-python-sdk",
             },
             separators=(",", ":"),
         ).encode("utf-8")
@@ -115,7 +116,7 @@ class DemoRequestHandler(SimpleHTTPRequestHandler):
         try:
             candidate.relative_to(served_root)
         except ValueError:
-            return str(served_root / ".kyn-flight-recorder-path-denied")
+            return str(served_root / ".kyn-agent-studio-path-denied")
         return str(candidate)
 
     def _api_request(self, method: str, path: str) -> bool:
@@ -285,14 +286,14 @@ class DemoServer(ThreadingHTTPServer):
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Serve the Kyn.ist closed-loop agent runtime."
+        description="Serve Kyn.ist Agent Studio."
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind address.")
     parser.add_argument("--port", default=4173, type=int, help="TCP port, or 0 for ephemeral.")
     parser.add_argument(
         "--database",
         default=None,
-        help="SQLite path (default: KYN_DATABASE_PATH or var/kyn-flight-recorder.sqlite3).",
+        help="SQLite path (default: KYN_DATABASE_PATH or var/kyn-agent-studio.sqlite3).",
     )
     parser.add_argument("--model", default=None, help="OpenAI model (default: OPENAI_MODEL or gpt-5.6).")
     return parser.parse_args(argv)
@@ -315,9 +316,13 @@ def main(argv: list[str] | None = None) -> int:
     store = Store(database_path)
     try:
         store.initialize()
-        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-        client = ResponsesClient(api_key) if api_key else UnavailableResponsesClient()
-        control_plane = ControlPlane(store, client, default_model=model)
+        client = UnavailableResponsesClient()
+        control_plane = ControlPlane(
+            store,
+            client,
+            default_model=model,
+            client_factory=lambda browser_key: ResponsesClient(browser_key),
+        )
     except (OSError, ContractViolation, ProviderFailure) as error:
         print(f"error: runtime initialization failed: {error}", file=sys.stderr)
         return 1
@@ -328,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
             (args.host, args.port),
             handler,
             control_plane=control_plane,
-            model_configured=bool(api_key),
+            model_configured=False,
             workspace_model_call_limit=int(os.environ.get("KYN_WORKSPACE_MODEL_CALL_LIMIT", "12")),
         )
     except (OSError, ValueError) as error:
@@ -337,9 +342,9 @@ def main(argv: list[str] | None = None) -> int:
 
     bound_host, bound_port = server.server_address[:2]
     display_host = "127.0.0.1" if bound_host in {"0.0.0.0", "::"} else bound_host
-    print(f"Kyn.ist Flight Recorder: http://{display_host}:{bound_port}/app/", flush=True)
+    print(f"Kyn.ist Agent Studio: http://{display_host}:{bound_port}/app/", flush=True)
     print(
-        f"SQLite closed loop · OpenAI Responses {'ready' if api_key else 'not configured'} · Ctrl-C to stop",
+        "SQLite runtime · browser-session BYOK · official OpenAI Responses SDK · Ctrl-C to stop",
         flush=True,
     )
     try:

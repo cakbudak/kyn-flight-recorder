@@ -1,0 +1,1635 @@
+"""Flat SQLite repository for the configurable Kyn.ist Agent Studio surface."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from typing import Any, Mapping, Sequence
+
+from .contracts import (
+    GENESIS_HASH,
+    Conflict,
+    ContractViolation,
+    NotFound,
+    canonical_json,
+    compute_event_hash,
+    fingerprint,
+    new_id,
+    redact,
+    utc_now,
+)
+from .store import Store
+
+
+TERMINAL_STATUSES = frozenset({"completed", "blocked", "failed", "cancelled"})
+
+
+def _decode(value: str | None) -> Any:
+    return json.loads(value) if value is not None else None
+
+
+class StudioStore:
+    """Product-facing persistence seam; no private Kyn ontology is represented here."""
+
+    def __init__(self, store: Store) -> None:
+        self.store = store
+
+    # -- Actions -------------------------------------------------------
+
+    def create_action(
+        self,
+        workspace_id: str,
+        *,
+        name: str,
+        slug: str,
+        description: str,
+        kind: str,
+        input_schema: Mapping[str, Any],
+        output_schema: Mapping[str, Any],
+        config: Mapping[str, Any],
+        agent_version_id: str | None,
+        effect_level: str,
+        created_by: str = "user",
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            action_id = self._insert_action(
+                connection,
+                workspace_id,
+                name=name,
+                slug=slug,
+                description=description,
+                kind=kind,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                config=config,
+                agent_version_id=agent_version_id,
+                effect_level=effect_level,
+                created_by=created_by,
+            )
+        return self.get_action(workspace_id, action_id)
+
+    def _insert_action(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        *,
+        name: str,
+        slug: str,
+        description: str,
+        kind: str,
+        input_schema: Mapping[str, Any],
+        output_schema: Mapping[str, Any],
+        config: Mapping[str, Any],
+        agent_version_id: str | None,
+        effect_level: str,
+        created_by: str,
+    ) -> str:
+        self.store._require_workspace(connection, workspace_id)
+        agent_material: dict[str, str] | None = None
+        if agent_version_id is not None:
+            row = connection.execute(
+                "SELECT id, fingerprint FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                (agent_version_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise ContractViolation("Action Agent version does not belong to the workspace")
+            agent_material = {"id": row["id"], "fingerprint": row["fingerprint"]}
+        action_id = new_id("act")
+        version_id = new_id("actv")
+        now = utc_now()
+        material = {
+            "kind": kind,
+            "input_schema": dict(input_schema),
+            "output_schema": dict(output_schema),
+            "config": dict(config),
+            "agent": agent_material,
+            "effect_level": effect_level,
+        }
+        connection.execute(
+            """
+            INSERT INTO actions
+                (id, workspace_id, slug, name, description, current_version, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (action_id, workspace_id, slug, name, description, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO action_versions
+                (id, workspace_id, action_id, version, kind, input_schema_json,
+                 output_schema_json, config_json, agent_version_id, effect_level,
+                 fingerprint, created_by, created_at)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                version_id,
+                workspace_id,
+                action_id,
+                kind,
+                canonical_json(dict(input_schema)),
+                canonical_json(dict(output_schema)),
+                canonical_json(dict(config)),
+                agent_version_id,
+                effect_level,
+                fingerprint(material),
+                created_by,
+                now,
+            ),
+        )
+        return action_id
+
+    @staticmethod
+    def _action_version_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "version": row["version"],
+            "kind": row["kind"],
+            "input_schema": _decode(row["input_schema_json"]),
+            "output_schema": _decode(row["output_schema_json"]),
+            "config": _decode(row["config_json"]),
+            "agent_version_id": row["agent_version_id"],
+            "effect_level": row["effect_level"],
+            "fingerprint": row["fingerprint"],
+            "created_by": row["created_by"],
+            "created_at": row["created_at"],
+        }
+
+    def _action_projection(
+        self, connection: sqlite3.Connection, row: sqlite3.Row
+    ) -> dict[str, Any]:
+        version = connection.execute(
+            "SELECT * FROM action_versions WHERE action_id = ? AND version = ?",
+            (row["id"], row["current_version"]),
+        ).fetchone()
+        if version is None:
+            raise RuntimeError("Action current version is missing")
+        return {
+            "id": row["id"],
+            "slug": row["slug"],
+            "name": row["name"],
+            "description": row["description"],
+            "current_version": row["current_version"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "version": self._action_version_projection(version),
+        }
+
+    def get_action(self, workspace_id: str, action_id: str) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM actions WHERE id = ? AND workspace_id = ?",
+                (action_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Action was not found")
+            return self._action_projection(connection, row)
+
+    def get_action_version(
+        self, workspace_id: str, version_id: str
+    ) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM action_versions WHERE id = ? AND workspace_id = ?",
+                (version_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Action version was not found")
+            action = connection.execute(
+                "SELECT name, slug, description FROM actions WHERE id = ?",
+                (row["action_id"],),
+            ).fetchone()
+            if action is None:
+                raise RuntimeError("Action resource is missing")
+            return {
+                **self._action_version_projection(row),
+                "action_id": row["action_id"],
+                "name": action["name"],
+                "slug": action["slug"],
+                "description": action["description"],
+            }
+
+    def get_agent_runtime(
+        self, workspace_id: str, version_id: str
+    ) -> dict[str, Any]:
+        with self.store.read() as connection:
+            owned = connection.execute(
+                "SELECT id FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                (version_id, workspace_id),
+            ).fetchone()
+            if owned is None:
+                raise NotFound("Agent version was not found")
+            return self.store._agent_runtime_projection(connection, version_id)
+
+    # -- Flows ---------------------------------------------------------
+
+    def create_flow(
+        self,
+        workspace_id: str,
+        *,
+        name: str,
+        slug: str,
+        description: str,
+        input_schema: Mapping[str, Any],
+        start_node_id: str,
+        nodes: Sequence[Mapping[str, Any]],
+        routes: Sequence[Mapping[str, Any]],
+        created_by: str = "user",
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            flow_id = self._insert_flow(
+                connection,
+                workspace_id,
+                name=name,
+                slug=slug,
+                description=description,
+                input_schema=input_schema,
+                start_node_id=start_node_id,
+                nodes=nodes,
+                routes=routes,
+                created_by=created_by,
+            )
+        return self.get_flow(workspace_id, flow_id)
+
+    def _insert_flow(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        *,
+        name: str,
+        slug: str,
+        description: str,
+        input_schema: Mapping[str, Any],
+        start_node_id: str,
+        nodes: Sequence[Mapping[str, Any]],
+        routes: Sequence[Mapping[str, Any]],
+        created_by: str,
+    ) -> str:
+        self.store._require_workspace(connection, workspace_id)
+        pinned: list[dict[str, Any]] = []
+        requires_model = False
+        for node in nodes:
+            version_id = str(node["version_id"])
+            if node["type"] == "action":
+                row = connection.execute(
+                    "SELECT id, kind, fingerprint FROM action_versions WHERE id = ? AND workspace_id = ?",
+                    (version_id, workspace_id),
+                ).fetchone()
+                if row is None:
+                    raise ContractViolation("Flow Action version does not belong to the workspace")
+                pinned.append(
+                    {
+                        "node_id": node["id"],
+                        "type": "action",
+                        "version_id": row["id"],
+                        "fingerprint": row["fingerprint"],
+                    }
+                )
+                requires_model = requires_model or row["kind"] == "ai"
+            else:
+                row = connection.execute(
+                    "SELECT id, fingerprint FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                    (version_id, workspace_id),
+                ).fetchone()
+                if row is None:
+                    raise ContractViolation("Flow Agent version does not belong to the workspace")
+                pinned.append(
+                    {
+                        "node_id": node["id"],
+                        "type": "agent",
+                        "version_id": row["id"],
+                        "fingerprint": row["fingerprint"],
+                    }
+                )
+                requires_model = True
+        material = {
+            "input_schema": dict(input_schema),
+            "start_node_id": start_node_id,
+            "nodes": [dict(node) for node in nodes],
+            "routes": [dict(route) for route in routes],
+            "pinned_resources": pinned,
+        }
+        flow_id = new_id("aflow")
+        version_id = new_id("aflowv")
+        now = utc_now()
+        connection.execute(
+            """
+            INSERT INTO automation_flows
+                (id, workspace_id, slug, name, description, revision, current_version,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?)
+            """,
+            (flow_id, workspace_id, slug, name, description, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO automation_flow_versions
+                (id, workspace_id, flow_id, version, input_schema_json, start_node_id,
+                 nodes_json, routes_json, pinned_resources_json, requires_model,
+                 fingerprint, parent_version_id, created_by, created_at)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            """,
+            (
+                version_id,
+                workspace_id,
+                flow_id,
+                canonical_json(dict(input_schema)),
+                start_node_id,
+                canonical_json([dict(node) for node in nodes]),
+                canonical_json([dict(route) for route in routes]),
+                canonical_json(pinned),
+                int(requires_model),
+                fingerprint(material),
+                created_by,
+                now,
+            ),
+        )
+        return flow_id
+
+    @staticmethod
+    def _flow_version_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "version": row["version"],
+            "input_schema": _decode(row["input_schema_json"]),
+            "start_node_id": row["start_node_id"],
+            "nodes": _decode(row["nodes_json"]),
+            "routes": _decode(row["routes_json"]),
+            "pinned_resources": _decode(row["pinned_resources_json"]),
+            "requires_model": bool(row["requires_model"]),
+            "fingerprint": row["fingerprint"],
+            "parent_version_id": row["parent_version_id"],
+            "created_by": row["created_by"],
+            "created_at": row["created_at"],
+        }
+
+    def _flow_projection(
+        self, connection: sqlite3.Connection, row: sqlite3.Row
+    ) -> dict[str, Any]:
+        version = connection.execute(
+            "SELECT * FROM automation_flow_versions WHERE flow_id = ? AND version = ?",
+            (row["id"], row["current_version"]),
+        ).fetchone()
+        if version is None:
+            raise RuntimeError("Automation Flow current version is missing")
+        return {
+            "id": row["id"],
+            "slug": row["slug"],
+            "name": row["name"],
+            "description": row["description"],
+            "revision": row["revision"],
+            "current_version": row["current_version"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "version": self._flow_version_projection(version),
+        }
+
+    def get_flow(self, workspace_id: str, flow_id: str) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+                (flow_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation Flow was not found")
+            return self._flow_projection(connection, row)
+
+    def flow_context(
+        self, workspace_id: str, flow_id: str, version: int | None = None
+    ) -> dict[str, Any]:
+        with self.store.read() as connection:
+            flow = connection.execute(
+                "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+                (flow_id, workspace_id),
+            ).fetchone()
+            if flow is None:
+                raise NotFound("Automation Flow was not found")
+            selected = int(version or flow["current_version"])
+            flow_version = connection.execute(
+                "SELECT * FROM automation_flow_versions WHERE flow_id = ? AND version = ?",
+                (flow_id, selected),
+            ).fetchone()
+            if flow_version is None:
+                raise NotFound("Automation Flow version was not found")
+            return {
+                "flow": self._flow_projection(connection, flow),
+                "version": self._flow_version_projection(flow_version),
+            }
+
+    # -- Workspace seed and snapshot ----------------------------------
+
+    def seed_default(self, workspace_id: str, *, model: str) -> str:
+        object_empty = {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        }
+        analysis_input = {
+            "type": "object",
+            "properties": {"brief": {"type": "string", "minLength": 20, "maxLength": 4000}},
+            "required": ["brief"],
+            "additionalProperties": False,
+        }
+        analysis_output = {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "score": {"type": "number", "minimum": 0, "maximum": 1},
+                "risks": {"type": "array", "items": {"type": "string"}, "maxItems": 6},
+            },
+            "required": ["summary", "score", "risks"],
+            "additionalProperties": False,
+        }
+        with self.store.write() as connection:
+            needs_work_id = self._insert_action(
+                connection,
+                workspace_id,
+                name="Needs-work response",
+                slug="needs-work-response",
+                description="Deterministically turns a low quality score into a bounded next action.",
+                kind="template",
+                input_schema={
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                    "required": ["summary"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                    "additionalProperties": False,
+                },
+                config={"template": "Needs revision: {{summary}}"},
+                agent_version_id=None,
+                effect_level="none",
+                created_by="bootstrap",
+            )
+            gate_id = self._insert_action(
+                connection,
+                workspace_id,
+                name="Quality gate",
+                slug="quality-gate",
+                description="Routes launch briefs by the scored evidence returned by the Agent.",
+                kind="condition",
+                input_schema={
+                    "type": "object",
+                    "properties": {"score": {"type": "number", "minimum": 0, "maximum": 1}},
+                    "required": ["score"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "matched": {"type": "boolean"},
+                        "actual": {"type": "number"},
+                    },
+                    "required": ["matched", "actual"],
+                    "additionalProperties": False,
+                },
+                config={"path": "score", "operator": "gte", "value": 0.75},
+                agent_version_id=None,
+                effect_level="none",
+                created_by="bootstrap",
+            )
+            approval_id = self._insert_action(
+                connection,
+                workspace_id,
+                name="Human launch approval",
+                slug="human-launch-approval",
+                description="Pauses a Run and requires an attributable human decision.",
+                kind="approval",
+                input_schema=analysis_output,
+                output_schema={
+                    "type": "object",
+                    "properties": {"approved": {"type": "boolean"}, "reason": {"type": "string"}},
+                    "required": ["approved", "reason"],
+                    "additionalProperties": False,
+                },
+                config={"message_template": "Approve this launch analysis? {{summary}}"},
+                agent_version_id=None,
+                effect_level="approval",
+                created_by="bootstrap",
+            )
+            sandbox_id = self._insert_action(
+                connection,
+                workspace_id,
+                name="Publish sandbox launch",
+                slug="publish-sandbox-launch",
+                description="Appends one idempotent launch record to the local sandbox ledger.",
+                kind="sandbox",
+                input_schema=analysis_output,
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "effect_id": {"type": "string"},
+                        "collection": {"type": "string"},
+                    },
+                    "required": ["effect_id", "collection"],
+                    "additionalProperties": False,
+                },
+                config={"operation": "append_record", "collection": "approved_launches"},
+                agent_version_id=None,
+                effect_level="sandbox_write",
+                created_by="bootstrap",
+            )
+            version_by_action = {
+                row["action_id"]: row["id"]
+                for row in connection.execute(
+                    "SELECT action_id, id FROM action_versions WHERE workspace_id = ?",
+                    (workspace_id,),
+                )
+            }
+            prompt_id = self.store._insert_prompt(
+                connection,
+                workspace_id,
+                name="Launch analysis prompt",
+                slug="launch-analysis",
+                template=(
+                    "Analyze this automation launch brief against clarity, safety, and demonstrable "
+                    "value. Return a concise summary, a readiness score from 0 to 1, and bounded risks.\n\n"
+                    "Brief: {{brief}}"
+                ),
+                variables=["brief"],
+            )
+            prompt_version = connection.execute(
+                "SELECT id FROM prompt_versions WHERE prompt_id = ?", (prompt_id,)
+            ).fetchone()
+            if prompt_version is None:
+                raise RuntimeError("seeded Prompt version is missing")
+            skill_id = self.store._insert_skill(
+                connection,
+                workspace_id,
+                name="Evidence-first launch analysis",
+                slug="evidence-first-launch-analysis",
+                instructions=(
+                    "Treat Flow input and Action receipts as evidence. Never claim a side effect. "
+                    "A human gate owns authorization."
+                ),
+                allowed_tools=[],
+                allowed_action_version_ids=[version_by_action[needs_work_id]],
+            )
+            skill_version = connection.execute(
+                "SELECT id FROM skill_versions WHERE skill_id = ?", (skill_id,)
+            ).fetchone()
+            if skill_version is None:
+                raise RuntimeError("seeded Skill version is missing")
+            agent_id = self.store._insert_agent(
+                connection,
+                workspace_id,
+                name="Launch Analyst",
+                slug="launch-analyst",
+                role="executor",
+                model=model,
+                instructions="Analyze one launch brief and return only the pinned output contract.",
+                prompt_version_id=prompt_version["id"],
+                skill_version_ids=[skill_version["id"]],
+            )
+            agent_version = connection.execute(
+                "SELECT id FROM agent_versions WHERE agent_id = ?", (agent_id,)
+            ).fetchone()
+            if agent_version is None:
+                raise RuntimeError("seeded Agent version is missing")
+            analyze_id = self._insert_action(
+                connection,
+                workspace_id,
+                name="AI launch analysis",
+                slug="ai-launch-analysis",
+                description="Runs a pinned Agent, Prompt, and Skill through OpenAI Responses.",
+                kind="ai",
+                input_schema=analysis_input,
+                output_schema=analysis_output,
+                config={"max_tool_calls": 2, "reasoning_effort": "medium"},
+                agent_version_id=agent_version["id"],
+                effect_level="model",
+                created_by="bootstrap",
+            )
+            version_by_action = {
+                row["action_id"]: row["id"]
+                for row in connection.execute(
+                    "SELECT action_id, id FROM action_versions WHERE workspace_id = ?",
+                    (workspace_id,),
+                )
+            }
+            return self._insert_flow(
+                connection,
+                workspace_id,
+                name="Agent-reviewed launch",
+                slug="agent-reviewed-launch",
+                description=(
+                    "AI analysis → deterministic quality route → human approval → idempotent sandbox effect."
+                ),
+                input_schema=analysis_input,
+                start_node_id="analyze",
+                nodes=[
+                    {
+                        "id": "analyze",
+                        "type": "action",
+                        "version_id": version_by_action[analyze_id],
+                        "input_mapping": {"brief": {"source": "input", "path": "brief"}},
+                    },
+                    {
+                        "id": "quality-gate",
+                        "type": "action",
+                        "version_id": version_by_action[gate_id],
+                        "input_mapping": {
+                            "score": {"source": "step", "node_id": "analyze", "path": "score"}
+                        },
+                    },
+                    {
+                        "id": "human-approval",
+                        "type": "action",
+                        "version_id": version_by_action[approval_id],
+                        "input_mapping": {
+                            key: {"source": "step", "node_id": "analyze", "path": key}
+                            for key in ("summary", "score", "risks")
+                        },
+                    },
+                    {
+                        "id": "publish-sandbox",
+                        "type": "action",
+                        "version_id": version_by_action[sandbox_id],
+                        "input_mapping": {
+                            key: {"source": "step", "node_id": "analyze", "path": key}
+                            for key in ("summary", "score", "risks")
+                        },
+                    },
+                    {
+                        "id": "needs-work",
+                        "type": "action",
+                        "version_id": version_by_action[needs_work_id],
+                        "input_mapping": {
+                            "summary": {"source": "step", "node_id": "analyze", "path": "summary"}
+                        },
+                    },
+                ],
+                routes=[
+                    {"from": "analyze", "to": "quality-gate", "outcome": "success"},
+                    {"from": "quality-gate", "to": "human-approval", "outcome": "true"},
+                    {"from": "quality-gate", "to": "needs-work", "outcome": "false"},
+                    {"from": "human-approval", "to": "publish-sandbox", "outcome": "approved"},
+                ],
+                created_by="bootstrap",
+            )
+
+    def snapshot(self, workspace_id: str) -> dict[str, Any]:
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            actions = [
+                self._action_projection(connection, row)
+                for row in connection.execute(
+                    "SELECT * FROM actions WHERE workspace_id = ? ORDER BY created_at, id",
+                    (workspace_id,),
+                )
+            ]
+            flows = [
+                self._flow_projection(connection, row)
+                for row in connection.execute(
+                    "SELECT * FROM automation_flows WHERE workspace_id = ? ORDER BY created_at, id",
+                    (workspace_id,),
+                )
+            ]
+            run_ids = [
+                row["id"]
+                for row in connection.execute(
+                    "SELECT id FROM automation_runs WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30",
+                    (workspace_id,),
+                )
+            ]
+        return {
+            "actions": actions,
+            "flows": flows,
+            "runs": [self.get_run(workspace_id, run_id) for run_id in run_ids],
+            "action_kinds": ["ai", "template", "condition", "approval", "sandbox"],
+            "route_outcomes": ["success", "true", "false", "approved", "rejected"],
+        }
+
+    # -- Runs, Steps, and evidence ------------------------------------
+
+    def create_run(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        input_data: Mapping[str, Any],
+        flow_version: int | None = None,
+        parent_run_id: str | None = None,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> tuple[str, bool]:
+        with self.store.write() as connection:
+            flow = connection.execute(
+                "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
+                (flow_id, workspace_id),
+            ).fetchone()
+            if flow is None:
+                raise NotFound("Automation Flow was not found")
+            if idempotency_key is not None:
+                existing = connection.execute(
+                    "SELECT id FROM automation_runs WHERE workspace_id = ? AND idempotency_key = ?",
+                    (workspace_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    return str(existing["id"]), False
+            selected = int(flow_version or flow["current_version"])
+            version = connection.execute(
+                "SELECT * FROM automation_flow_versions WHERE flow_id = ? AND version = ?",
+                (flow_id, selected),
+            ).fetchone()
+            if version is None:
+                raise NotFound("Automation Flow version was not found")
+            parent = None
+            if parent_run_id is not None:
+                parent = connection.execute(
+                    "SELECT * FROM automation_runs WHERE id = ? AND workspace_id = ? AND flow_id = ?",
+                    (parent_run_id, workspace_id, flow_id),
+                ).fetchone()
+                if parent is None or parent["status"] not in TERMINAL_STATUSES:
+                    raise ContractViolation("parent Run must be a terminal Run of this Flow")
+            run_id = new_id("arun")
+            now = utc_now()
+            correlation = correlation_id or (
+                parent["correlation_id"] if parent is not None else new_id("corr")
+            )
+            connection.execute(
+                """
+                INSERT INTO automation_runs
+                    (id, workspace_id, flow_id, flow_version_id, parent_run_id,
+                     correlation_id, idempotency_key, status, revision, input_json,
+                     current_node_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'created', 1, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    workspace_id,
+                    flow_id,
+                    version["id"],
+                    parent_run_id,
+                    correlation,
+                    idempotency_key,
+                    canonical_json(dict(input_data)),
+                    version["start_node_id"],
+                    now,
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="run.created",
+                actor_type="runtime",
+                actor_id=None,
+                payload={
+                    "flow_id": flow_id,
+                    "flow_version_id": version["id"],
+                    "flow_version": selected,
+                    "flow_fingerprint": version["fingerprint"],
+                    "parent_run_id": parent_run_id,
+                    "correlation_id": correlation,
+                },
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="flow.version_pinned",
+                actor_type="runtime",
+                actor_id=None,
+                payload={
+                    "flow_version_id": version["id"],
+                    "pinned_resources": _decode(version["pinned_resources_json"]),
+                },
+            )
+        return run_id, True
+
+    def transition_run(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        status: str,
+        current_node_id: str | None = None,
+        output: Any = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        with self.store.write() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_runs WHERE id = ? AND workspace_id = ?",
+                (run_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation Run was not found")
+            if row["status"] == status:
+                return
+            now = utc_now()
+            started_at = row["started_at"] or (now if status == "running" else None)
+            finished_at = now if status in TERMINAL_STATUSES else None
+            cursor = connection.execute(
+                """
+                UPDATE automation_runs
+                SET status = ?, revision = revision + 1, current_node_id = ?,
+                    output_json = ?, error_code = ?, error_message = ?,
+                    started_at = ?, finished_at = ?
+                WHERE id = ? AND workspace_id = ? AND revision = ?
+                """,
+                (
+                    status,
+                    current_node_id,
+                    canonical_json(output) if output is not None else row["output_json"],
+                    error_code,
+                    error_message,
+                    started_at,
+                    finished_at,
+                    run_id,
+                    workspace_id,
+                    row["revision"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("Automation Run revision changed")
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="run.status_changed",
+                actor_type="runtime",
+                actor_id=None,
+                payload={
+                    "from": row["status"],
+                    "to": status,
+                    "revision": int(row["revision"]) + 1,
+                    "current_node_id": current_node_id,
+                    "error_code": error_code,
+                },
+            )
+
+    def start_step(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        node_id: str,
+        node_type: str,
+        target_version_id: str,
+        input_data: Mapping[str, Any],
+    ) -> str:
+        with self.store.write() as connection:
+            run = connection.execute(
+                "SELECT status FROM automation_runs WHERE id = ? AND workspace_id = ?",
+                (run_id, workspace_id),
+            ).fetchone()
+            if run is None:
+                raise NotFound("Automation Run was not found")
+            if run["status"] != "running":
+                raise Conflict("Automation Run is not running")
+            prior = connection.execute(
+                "SELECT COALESCE(MAX(attempt), 0) AS attempt FROM automation_run_steps WHERE run_id = ? AND node_id = ?",
+                (run_id, node_id),
+            ).fetchone()
+            attempt = int(prior["attempt"]) + 1
+            step_id = new_id("astep")
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT INTO automation_run_steps
+                    (id, workspace_id, run_id, node_id, node_type, target_version_id,
+                     attempt, status, revision, input_json, started_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'running', 1, ?, ?)
+                """,
+                (
+                    step_id,
+                    workspace_id,
+                    run_id,
+                    node_id,
+                    node_type,
+                    target_version_id,
+                    attempt,
+                    canonical_json(dict(input_data)),
+                    now,
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="step.started",
+                actor_type="runtime",
+                actor_id=None,
+                payload={
+                    "step_id": step_id,
+                    "node_id": node_id,
+                    "node_type": node_type,
+                    "target_version_id": target_version_id,
+                    "attempt": attempt,
+                    "input_fingerprint": fingerprint(dict(input_data)),
+                },
+            )
+            return step_id
+
+    def finish_step(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        status: str,
+        output: Any,
+        route_outcome: str | None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        with self.store.write() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_run_steps WHERE id = ? AND run_id = ? AND workspace_id = ?",
+                (step_id, run_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation Step was not found")
+            cursor = connection.execute(
+                """
+                UPDATE automation_run_steps
+                SET status = ?, revision = revision + 1, output_json = ?, route_outcome = ?,
+                    error_code = ?, error_message = ?, finished_at = ?
+                WHERE id = ? AND revision = ?
+                """,
+                (
+                    status,
+                    canonical_json(output) if output is not None else None,
+                    route_outcome,
+                    error_code,
+                    error_message,
+                    None if status == "waiting_approval" else utc_now(),
+                    step_id,
+                    row["revision"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("Automation Step revision changed")
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type=f"step.{status}",
+                actor_type="runtime",
+                actor_id=None,
+                payload={
+                    "step_id": step_id,
+                    "node_id": row["node_id"],
+                    "attempt": row["attempt"],
+                    "route_outcome": route_outcome,
+                    "output_fingerprint": fingerprint(output) if output is not None else None,
+                    "error_code": error_code,
+                },
+            )
+
+    def append_event(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        event_type: str,
+        actor_type: str,
+        actor_id: str | None,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            return self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type=event_type,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                payload=payload,
+            )
+
+    def _append_event(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        run_id: str,
+        *,
+        event_type: str,
+        actor_type: str,
+        actor_id: str | None,
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        run = connection.execute(
+            "SELECT id FROM automation_runs WHERE id = ? AND workspace_id = ?",
+            (run_id, workspace_id),
+        ).fetchone()
+        if run is None:
+            raise NotFound("Automation Run was not found")
+        previous = connection.execute(
+            "SELECT sequence, event_hash FROM automation_events WHERE run_id = ? ORDER BY sequence DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        event = {
+            "id": new_id("aevt"),
+            "run_id": run_id,
+            "sequence": int(previous["sequence"]) + 1 if previous else 1,
+            "occurred_at": utc_now(),
+            "type": event_type,
+            "actor_type": actor_type,
+            "actor_id": actor_id,
+            "payload": redact(dict(payload)),
+            "prev_hash": previous["event_hash"] if previous else GENESIS_HASH,
+        }
+        event["event_hash"] = compute_event_hash(event)
+        connection.execute(
+            """
+            INSERT INTO automation_events
+                (id, workspace_id, run_id, sequence, occurred_at, type, actor_type,
+                 actor_id, payload_json, prev_hash, event_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event["id"],
+                workspace_id,
+                run_id,
+                event["sequence"],
+                event["occurred_at"],
+                event["type"],
+                actor_type,
+                actor_id,
+                canonical_json(event["payload"]),
+                event["prev_hash"],
+                event["event_hash"],
+            ),
+        )
+        return event
+
+    def record_model_call(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        agent_version_id: str,
+        provider_response_id: str,
+        status: str,
+        model: str,
+        input_hash: str,
+        output_hash: str,
+        usage: Mapping[str, Any],
+        request_id: str | None,
+    ) -> str:
+        call_id = new_id("amcall")
+        with self.store.write() as connection:
+            connection.execute(
+                """
+                INSERT INTO automation_model_calls
+                    (id, workspace_id, run_id, step_id, agent_version_id,
+                     provider_response_id, status, model, input_hash, output_hash,
+                     usage_json, request_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    call_id,
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    agent_version_id,
+                    provider_response_id,
+                    status,
+                    model,
+                    input_hash,
+                    output_hash,
+                    canonical_json(dict(usage)),
+                    request_id,
+                    utc_now(),
+                ),
+            )
+            connection.execute(
+                "UPDATE workspaces SET model_calls_used = model_calls_used + 1 WHERE id = ?",
+                (workspace_id,),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="model.completed" if status == "completed" else "model.failed",
+                actor_type="agent",
+                actor_id=agent_version_id,
+                payload={
+                    "model_call_id": call_id,
+                    "step_id": step_id,
+                    "provider_response_id": provider_response_id,
+                    "status": status,
+                    "model": model,
+                    "usage": dict(usage),
+                    "request_id": request_id,
+                },
+            )
+        return call_id
+
+    def record_receipt(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        node_id: str,
+        action_version_id: str,
+        attempt: int,
+        outcome: str,
+        input_data: Mapping[str, Any],
+        output: Any,
+        error_code: str | None,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            existing = connection.execute(
+                "SELECT * FROM automation_action_receipts WHERE run_id = ? AND idempotency_key = ?",
+                (run_id, idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                return self._receipt_projection(existing)
+            receipt_id = new_id("arcpt")
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT INTO automation_action_receipts
+                    (id, workspace_id, run_id, step_id, node_id, action_version_id,
+                     attempt, outcome, input_json, output_json, error_code,
+                     idempotency_key, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    receipt_id,
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    node_id,
+                    action_version_id,
+                    attempt,
+                    outcome,
+                    canonical_json(dict(input_data)),
+                    canonical_json(output),
+                    error_code,
+                    idempotency_key,
+                    now,
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="action.receipted",
+                actor_type="action",
+                actor_id=action_version_id,
+                payload={
+                    "receipt_id": receipt_id,
+                    "step_id": step_id,
+                    "node_id": node_id,
+                    "action_version_id": action_version_id,
+                    "attempt": attempt,
+                    "outcome": outcome,
+                    "error_code": error_code,
+                    "output_fingerprint": fingerprint(output),
+                },
+            )
+            row = connection.execute(
+                "SELECT * FROM automation_action_receipts WHERE id = ?", (receipt_id,)
+            ).fetchone()
+            assert row is not None
+            return self._receipt_projection(row)
+
+    def create_approval_request(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        node_id: str,
+        message: str,
+        context: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            existing = connection.execute(
+                "SELECT * FROM automation_approval_requests WHERE step_id = ?",
+                (step_id,),
+            ).fetchone()
+            if existing is not None:
+                return self._approval_projection(connection, existing)
+            request_id = new_id("areq")
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT INTO automation_approval_requests
+                    (id, workspace_id, run_id, step_id, node_id, message, context_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    request_id,
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    node_id,
+                    message,
+                    canonical_json(dict(context)),
+                    now,
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="approval.requested",
+                actor_type="action",
+                actor_id=None,
+                payload={
+                    "approval_request_id": request_id,
+                    "step_id": step_id,
+                    "node_id": node_id,
+                    "message": message,
+                },
+            )
+            row = connection.execute(
+                "SELECT * FROM automation_approval_requests WHERE id = ?", (request_id,)
+            ).fetchone()
+            assert row is not None
+            return self._approval_projection(connection, row)
+
+    def decide_approval(
+        self,
+        workspace_id: str,
+        request_id: str,
+        *,
+        approved: bool,
+        actor: str,
+        reason: str,
+    ) -> str:
+        with self.store.write() as connection:
+            request = connection.execute(
+                "SELECT * FROM automation_approval_requests WHERE id = ? AND workspace_id = ?",
+                (request_id, workspace_id),
+            ).fetchone()
+            if request is None:
+                raise NotFound("Approval request was not found")
+            existing = connection.execute(
+                "SELECT * FROM automation_approval_decisions WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    bool(existing["approved"]) != approved
+                    or existing["actor"] != actor
+                    or existing["reason"] != reason
+                ):
+                    raise Conflict("Approval request already has a different decision")
+                return str(request["run_id"])
+            run = connection.execute(
+                "SELECT * FROM automation_runs WHERE id = ? AND workspace_id = ?",
+                (request["run_id"], workspace_id),
+            ).fetchone()
+            step = connection.execute(
+                "SELECT * FROM automation_run_steps WHERE id = ?", (request["step_id"],)
+            ).fetchone()
+            if run is None or step is None:
+                raise RuntimeError("Approval Run or Step is missing")
+            if run["status"] != "waiting_approval" or step["status"] != "waiting_approval":
+                raise Conflict("Approval request is no longer pending")
+            decision_id = new_id("adec")
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT INTO automation_approval_decisions
+                    (id, workspace_id, request_id, approved, actor, reason, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (decision_id, workspace_id, request_id, int(approved), actor, reason, now),
+            )
+            step_status = "completed" if approved else "blocked"
+            route = "approved" if approved else "rejected"
+            connection.execute(
+                """
+                UPDATE automation_run_steps
+                SET status = ?, revision = revision + 1, output_json = ?,
+                    route_outcome = ?, finished_at = ?
+                WHERE id = ? AND revision = ?
+                """,
+                (
+                    step_status,
+                    canonical_json({"approved": approved, "reason": reason}),
+                    route,
+                    now,
+                    step["id"],
+                    step["revision"],
+                ),
+            )
+            next_status = "running" if approved else "blocked"
+            next_node = run["current_node_id"] if approved else None
+            connection.execute(
+                """
+                UPDATE automation_runs
+                SET status = ?, revision = revision + 1, current_node_id = ?,
+                    error_code = ?, error_message = ?, finished_at = ?
+                WHERE id = ? AND revision = ?
+                """,
+                (
+                    next_status,
+                    next_node,
+                    None if approved else "approval_rejected",
+                    None if approved else reason,
+                    None if approved else now,
+                    run["id"],
+                    run["revision"],
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run["id"],
+                event_type="approval.decided",
+                actor_type="human",
+                actor_id=actor,
+                payload={
+                    "approval_request_id": request_id,
+                    "approval_decision_id": decision_id,
+                    "approved": approved,
+                    "reason": reason,
+                },
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run["id"],
+                event_type="run.status_changed",
+                actor_type="runtime",
+                actor_id=None,
+                payload={
+                    "from": "waiting_approval",
+                    "to": next_status,
+                    "revision": int(run["revision"]) + 1,
+                    "current_node_id": next_node,
+                },
+            )
+            return str(run["id"])
+
+    def get_approval_request(
+        self, workspace_id: str, request_id: str
+    ) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_approval_requests WHERE id = ? AND workspace_id = ?",
+                (request_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Approval request was not found")
+            return self._approval_projection(connection, row)
+
+    def create_effect(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        action_version_id: str,
+        collection: str,
+        payload: Mapping[str, Any],
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            existing = connection.execute(
+                "SELECT * FROM automation_effects WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+            if existing is not None:
+                return self._effect_projection(existing)
+            effect_id = new_id("aeff")
+            now = utc_now()
+            connection.execute(
+                """
+                INSERT INTO automation_effects
+                    (id, workspace_id, run_id, step_id, action_version_id,
+                     collection, payload_json, idempotency_key, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    effect_id,
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    action_version_id,
+                    collection,
+                    canonical_json(dict(payload)),
+                    idempotency_key,
+                    now,
+                ),
+            )
+            self._append_event(
+                connection,
+                workspace_id,
+                run_id,
+                event_type="effect.committed",
+                actor_type="action",
+                actor_id=action_version_id,
+                payload={
+                    "effect_id": effect_id,
+                    "step_id": step_id,
+                    "collection": collection,
+                    "payload_fingerprint": fingerprint(dict(payload)),
+                },
+            )
+            row = connection.execute(
+                "SELECT * FROM automation_effects WHERE id = ?", (effect_id,)
+            ).fetchone()
+            assert row is not None
+            return self._effect_projection(row)
+
+    # -- Projections ---------------------------------------------------
+
+    @staticmethod
+    def _event_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "sequence": row["sequence"],
+            "occurred_at": row["occurred_at"],
+            "type": row["type"],
+            "actor_type": row["actor_type"],
+            "actor_id": row["actor_id"],
+            "payload": _decode(row["payload_json"]),
+            "prev_hash": row["prev_hash"],
+            "event_hash": row["event_hash"],
+        }
+
+    @staticmethod
+    def _step_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "node_id": row["node_id"],
+            "node_type": row["node_type"],
+            "target_version_id": row["target_version_id"],
+            "attempt": row["attempt"],
+            "status": row["status"],
+            "revision": row["revision"],
+            "input": _decode(row["input_json"]),
+            "output": _decode(row["output_json"]),
+            "route_outcome": row["route_outcome"],
+            "error_code": row["error_code"],
+            "error_message": row["error_message"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }
+
+    @staticmethod
+    def _model_call_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "step_id": row["step_id"],
+            "agent_version_id": row["agent_version_id"],
+            "provider_response_id": row["provider_response_id"],
+            "status": row["status"],
+            "model": row["model"],
+            "input_hash": row["input_hash"],
+            "output_hash": row["output_hash"],
+            "usage": _decode(row["usage_json"]),
+            "request_id": row["request_id"],
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _receipt_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "step_id": row["step_id"],
+            "node_id": row["node_id"],
+            "action_version_id": row["action_version_id"],
+            "attempt": row["attempt"],
+            "outcome": row["outcome"],
+            "input": _decode(row["input_json"]),
+            "output": _decode(row["output_json"]),
+            "error_code": row["error_code"],
+            "idempotency_key": row["idempotency_key"],
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _effect_projection(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "step_id": row["step_id"],
+            "action_version_id": row["action_version_id"],
+            "collection": row["collection"],
+            "payload": _decode(row["payload_json"]),
+            "created_at": row["created_at"],
+        }
+
+    def _approval_projection(
+        self, connection: sqlite3.Connection, row: sqlite3.Row
+    ) -> dict[str, Any]:
+        decision = connection.execute(
+            "SELECT * FROM automation_approval_decisions WHERE request_id = ?",
+            (row["id"],),
+        ).fetchone()
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "step_id": row["step_id"],
+            "node_id": row["node_id"],
+            "message": row["message"],
+            "context": _decode(row["context_json"]),
+            "created_at": row["created_at"],
+            "decision": (
+                {
+                    "id": decision["id"],
+                    "approved": bool(decision["approved"]),
+                    "actor": decision["actor"],
+                    "reason": decision["reason"],
+                    "created_at": decision["created_at"],
+                }
+                if decision is not None
+                else None
+            ),
+        }
+
+    def get_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                """
+                SELECT r.*, fv.version AS flow_version_number,
+                       fv.fingerprint AS flow_fingerprint
+                FROM automation_runs r
+                JOIN automation_flow_versions fv ON fv.id = r.flow_version_id
+                WHERE r.id = ? AND r.workspace_id = ?
+                """,
+                (run_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation Run was not found")
+            steps = [
+                self._step_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM automation_run_steps WHERE run_id = ? ORDER BY started_at, id",
+                    (run_id,),
+                )
+            ]
+            events = [
+                self._event_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM automation_events WHERE run_id = ? ORDER BY sequence",
+                    (run_id,),
+                )
+            ]
+            calls = [
+                self._model_call_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM automation_model_calls WHERE run_id = ? ORDER BY created_at, id",
+                    (run_id,),
+                )
+            ]
+            receipts = [
+                self._receipt_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM automation_action_receipts WHERE run_id = ? ORDER BY created_at, id",
+                    (run_id,),
+                )
+            ]
+            approvals = [
+                self._approval_projection(connection, item)
+                for item in connection.execute(
+                    "SELECT * FROM automation_approval_requests WHERE run_id = ? ORDER BY created_at, id",
+                    (run_id,),
+                )
+            ]
+            effects = [
+                self._effect_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM automation_effects WHERE run_id = ? ORDER BY created_at, id",
+                    (run_id,),
+                )
+            ]
+            pending = next(
+                (approval for approval in reversed(approvals) if approval["decision"] is None),
+                None,
+            )
+            return {
+                "id": row["id"],
+                "flow_id": row["flow_id"],
+                "flow_version_id": row["flow_version_id"],
+                "flow_version": row["flow_version_number"],
+                "flow_fingerprint": row["flow_fingerprint"],
+                "parent_run_id": row["parent_run_id"],
+                "correlation_id": row["correlation_id"],
+                "status": row["status"],
+                "revision": row["revision"],
+                "input": _decode(row["input_json"]),
+                "output": _decode(row["output_json"]),
+                "current_node_id": row["current_node_id"],
+                "error_code": row["error_code"],
+                "error_message": row["error_message"],
+                "created_at": row["created_at"],
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
+                "steps": steps,
+                "events": events,
+                "model_calls": calls,
+                "action_receipts": receipts,
+                "approvals": approvals,
+                "pending_approval": pending,
+                "effects": effects,
+            }

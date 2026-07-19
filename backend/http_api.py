@@ -10,11 +10,12 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.cookies import SimpleCookie
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .contracts import (
     Forbidden,
     NotFound,
+    OpenAIKeyRequired,
     PayloadTooLarge,
     RateLimited,
     RuntimeErrorBase,
@@ -37,6 +38,15 @@ class ApiRequest:
     scheme: str
     host: str
     body_too_large: bool = False
+
+    def header(self, name: str, default: str = "") -> str:
+        """Return an HTTP header using the protocol's case-insensitive semantics."""
+
+        wanted = name.casefold()
+        for key, value in self.headers.items():
+            if key.casefold() == wanted:
+                return value
+        return default
 
 
 @dataclass(frozen=True)
@@ -122,6 +132,21 @@ class ApiApplication:
         if request.path == "/api/v1/workspace":
             workspace_id = self._workspace_id(request)
             return self._ok(self.control_plane.snapshot(workspace_id))
+        if request.path == "/api/v1/studio":
+            workspace_id = self._workspace_id(request)
+            return self._ok(self.control_plane.studio_snapshot(workspace_id))
+        match = re.fullmatch(rf"/api/v1/studio/actions/{RESOURCE_ID}", request.path)
+        if match:
+            workspace_id = self._workspace_id(request)
+            return self._ok(self.control_plane.get_studio_action(workspace_id, match.group(1)))
+        match = re.fullmatch(rf"/api/v1/studio/flows/{RESOURCE_ID}", request.path)
+        if match:
+            workspace_id = self._workspace_id(request)
+            return self._ok(self.control_plane.get_studio_flow(workspace_id, match.group(1)))
+        match = re.fullmatch(rf"/api/v1/studio/runs/{RESOURCE_ID}", request.path)
+        if match:
+            workspace_id = self._workspace_id(request)
+            return self._ok(self.control_plane.get_studio_run(workspace_id, match.group(1)))
         match = re.fullmatch(rf"/api/v1/runs/{RESOURCE_ID}", request.path)
         if match:
             workspace_id = self._workspace_id(request)
@@ -154,6 +179,111 @@ class ApiApplication:
             return self._ok(public, status=HTTPStatus.CREATED, headers={"Set-Cookie": cookie})
 
         workspace_id = self._workspace_id(request)
+        if request.path == "/api/v1/studio/actions":
+            self._require_exact_keys(
+                body,
+                {
+                    "name",
+                    "slug",
+                    "description",
+                    "kind",
+                    "input_schema",
+                    "output_schema",
+                    "config",
+                    "agent_version_id",
+                },
+            )
+            return self._ok(
+                self.control_plane.create_action(workspace_id, **body),
+                status=HTTPStatus.CREATED,
+            )
+        if request.path == "/api/v1/studio/flows":
+            self._require_exact_keys(
+                body,
+                {
+                    "name",
+                    "slug",
+                    "description",
+                    "input_schema",
+                    "start_node_id",
+                    "nodes",
+                    "routes",
+                },
+            )
+            return self._ok(
+                self.control_plane.create_studio_flow(workspace_id, **body),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/flows/{RESOURCE_ID}/runs", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"input", "idempotency_key"})
+            flow_id = match.group(1)
+            forecast = self.control_plane.studio_flow_model_call_forecast(
+                workspace_id, flow_id
+            )
+            operation = lambda client: self.control_plane.start_studio_run(
+                workspace_id,
+                flow_id,
+                input_data=body["input"],
+                idempotency_key=body["idempotency_key"],
+                client=client,
+            )
+            return self._studio_execution(
+                request,
+                workspace_id,
+                forecast_calls=forecast,
+                status=HTTPStatus.CREATED,
+                operation=operation,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/approvals/{RESOURCE_ID}/decisions", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"approved", "actor", "reason"})
+            request_id = match.group(1)
+            forecast = self.control_plane.studio_approval_model_call_forecast(
+                workspace_id, request_id
+            )
+            operation = lambda client: self.control_plane.decide_studio_approval(
+                workspace_id,
+                request_id,
+                approved=body["approved"],
+                actor=body["actor"],
+                reason=body["reason"],
+                client=client,
+            )
+            return self._studio_execution(
+                request,
+                workspace_id,
+                forecast_calls=forecast,
+                status=HTTPStatus.OK,
+                operation=operation,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/runs/{RESOURCE_ID}/reruns", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"input", "idempotency_key"})
+            run_id = match.group(1)
+            forecast = self.control_plane.studio_rerun_model_call_forecast(
+                workspace_id, run_id
+            )
+            operation = lambda client: self.control_plane.rerun_studio_run(
+                workspace_id,
+                run_id,
+                input_data=body["input"],
+                idempotency_key=body["idempotency_key"],
+                client=client,
+            )
+            return self._studio_execution(
+                request,
+                workspace_id,
+                forecast_calls=forecast,
+                status=HTTPStatus.CREATED,
+                operation=operation,
+            )
         match = re.fullmatch(rf"/api/v1/flows/{RESOURCE_ID}/runs", request.path)
         if match:
             self._require_exact_keys(body, set())
@@ -162,7 +292,9 @@ class ApiApplication:
                 workspace_id,
                 forecast_calls=3,
                 status=HTTPStatus.CREATED,
-                operation=lambda: self.control_plane.run_flow(workspace_id, match.group(1)),
+                operation=lambda client: self.control_plane.run_flow(
+                    workspace_id, match.group(1), client=client
+                ),
             )
         match = re.fullmatch(rf"/api/v1/runs/{RESOURCE_ID}/diagnoses", request.path)
         if match:
@@ -172,7 +304,9 @@ class ApiApplication:
                 workspace_id,
                 forecast_calls=1,
                 status=HTTPStatus.CREATED,
-                operation=lambda: self.control_plane.diagnose_run(workspace_id, match.group(1)),
+                operation=lambda client: self.control_plane.diagnose_run(
+                    workspace_id, match.group(1), client=client
+                ),
             )
         match = re.fullmatch(rf"/api/v1/diagnoses/{RESOURCE_ID}/repairs", request.path)
         if match:
@@ -182,7 +316,9 @@ class ApiApplication:
                 workspace_id,
                 forecast_calls=1,
                 status=HTTPStatus.CREATED,
-                operation=lambda: self.control_plane.propose_repair(workspace_id, match.group(1)),
+                operation=lambda client: self.control_plane.propose_repair(
+                    workspace_id, match.group(1), client=client
+                ),
             )
         match = re.fullmatch(rf"/api/v1/repairs/{RESOURCE_ID}/apply", request.path)
         if match:
@@ -211,7 +347,9 @@ class ApiApplication:
                 workspace_id,
                 forecast_calls=3,
                 status=HTTPStatus.CREATED,
-                operation=lambda: self.control_plane.rerun(workspace_id, run_id),
+                operation=lambda client: self.control_plane.rerun(
+                    workspace_id, run_id, client=client
+                ),
             )
         if request.path == "/api/v1/prompts":
             self._require_exact_keys(body, {"name", "slug", "template", "variables"})
@@ -221,7 +359,14 @@ class ApiApplication:
             )
         if request.path == "/api/v1/skills":
             self._require_exact_keys(
-                body, {"name", "slug", "instructions", "allowed_tools"}
+                body,
+                {
+                    "name",
+                    "slug",
+                    "instructions",
+                    "allowed_tools",
+                    "allowed_action_version_ids",
+                },
             )
             return self._ok(
                 self.control_plane.create_skill(workspace_id, **body),
@@ -264,6 +409,25 @@ class ApiApplication:
             )
         raise NotFound("API route was not found")
 
+    def _studio_execution(
+        self,
+        request: ApiRequest,
+        workspace_id: str,
+        *,
+        forecast_calls: int,
+        status: int,
+        operation: Callable[[Any], Any],
+    ) -> ApiResponse:
+        if forecast_calls <= 0:
+            return self._ok(operation(None), status=status)
+        return self._model_action(
+            request,
+            workspace_id,
+            forecast_calls=forecast_calls,
+            status=status,
+            operation=operation,
+        )
+
     def _model_action(
         self,
         request: ApiRequest,
@@ -271,8 +435,9 @@ class ApiApplication:
         *,
         forecast_calls: int,
         status: int,
-        operation: Any,
+        operation: Callable[[Any], Any],
     ) -> ApiResponse:
+        api_key = self._browser_api_key(request)
         with self.workspace_model_locks_guard:
             workspace_lock = self.workspace_model_locks.setdefault(
                 workspace_id, threading.Lock()
@@ -299,24 +464,39 @@ class ApiApplication:
             if not self.model_slots.acquire(blocking=False):
                 raise RateLimited("model execution capacity is busy; try again shortly")
             try:
-                return self._ok(operation(), status=status)
+                client = self.control_plane.client_for_browser_key(api_key)
+                return self._ok(operation(client), status=status)
             finally:
                 self.model_slots.release()
         finally:
             workspace_lock.release()
 
     @staticmethod
+    def _browser_api_key(request: ApiRequest) -> str:
+        value = request.header("X-OpenAI-API-Key")
+        if (
+            not isinstance(value, str)
+            or not 20 <= len(value) <= 512
+            or value != value.strip()
+            or any(character.isspace() for character in value)
+        ):
+            raise OpenAIKeyRequired(
+                "configure a valid OpenAI API key in this browser tab before running a model action"
+            )
+        return value
+
+    @staticmethod
     def _require_same_origin(request: ApiRequest) -> None:
-        origin = request.headers.get("Origin")
+        origin = request.header("Origin")
         expected = f"{request.scheme}://{request.host}"
         if origin != expected:
             raise Forbidden("mutation origin does not match this server")
-        fetch_site = request.headers.get("Sec-Fetch-Site")
-        if fetch_site not in {None, "same-origin"}:
+        fetch_site = request.header("Sec-Fetch-Site")
+        if fetch_site not in {"", "same-origin"}:
             raise Forbidden("mutation fetch site is not same-origin")
 
     def _workspace_id(self, request: ApiRequest) -> str:
-        raw_cookie = request.headers.get("Cookie", "")
+        raw_cookie = request.header("Cookie")
         try:
             cookie = SimpleCookie(raw_cookie)
         except Exception:
@@ -328,7 +508,7 @@ class ApiApplication:
 
     @staticmethod
     def _json_body(request: ApiRequest) -> dict[str, Any]:
-        content_type = request.headers.get("Content-Type", "")
+        content_type = request.header("Content-Type")
         if not content_type.lower().startswith("application/json"):
             raise RuntimeErrorBase("Content-Type must be application/json")
         if len(request.body) > MAX_API_BODY:

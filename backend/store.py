@@ -53,6 +53,14 @@ class Store:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=NORMAL")
             connection.executescript(SCHEMA_SQL)
+            skill_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(skill_versions)")
+            }
+            if "allowed_action_version_ids_json" not in skill_columns:
+                connection.execute(
+                    "ALTER TABLE skill_versions "
+                    "ADD COLUMN allowed_action_version_ids_json TEXT NOT NULL DEFAULT '[]'"
+                )
         finally:
             connection.close()
 
@@ -269,6 +277,7 @@ class Store:
         slug: str,
         instructions: str,
         allowed_tools: Sequence[str],
+        allowed_action_version_ids: Sequence[str] = (),
     ) -> dict[str, Any]:
         with self.write() as connection:
             skill_id = self._insert_skill(
@@ -278,6 +287,7 @@ class Store:
                 slug=slug,
                 instructions=instructions,
                 allowed_tools=allowed_tools,
+                allowed_action_version_ids=allowed_action_version_ids,
             )
         return self.get_skill(workspace_id, skill_id)
 
@@ -290,12 +300,24 @@ class Store:
         slug: str,
         instructions: str,
         allowed_tools: Sequence[str],
+        allowed_action_version_ids: Sequence[str] = (),
     ) -> str:
         self._require_workspace(connection, workspace_id)
         skill_id = new_id("skl")
         version_id = new_id("sklv")
         created_at = utc_now()
-        material = {"instructions": instructions, "allowed_tools": list(allowed_tools)}
+        for action_version_id in allowed_action_version_ids:
+            action = connection.execute(
+                "SELECT id FROM action_versions WHERE id = ? AND workspace_id = ?",
+                (action_version_id, workspace_id),
+            ).fetchone()
+            if action is None:
+                raise ContractViolation("Skill Action version does not belong to the workspace")
+        material = {
+            "instructions": instructions,
+            "allowed_tools": list(allowed_tools),
+            "allowed_action_version_ids": list(allowed_action_version_ids),
+        }
         connection.execute(
             """
             INSERT INTO skills (id, workspace_id, slug, name, current_version, created_at)
@@ -306,8 +328,9 @@ class Store:
         connection.execute(
             """
             INSERT INTO skill_versions
-                (id, workspace_id, skill_id, version, instructions, allowed_tools_json, fingerprint, created_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+                (id, workspace_id, skill_id, version, instructions, allowed_tools_json,
+                 allowed_action_version_ids_json, fingerprint, created_at)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
             """,
             (
                 version_id,
@@ -315,6 +338,7 @@ class Store:
                 skill_id,
                 instructions,
                 canonical_json(list(allowed_tools)),
+                canonical_json(list(allowed_action_version_ids)),
                 fingerprint(material),
                 created_at,
             ),
@@ -338,6 +362,9 @@ class Store:
             "version": row["version"],
             "instructions": row["instructions"],
             "allowed_tools": _decode(row["allowed_tools_json"]),
+            "allowed_action_version_ids": _decode(
+                row["allowed_action_version_ids_json"]
+            ),
             "fingerprint": row["fingerprint"],
             "created_at": row["created_at"],
         }
@@ -481,6 +508,20 @@ class Store:
             tools.update(_decode(row["allowed_tools_json"]))
         return sorted(tools)
 
+    def _effective_actions(
+        self, connection: sqlite3.Connection, skill_version_ids: Sequence[str]
+    ) -> list[str]:
+        action_versions: set[str] = set()
+        for skill_version_id in skill_version_ids:
+            row = connection.execute(
+                "SELECT allowed_action_version_ids_json FROM skill_versions WHERE id = ?",
+                (skill_version_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("pinned skill version is missing")
+            action_versions.update(_decode(row["allowed_action_version_ids_json"]))
+        return sorted(action_versions)
+
     def _agent_version_projection(
         self, connection: sqlite3.Connection, row: sqlite3.Row
     ) -> dict[str, Any]:
@@ -494,6 +535,9 @@ class Store:
             "prompt_version_id": row["prompt_version_id"],
             "skill_version_ids": skill_ids,
             "effective_tools": self._effective_tools(connection, skill_ids),
+            "effective_action_version_ids": self._effective_actions(
+                connection, skill_ids
+            ),
             "fingerprint": row["fingerprint"],
             "created_at": row["created_at"],
         }
@@ -979,6 +1023,9 @@ class Store:
             "prompt": self._prompt_version_projection(prompt),
             "skills": skills,
             "effective_tools": self._effective_tools(connection, skill_ids),
+            "effective_action_version_ids": self._effective_actions(
+                connection, skill_ids
+            ),
         }
 
     def create_run(

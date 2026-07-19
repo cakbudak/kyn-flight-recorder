@@ -50,6 +50,10 @@ class Unauthorized(RuntimeErrorBase):
     http_status = 401
 
 
+class OpenAIKeyRequired(Unauthorized):
+    code = "openai_key_required"
+
+
 class Forbidden(RuntimeErrorBase):
     code = "forbidden"
     http_status = 403
@@ -88,6 +92,173 @@ def fingerprint(value: Any) -> str:
 
 def hash_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+JSON_SCHEMA_TYPES = frozenset(
+    {"object", "array", "string", "number", "integer", "boolean", "null"}
+)
+
+
+def normalize_json_schema(value: Any, field: str = "JSON Schema") -> dict[str, Any]:
+    """Validate and copy the bounded JSON Schema subset exposed by the Studio."""
+
+    if not isinstance(value, dict):
+        raise ContractViolation(f"{field} must be an object")
+    if len(canonical_json(value).encode("utf-8")) > 16 * 1024:
+        raise ContractViolation(f"{field} exceeds 16 KiB")
+
+    def walk(schema: Any, path: str, depth: int) -> dict[str, Any]:
+        if depth > 6 or not isinstance(schema, dict):
+            raise ContractViolation(f"{field} has an invalid schema at {path}")
+        allowed_keys = {
+            "type",
+            "properties",
+            "required",
+            "additionalProperties",
+            "items",
+            "enum",
+            "description",
+            "minLength",
+            "maxLength",
+            "minimum",
+            "maximum",
+            "minItems",
+            "maxItems",
+        }
+        if set(schema) - allowed_keys:
+            raise ContractViolation(
+                f"{field} uses unsupported keywords at {path}: "
+                f"{', '.join(sorted(set(schema) - allowed_keys))}"
+            )
+        schema_type = schema.get("type")
+        if schema_type not in JSON_SCHEMA_TYPES:
+            raise ContractViolation(f"{field} has an unsupported type at {path}")
+        normalized: dict[str, Any] = {"type": schema_type}
+        description = schema.get("description")
+        if description is not None:
+            normalized["description"] = require_string(
+                description, f"{field} description", maximum=500
+            )
+        if "enum" in schema:
+            enum = schema["enum"]
+            if not isinstance(enum, list) or not 1 <= len(enum) <= 32:
+                raise ContractViolation(f"{field} enum is invalid at {path}")
+            normalized["enum"] = json.loads(canonical_json(enum))
+
+        if schema_type == "object":
+            properties = schema.get("properties", {})
+            required = schema.get("required", [])
+            if not isinstance(properties, dict) or len(properties) > 32:
+                raise ContractViolation(f"{field} properties are invalid at {path}")
+            if not isinstance(required, list) or len(set(required)) != len(required):
+                raise ContractViolation(f"{field} required fields are invalid at {path}")
+            if not all(isinstance(name, str) and name in properties for name in required):
+                raise ContractViolation(f"{field} required fields are unknown at {path}")
+            if schema.get("additionalProperties") is not False:
+                raise ContractViolation(
+                    f"{field} must set additionalProperties=false at {path}"
+                )
+            normalized_properties: dict[str, Any] = {}
+            for name, child in properties.items():
+                require_slug(name.replace("_", "-"), f"{field} property")
+                if SECRET_KEY_RE.search(name):
+                    raise ContractViolation(
+                        f"{field} may not declare secret-like property {name}"
+                    )
+                normalized_properties[name] = walk(child, f"{path}.{name}", depth + 1)
+            normalized.update(
+                {
+                    "properties": normalized_properties,
+                    "required": list(required),
+                    "additionalProperties": False,
+                }
+            )
+        elif schema_type == "array":
+            normalized["items"] = walk(schema.get("items"), f"{path}[]", depth + 1)
+            for keyword in ("minItems", "maxItems"):
+                if keyword in schema:
+                    amount = schema[keyword]
+                    if not isinstance(amount, int) or isinstance(amount, bool) or not 0 <= amount <= 100:
+                        raise ContractViolation(f"{field} {keyword} is invalid at {path}")
+                    normalized[keyword] = amount
+            if normalized.get("minItems", 0) > normalized.get("maxItems", 100):
+                raise ContractViolation(f"{field} array bounds conflict at {path}")
+        elif schema_type == "string":
+            for keyword, default_max in (("minLength", 0), ("maxLength", 20_000)):
+                if keyword in schema:
+                    amount = schema[keyword]
+                    if not isinstance(amount, int) or isinstance(amount, bool) or not 0 <= amount <= 20_000:
+                        raise ContractViolation(f"{field} {keyword} is invalid at {path}")
+                    normalized[keyword] = amount
+            if normalized.get("minLength", 0) > normalized.get("maxLength", 20_000):
+                raise ContractViolation(f"{field} string bounds conflict at {path}")
+        elif schema_type in {"number", "integer"}:
+            for keyword in ("minimum", "maximum"):
+                if keyword in schema:
+                    amount = schema[keyword]
+                    if not isinstance(amount, (int, float)) or isinstance(amount, bool):
+                        raise ContractViolation(f"{field} {keyword} is invalid at {path}")
+                    normalized[keyword] = amount
+            if normalized.get("minimum", float("-inf")) > normalized.get("maximum", float("inf")):
+                raise ContractViolation(f"{field} numeric bounds conflict at {path}")
+        return normalized
+
+    return walk(value, "$", 0)
+
+
+def validate_json_schema(value: Any, schema: Mapping[str, Any], field: str = "value") -> Any:
+    """Validate a value against the Studio's normalized JSON Schema subset."""
+
+    def fail(path: str, message: str) -> None:
+        raise ContractViolation(f"{field} {path} {message}")
+
+    def walk(candidate: Any, current: Mapping[str, Any], path: str) -> None:
+        kind = current["type"]
+        valid = {
+            "object": isinstance(candidate, dict),
+            "array": isinstance(candidate, list),
+            "string": isinstance(candidate, str),
+            "number": isinstance(candidate, (int, float)) and not isinstance(candidate, bool),
+            "integer": isinstance(candidate, int) and not isinstance(candidate, bool),
+            "boolean": isinstance(candidate, bool),
+            "null": candidate is None,
+        }[kind]
+        if not valid:
+            fail(path, f"must be {kind}")
+        if "enum" in current and candidate not in current["enum"]:
+            fail(path, "is not an allowed enum value")
+        if kind == "object":
+            properties = current["properties"]
+            missing = [name for name in current["required"] if name not in candidate]
+            unexpected = sorted(set(candidate) - set(properties))
+            if missing:
+                fail(path, f"is missing {', '.join(missing)}")
+            if unexpected:
+                fail(path, f"contains unexpected fields {', '.join(unexpected)}")
+            for name, child in properties.items():
+                if name in candidate:
+                    walk(candidate[name], child, f"{path}.{name}")
+        elif kind == "array":
+            if len(candidate) < current.get("minItems", 0):
+                fail(path, "contains too few items")
+            if len(candidate) > current.get("maxItems", 100):
+                fail(path, "contains too many items")
+            for index, item in enumerate(candidate):
+                walk(item, current["items"], f"{path}[{index}]")
+        elif kind == "string":
+            if len(candidate) < current.get("minLength", 0):
+                fail(path, "is too short")
+            if len(candidate) > current.get("maxLength", 20_000):
+                fail(path, "is too long")
+        elif kind in {"number", "integer"}:
+            if candidate < current.get("minimum", float("-inf")):
+                fail(path, "is below the minimum")
+            if candidate > current.get("maximum", float("inf")):
+                fail(path, "is above the maximum")
+
+    safe_value = json.loads(canonical_json(value))
+    walk(safe_value, schema, "$")
+    return safe_value
 
 
 def require_string(

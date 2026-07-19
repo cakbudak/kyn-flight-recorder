@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS skill_versions (
     version INTEGER NOT NULL CHECK (version >= 1),
     instructions TEXT NOT NULL,
     allowed_tools_json TEXT NOT NULL,
+    allowed_action_version_ids_json TEXT NOT NULL DEFAULT '[]',
     fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
     created_at TEXT NOT NULL,
     UNIQUE (skill_id, version)
@@ -234,12 +235,207 @@ CREATE TABLE IF NOT EXISTS sandbox_releases (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS actions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    current_version INTEGER NOT NULL DEFAULT 1 CHECK (current_version >= 1),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (workspace_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS action_versions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE RESTRICT,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    kind TEXT NOT NULL CHECK (kind IN ('ai', 'template', 'condition', 'approval', 'sandbox')),
+    input_schema_json TEXT NOT NULL,
+    output_schema_json TEXT NOT NULL,
+    config_json TEXT NOT NULL,
+    agent_version_id TEXT REFERENCES agent_versions(id) ON DELETE RESTRICT,
+    effect_level TEXT NOT NULL CHECK (effect_level IN ('none', 'model', 'approval', 'sandbox_write')),
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (action_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS automation_flows (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    current_version INTEGER NOT NULL DEFAULT 1 CHECK (current_version >= 1),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (workspace_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS automation_flow_versions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    flow_id TEXT NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    input_schema_json TEXT NOT NULL,
+    start_node_id TEXT NOT NULL,
+    nodes_json TEXT NOT NULL,
+    routes_json TEXT NOT NULL,
+    pinned_resources_json TEXT NOT NULL,
+    requires_model INTEGER NOT NULL CHECK (requires_model IN (0, 1)),
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    parent_version_id TEXT REFERENCES automation_flow_versions(id) ON DELETE RESTRICT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (flow_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS automation_runs (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    flow_id TEXT NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
+    flow_version_id TEXT NOT NULL REFERENCES automation_flow_versions(id) ON DELETE RESTRICT,
+    parent_run_id TEXT REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    correlation_id TEXT NOT NULL,
+    idempotency_key TEXT,
+    status TEXT NOT NULL CHECK (status IN (
+        'created', 'running', 'waiting_approval', 'completed', 'blocked', 'failed', 'cancelled'
+    )),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    input_json TEXT NOT NULL,
+    output_json TEXT,
+    current_node_id TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    UNIQUE (workspace_id, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS automation_run_steps (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    node_id TEXT NOT NULL,
+    node_type TEXT NOT NULL CHECK (node_type IN ('action', 'agent')),
+    target_version_id TEXT NOT NULL,
+    attempt INTEGER NOT NULL CHECK (attempt >= 1),
+    status TEXT NOT NULL CHECK (status IN (
+        'running', 'waiting_approval', 'completed', 'blocked', 'failed', 'skipped'
+    )),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    input_json TEXT NOT NULL,
+    output_json TEXT,
+    route_outcome TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    UNIQUE (run_id, node_id, attempt)
+);
+
+CREATE TABLE IF NOT EXISTS automation_events (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    sequence INTEGER NOT NULL CHECK (sequence >= 1),
+    occurred_at TEXT NOT NULL,
+    type TEXT NOT NULL,
+    actor_type TEXT NOT NULL CHECK (actor_type IN ('runtime', 'action', 'agent', 'human')),
+    actor_id TEXT,
+    payload_json TEXT NOT NULL,
+    prev_hash TEXT NOT NULL CHECK (length(prev_hash) = 64),
+    event_hash TEXT NOT NULL CHECK (length(event_hash) = 64),
+    UNIQUE (run_id, sequence)
+);
+
+CREATE TABLE IF NOT EXISTS automation_model_calls (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    step_id TEXT NOT NULL REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    agent_version_id TEXT NOT NULL REFERENCES agent_versions(id) ON DELETE RESTRICT,
+    provider_response_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+    output_hash TEXT NOT NULL CHECK (length(output_hash) = 64),
+    usage_json TEXT NOT NULL,
+    request_id TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS automation_action_receipts (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    step_id TEXT NOT NULL REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    node_id TEXT NOT NULL,
+    action_version_id TEXT NOT NULL REFERENCES action_versions(id) ON DELETE RESTRICT,
+    attempt INTEGER NOT NULL CHECK (attempt >= 1),
+    outcome TEXT NOT NULL CHECK (outcome IN ('succeeded', 'denied', 'failed', 'waiting_approval')),
+    input_json TEXT NOT NULL,
+    output_json TEXT NOT NULL,
+    error_code TEXT,
+    idempotency_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (run_id, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS automation_approval_requests (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    step_id TEXT NOT NULL UNIQUE REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    node_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    context_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS automation_approval_decisions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    request_id TEXT NOT NULL UNIQUE REFERENCES automation_approval_requests(id) ON DELETE RESTRICT,
+    approved INTEGER NOT NULL CHECK (approved IN (0, 1)),
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS automation_effects (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    step_id TEXT NOT NULL REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    action_version_id TEXT NOT NULL REFERENCES action_versions(id) ON DELETE RESTRICT,
+    collection TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS ix_events_run_sequence ON events(run_id, sequence);
 CREATE INDEX IF NOT EXISTS ix_runs_workspace_created ON runs(workspace_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_one_child
 ON runs(parent_run_id) WHERE parent_run_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_receipts_run ON tool_receipts(run_id, created_at);
 CREATE INDEX IF NOT EXISTS ix_model_calls_run ON model_calls(run_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_actions_workspace_created ON actions(workspace_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_automation_flows_workspace_created
+ON automation_flows(workspace_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_automation_runs_workspace_created
+ON automation_runs(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_automation_steps_run
+ON automation_run_steps(run_id, started_at, id);
+CREATE INDEX IF NOT EXISTS ix_automation_events_run_sequence
+ON automation_events(run_id, sequence);
 
 CREATE TRIGGER IF NOT EXISTS trg_prompt_versions_no_update
 BEFORE UPDATE ON prompt_versions BEGIN SELECT RAISE(ABORT, 'prompt version is immutable'); END;
@@ -281,6 +477,38 @@ CREATE TRIGGER IF NOT EXISTS trg_sandbox_releases_no_update
 BEFORE UPDATE ON sandbox_releases BEGIN SELECT RAISE(ABORT, 'sandbox releases are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_sandbox_releases_no_delete
 BEFORE DELETE ON sandbox_releases BEGIN SELECT RAISE(ABORT, 'sandbox releases are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_action_versions_no_update
+BEFORE UPDATE ON action_versions BEGIN SELECT RAISE(ABORT, 'action version is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_action_versions_no_delete
+BEFORE DELETE ON action_versions BEGIN SELECT RAISE(ABORT, 'action version is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_flow_versions_no_update
+BEFORE UPDATE ON automation_flow_versions BEGIN SELECT RAISE(ABORT, 'automation flow version is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_flow_versions_no_delete
+BEFORE DELETE ON automation_flow_versions BEGIN SELECT RAISE(ABORT, 'automation flow version is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_events_no_update
+BEFORE UPDATE ON automation_events BEGIN SELECT RAISE(ABORT, 'automation events are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_events_no_delete
+BEFORE DELETE ON automation_events BEGIN SELECT RAISE(ABORT, 'automation events are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_model_calls_no_update
+BEFORE UPDATE ON automation_model_calls BEGIN SELECT RAISE(ABORT, 'automation model calls are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_model_calls_no_delete
+BEFORE DELETE ON automation_model_calls BEGIN SELECT RAISE(ABORT, 'automation model calls are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_receipts_no_update
+BEFORE UPDATE ON automation_action_receipts BEGIN SELECT RAISE(ABORT, 'automation receipts are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_receipts_no_delete
+BEFORE DELETE ON automation_action_receipts BEGIN SELECT RAISE(ABORT, 'automation receipts are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_approval_requests_no_update
+BEFORE UPDATE ON automation_approval_requests BEGIN SELECT RAISE(ABORT, 'approval requests are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_approval_requests_no_delete
+BEFORE DELETE ON automation_approval_requests BEGIN SELECT RAISE(ABORT, 'approval requests are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_approval_decisions_no_update
+BEFORE UPDATE ON automation_approval_decisions BEGIN SELECT RAISE(ABORT, 'approval decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_approval_decisions_no_delete
+BEFORE DELETE ON automation_approval_decisions BEGIN SELECT RAISE(ABORT, 'approval decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_effects_no_update
+BEFORE UPDATE ON automation_effects BEGIN SELECT RAISE(ABORT, 'automation effects are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_automation_effects_no_delete
+BEFORE DELETE ON automation_effects BEGIN SELECT RAISE(ABORT, 'automation effects are append-only'); END;
 
 CREATE TRIGGER IF NOT EXISTS trg_runs_terminal_absorbing
 BEFORE UPDATE OF status ON runs
@@ -310,6 +538,45 @@ CREATE TRIGGER IF NOT EXISTS trg_repairs_transition
 BEFORE UPDATE OF status ON repairs
 WHEN NEW.status <> OLD.status AND NOT (OLD.status = 'proposed' AND NEW.status = 'applied')
 BEGIN SELECT RAISE(ABORT, 'illegal repair status transition'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_runs_terminal_absorbing
+BEFORE UPDATE OF status ON automation_runs
+WHEN NEW.status <> OLD.status AND OLD.status IN ('completed', 'blocked', 'failed', 'cancelled')
+BEGIN SELECT RAISE(ABORT, 'terminal automation run status is absorbing'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_runs_transition_shape
+BEFORE UPDATE OF status ON automation_runs
+WHEN NEW.status <> OLD.status
+AND NOT (
+    (OLD.status = 'created' AND NEW.status IN ('running', 'cancelled')) OR
+    (OLD.status = 'running' AND NEW.status IN ('waiting_approval', 'completed', 'blocked', 'failed', 'cancelled')) OR
+    (OLD.status = 'waiting_approval' AND NEW.status IN ('running', 'blocked', 'cancelled'))
+)
+BEGIN SELECT RAISE(ABORT, 'illegal automation run status transition'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_runs_revision_fence
+BEFORE UPDATE OF status ON automation_runs
+WHEN NEW.status <> OLD.status AND NEW.revision <> OLD.revision + 1
+BEGIN SELECT RAISE(ABORT, 'automation run transition must advance one revision'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_steps_transition_shape
+BEFORE UPDATE OF status ON automation_run_steps
+WHEN NEW.status <> OLD.status
+AND NOT (
+    (OLD.status = 'running' AND NEW.status IN ('waiting_approval', 'completed', 'blocked', 'failed', 'skipped')) OR
+    (OLD.status = 'waiting_approval' AND NEW.status IN ('completed', 'blocked'))
+)
+BEGIN SELECT RAISE(ABORT, 'illegal automation step status transition'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_steps_revision_fence
+BEFORE UPDATE OF status ON automation_run_steps
+WHEN NEW.status <> OLD.status AND NEW.revision <> OLD.revision + 1
+BEGIN SELECT RAISE(ABORT, 'automation step transition must advance one revision'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_flows_revision_fence
+BEFORE UPDATE OF revision, current_version ON automation_flows
+WHEN NEW.revision <> OLD.revision + 1 OR NEW.current_version <> OLD.current_version + 1
+BEGIN SELECT RAISE(ABORT, 'automation flow update must advance one revision and version'); END;
 """
 
 
@@ -325,5 +592,13 @@ IMMUTABLE_TABLES = frozenset(
         "diagnoses",
         "repair_approvals",
         "sandbox_releases",
+        "action_versions",
+        "automation_flow_versions",
+        "automation_events",
+        "automation_model_calls",
+        "automation_action_receipts",
+        "automation_approval_requests",
+        "automation_approval_decisions",
+        "automation_effects",
     }
 )
