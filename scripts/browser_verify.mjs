@@ -502,6 +502,16 @@ async function main() {
       aiRun.model_calls.length >= 1 && aiRun.pending_approval !== null && aiRun.effects.length === 0 && aiRun.steps.some((step) => step.status === "waiting_approval") && verifyChain(aiRun),
       { run: aiRun.id, calls: aiRun.model_calls.length, steps: aiRun.steps.map((step) => step.status), effects: aiRun.effects.length }
     );
+    const runGraph = {
+      pinned_nodes: seededFlow.version.nodes.length,
+      rendered_nodes: await page.locator(".run-graph .run-graph-node").count(),
+      minimap_nodes: await page.locator(".run-graph .react-flow__minimap-node").count()
+    };
+    record(
+      "Run graph renders every pinned node and propagates node measurements, probed through the MiniMap because it alone re-derives from live measured dimensions while the canvas keeps drawing from static positions",
+      runGraph.rendered_nodes === runGraph.pinned_nodes && runGraph.minimap_nodes === runGraph.pinned_nodes,
+      runGraph
+    );
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "05-waiting-approval.png"));
     await page.getByRole("button", { name: "Approve and resume" }).click();
     await clickAndWait(page, page.getByRole("button", { name: "Record approval" }));

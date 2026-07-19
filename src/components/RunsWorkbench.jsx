@@ -6,7 +6,9 @@ import {
   MarkerType,
   MiniMap,
   Position,
-  ReactFlow
+  ReactFlow,
+  useEdgesState,
+  useNodesState
 } from "@xyflow/react";
 import { api, commandId } from "../api.js";
 import { Icon } from "../icons.jsx";
@@ -130,28 +132,37 @@ export default function RunsWorkbench({ snapshot, refresh, mutate, busy }) {
   );
 }
 
+function reconcileGraph(previous, next) {
+  const existing = new Map(previous.map((item) => [item.id, item]));
+  const merged = next.map((item) => {
+    const prior = existing.get(item.id);
+    if (!prior) return item;
+    return Object.keys(item).every((key) => JSON.stringify(prior[key]) === JSON.stringify(item[key])) ? prior : { ...prior, ...item };
+  });
+  return merged.length === previous.length && merged.every((item, index) => item === previous[index]) ? previous : merged;
+}
+
 function RunGraph({ snapshot, run }) {
-  const fallbackLayout = new Map(
-    layoutGraph(run.flow_graph.nodes, run.flow_graph.routes).map((node) => [node.id, node.position])
-  );
-  const nodes = run.flow_graph.nodes.map((node) => {
-    const state = runNodeState(run, node.id);
-    return {
+  const derivedNodes = useMemo(() => {
+    const fallbackLayout = new Map(
+      layoutGraph(run.flow_graph.nodes, run.flow_graph.routes).map((node) => [node.id, node.position])
+    );
+    return run.flow_graph.nodes.map((node) => ({
       id: node.id,
       type: "runNode",
       position: node.position ?? fallbackLayout.get(node.id),
       data: {
         label: graphNodeLabel(snapshot, node),
         kind: node.type === "action" ? versionForNode(snapshot, node)?.kind : node.type,
-        state,
+        state: runNodeState(run, node.id),
         outcomes: nodeOutcomes(snapshot, node),
         inputs: run.flow_graph.routes.filter((route) => route.to === node.id).map((route) => `in:${route.from}:${route.outcome}`),
         attempts: run.steps.filter((step) => step.node_id === node.id).length,
         isStart: run.flow_graph.start_node_id === node.id
       }
-    };
-  });
-  const edges = run.flow_graph.routes.map((route) => ({
+    }));
+  }, [snapshot, run]);
+  const derivedEdges = useMemo(() => run.flow_graph.routes.map((route) => ({
     id: `${route.from}:${route.outcome}:${route.to}`,
     source: route.from,
     target: route.to,
@@ -162,8 +173,12 @@ function RunGraph({ snapshot, run }) {
     markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
     animated: run.current_node_id === route.to && run.status === "running",
     className: route.outcome === "error" || route.outcome === "rejected" ? "edge-danger" : ""
-  }));
-  return <div className="run-graph"><ReactFlow nodes={nodes} edges={edges} nodeTypes={RUN_NODE_TYPES} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView fitViewOptions={{ padding: .3 }} minZoom={.2} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background gap={22} size={1} color="#272b32" /><Controls showInteractive={false} position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" maskColor="rgba(8,10,13,.78)" nodeColor={(node) => stateColor(node.data.state)} /></ReactFlow><div className="run-graph-label"><Badge tone="neutral"><Icon name="lock" size={12} />Pinned Flow v{run.flow_version}</Badge><LedgerState run={run} /></div></div>;
+  })), [run.flow_graph.routes, run.current_node_id, run.status]);
+  const [nodes, setNodes, onNodesChange] = useNodesState(derivedNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(derivedEdges);
+  useEffect(() => { setNodes((previous) => reconcileGraph(previous, derivedNodes)); }, [derivedNodes, setNodes]);
+  useEffect(() => { setEdges((previous) => reconcileGraph(previous, derivedEdges)); }, [derivedEdges, setEdges]);
+  return <div className="run-graph"><ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={RUN_NODE_TYPES} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView fitViewOptions={{ padding: .3 }} minZoom={.2} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background gap={22} size={1} color="#272b32" /><Controls showInteractive={false} position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" maskColor="rgba(8,10,13,.78)" nodeColor={(node) => stateColor(node.data.state)} /></ReactFlow><div className="run-graph-label"><Badge tone="neutral"><Icon name="lock" size={12} />Pinned Flow v{run.flow_version}</Badge><LedgerState run={run} /></div></div>;
 }
 
 function RunGraphNode({ data }) {
