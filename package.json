@@ -1,0 +1,12 @@
+{
+  "name": "kyn-agent-studio-verification",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:state": "node --test tests/core.test.mjs",
+    "test:browser": "node scripts/browser_verify.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.61.1"
+  }
+}

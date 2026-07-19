@@ -7,357 +7,399 @@
     <meta name="theme-color" content="#090b0d">
     <meta
       name="description"
-      content="A real closed-loop agent runtime: execute, record, diagnose, repair, approve, rerun, and prove."
+      content="Kyn.ist Agent Studio: define Actions, compose versioned agent Flows, observe authoritative Runs, approve effects, diagnose failures, repair, and rerun."
     >
-    <title>Kyn.ist Flight Recorder</title>
+    <title>Kyn.ist Agent Studio</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="./styles.css">
   </head>
-  <body>
-    <a class="skip-link" href="#main-content">Skip to the control loop</a>
+  <body data-busy="false">
+    <a class="skip-link" href="#main-content">Skip to Agent Studio</a>
 
     <header class="topbar">
-      <a class="brand" href="#main-content" aria-label="Kyn.ist Flight Recorder home">
+      <a class="brand" href="#overview" data-navigate="overview" aria-label="Kyn.ist Agent Studio home">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-        <span>
+        <span class="brand-copy">
           <strong>Kyn.ist</strong>
-          <small>Flight Recorder</small>
+          <small>Agent Studio</small>
         </span>
       </a>
-      <div class="topbar-status" id="runtime-health" aria-live="polite">
-        <span class="status-light is-loading" aria-hidden="true"></span>
-        <span>Checking runtime…</span>
+      <div class="topbar-context">
+        <div class="topbar-status" id="runtime-health" aria-live="polite">
+          <span class="status-light is-loading" aria-hidden="true"></span>
+          <span>Checking runtime…</span>
+        </div>
+        <span class="context-separator" aria-hidden="true"></span>
+        <span class="workspace-label" id="workspace-label">No workspace</span>
       </div>
       <div class="topbar-actions">
+        <button class="button button-quiet key-status" id="open-config" type="button">
+          <span class="key-dot" aria-hidden="true"></span>
+          <span id="key-status-label">Configure OpenAI</span>
+        </button>
         <a
-          class="button button-quiet repo-link"
+          class="button button-quiet"
           href="https://github.com/cakbudak/kyn-flight-recorder"
           target="_blank"
           rel="noreferrer"
         >
-          Source
-          <span aria-hidden="true">↗</span>
+          Source <span aria-hidden="true">↗</span>
         </a>
-        <button class="button button-quiet" id="new-workspace" type="button" hidden>
-          New isolated lab
-        </button>
       </div>
     </header>
 
-    <div class="shell">
-      <aside class="rail" aria-label="Closed-loop sections">
-        <p class="rail-label">Control loop</p>
-        <nav>
-          <a href="#flow-section" class="rail-link is-active"><span>01</span> Flow</a>
-          <a href="#resources-section" class="rail-link"><span>02</span> Resources</a>
-          <a href="#runs-section" class="rail-link"><span>03</span> Runs</a>
-          <a href="#ledger-section" class="rail-link"><span>04</span> Evidence</a>
+    <div class="product-shell">
+      <aside class="sidebar" id="sidebar" aria-label="Agent Studio navigation" hidden>
+        <nav class="primary-nav">
+          <p class="nav-label">Workspace</p>
+          <button class="nav-item is-active" type="button" data-view="overview">
+            <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
+          </button>
+          <button class="nav-item" type="button" data-view="actions">
+            <span class="nav-icon" aria-hidden="true">A</span><span>Actions</span>
+            <strong id="nav-action-count">0</strong>
+          </button>
+          <button class="nav-item" type="button" data-view="flows">
+            <span class="nav-icon" aria-hidden="true">F</span><span>Flows</span>
+            <strong id="nav-flow-count">0</strong>
+          </button>
+          <button class="nav-item" type="button" data-view="runs">
+            <span class="nav-icon" aria-hidden="true">R</span><span>Runs</span>
+            <strong id="nav-run-count">0</strong>
+          </button>
+
+          <p class="nav-label nav-label-spaced">Agent stack</p>
+          <button class="nav-item" type="button" data-view="resources">
+            <span class="nav-icon" aria-hidden="true">S</span><span>Resources</span>
+          </button>
+          <button class="nav-item" type="button" data-view="repair">
+            <span class="nav-icon" aria-hidden="true">↺</span><span>Repair Lab</span>
+          </button>
         </nav>
-        <div class="rail-boundary">
-          <span class="boundary-icon" aria-hidden="true">K</span>
-          <p><strong>Safe boundary</strong><br>Local sandbox effects only</p>
+        <div class="sidebar-foot">
+          <button class="nav-item" type="button" data-view="docs">
+            <span class="nav-icon" aria-hidden="true">?</span><span>How it works</span>
+          </button>
+          <button class="nav-item" type="button" data-view="config">
+            <span class="nav-icon" aria-hidden="true">⚙</span><span>Configuration</span>
+          </button>
+          <div class="boundary-note">
+            <span class="boundary-mark" aria-hidden="true">K</span>
+            <p><strong>Public projection</strong><br>Bounded sandbox · no private Kyn ontology</p>
+          </div>
         </div>
       </aside>
 
       <main id="main-content" class="main-content" tabindex="-1">
         <section id="loading-state" class="system-state" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>
-          <p>Opening the runtime ledger…</p>
+          <p>Opening the Agent Studio runtime…</p>
         </section>
 
         <section id="onboarding" class="onboarding" hidden>
-          <div class="hero-copy">
-            <p class="eyebrow"><span></span> OpenAI Build Week · real runtime</p>
-            <h1>From agent failure<br>to <em>proven repair.</em></h1>
-            <p class="hero-lede">
-              Build a versioned agent flow, execute real function calls, identify the causal
-              fault from an authoritative ledger, approve one bounded repair, and rerun it.
-            </p>
-            <div class="hero-actions">
-              <button class="button button-primary button-large" id="create-lab" type="button">
-                Create live agent lab
-                <span aria-hidden="true">→</span>
-              </button>
-              <span class="hero-note">Fresh SQLite workspace · expires in 24 hours</span>
-            </div>
-          </div>
-          <div class="hero-proof" aria-label="What the lab creates">
-            <div class="proof-head">
-              <span class="proof-index">7</span>
-              <p><strong>one causal loop</strong><br>with evidence at every boundary</p>
-            </div>
-            <ol>
-              <li><span>01</span><strong>Compose</strong><small>Agents · prompts · skills</small></li>
-              <li><span>02</span><strong>Execute</strong><small>OpenAI Responses + strict tools</small></li>
-              <li><span>03</span><strong>Record</strong><small>Hash-linked SQLite events</small></li>
-              <li><span>04</span><strong>Diagnose</strong><small>Cited evidence only</small></li>
-              <li><span>05</span><strong>Repair</strong><small>One allow-listed patch</small></li>
-              <li><span>06</span><strong>Approve</strong><small>Human revision fence</small></li>
-              <li><span>07</span><strong>Prove</strong><small>Child rerun + real receipt</small></li>
-            </ol>
-            <p class="honest-boundary">
-              The release tool writes a real row inside a safe sandbox. It never touches a
-              production deployment system.
-            </p>
-          </div>
-        </section>
-
-        <section id="runtime" hidden>
-          <header class="page-header">
-            <div>
-              <p class="eyebrow"><span></span> Closed-loop workspace</p>
-              <div class="title-line">
-                <h1 id="flow-name">Production release guard</h1>
-                <span class="pill" id="flow-version">Flow v1</span>
+          <div class="onboarding-grid">
+            <div class="hero-copy">
+              <p class="eyebrow"><span></span> OpenAI Build Week · executable public projection</p>
+              <h1>Build agent systems.<br><em>See what they actually did.</em></h1>
+              <p class="hero-lede">
+                Define typed Actions. Connect AI through versioned Agents, Prompts, and Skills.
+                Bundle them into Flows, pause at human decisions, and operate every Run from
+                authoritative evidence.
+              </p>
+              <div class="hero-actions">
+                <button class="button button-primary button-large" id="create-workspace" type="button">
+                  Open an isolated Studio <span aria-hidden="true">→</span>
+                </button>
+                <button class="button button-quiet button-large" id="onboarding-config" type="button">
+                  Configure OpenAI
+                </button>
               </div>
-              <p id="flow-goal" class="page-subtitle"></p>
+              <p class="hero-note">Fresh SQLite workspace · no account · no operator API key</p>
             </div>
-            <dl class="header-facts">
-              <div><dt>Workspace</dt><dd id="workspace-id" class="mono"></dd></div>
-              <div><dt>Authority</dt><dd>SQLite ledger</dd></div>
-              <div><dt>Model</dt><dd id="flow-model">gpt-5.6</dd></div>
-            </dl>
-          </header>
 
-          <ol class="phase-strip" id="phase-strip" aria-label="Closed-loop progress">
-            <li data-phase="ready"><span>1</span><strong>Compose</strong></li>
-            <li data-phase="blocked"><span>2</span><strong>Execute</strong></li>
-            <li data-phase="diagnosed"><span>3</span><strong>Diagnose</strong></li>
-            <li data-phase="repair"><span>4</span><strong>Repair</strong></li>
-            <li data-phase="applied"><span>5</span><strong>Approve</strong></li>
-            <li data-phase="proven"><span>6</span><strong>Rerun + prove</strong></li>
-          </ol>
-
-          <section id="flow-section" class="section-block" aria-labelledby="flow-title">
-            <div class="section-heading">
-              <div>
-                <p class="section-kicker">Live control plane</p>
-                <h2 id="flow-title">One next legal action</h2>
+            <div class="system-preview" aria-label="Agent Studio execution model">
+              <div class="preview-head">
+                <span>agent-reviewed-launch.flow</span>
+                <small>immutable v1</small>
               </div>
-              <span id="phase-caption" class="phase-caption">Ready to execute</span>
-            </div>
-
-            <div class="control-grid">
-              <article class="panel flow-card">
-                <div class="panel-topline">
-                  <span class="panel-label">Pinned flow manifest</span>
-                  <span class="status-badge status-ready" id="run-status">Ready</span>
-                </div>
-                <div class="manifest-route" aria-label="Requested release route">
-                  <div>
-                    <small>Artifact</small>
-                    <strong id="artifact-name" class="mono"></strong>
-                  </div>
-                  <span class="route-arrow" aria-hidden="true">→</span>
-                  <div>
-                    <small>Requested</small>
-                    <strong id="requested-environment"></strong>
-                  </div>
-                </div>
-                <div class="policy-row">
-                  <div>
-                    <span class="field-label">Pinned allow-list</span>
-                    <div id="allowed-environments" class="token-list"></div>
-                  </div>
-                  <div>
-                    <span class="field-label">Expected first outcome</span>
-                    <strong id="expected-outcome" class="danger-text">Policy denial</strong>
-                  </div>
-                </div>
-                <div class="action-block">
-                  <button class="button button-primary button-full" id="primary-action" type="button">
-                    Run agent flow
-                    <span aria-hidden="true">→</span>
-                  </button>
-                  <p id="action-explainer">
-                    The executor will inspect policy and call the sandbox release tool.
-                  </p>
-                </div>
-              </article>
-
-              <article class="panel activity-card" aria-labelledby="activity-title">
-                <div class="panel-topline">
-                  <span class="panel-label">Agent activity</span>
-                  <span id="activity-count" class="mono">0 events</span>
-                </div>
-                <h3 id="activity-title">No run yet</h3>
-                <p id="activity-summary">
-                  The flow, three agents, three prompts, and three skills are immutable and pinned.
-                </p>
-                <ol class="activity-steps" id="activity-steps">
-                  <li data-activity="model"><i></i><span>Model response</span><small>waiting</small></li>
-                  <li data-activity="inspect"><i></i><span>Policy inspection</span><small>waiting</small></li>
-                  <li data-activity="stage"><i></i><span>Sandbox stage</span><small>waiting</small></li>
-                  <li data-activity="terminal"><i></i><span>Authoritative outcome</span><small>waiting</small></li>
-                </ol>
-                <div class="activity-foot">
-                  <span><i class="tiny-dot" aria-hidden="true"></i> No DB transaction during model I/O</span>
-                  <span>Strict tools</span>
-                </div>
-              </article>
-            </div>
-
-            <div id="diagnosis-panel" class="diagnosis-panel" hidden>
-              <div class="diagnosis-icon" aria-hidden="true">!</div>
-              <div>
-                <p class="section-kicker">Evidence-grounded diagnosis</p>
-                <h3 id="diagnosis-summary"></h3>
-                <p id="diagnosis-retry"></p>
+              <div class="preview-flow">
+                <article><span class="node-kind node-ai">AI</span><strong>Analyze</strong><small>Agent + Prompt + Skill</small></article>
+                <i aria-hidden="true">→</i>
+                <article><span class="node-kind node-condition">IF</span><strong>Quality gate</strong><small>Typed Action</small></article>
+                <i aria-hidden="true">→</i>
+                <article><span class="node-kind node-approval">H</span><strong>Approval</strong><small>Real pause / resume</small></article>
+                <i aria-hidden="true">→</i>
+                <article><span class="node-kind node-sandbox">FX</span><strong>Publish</strong><small>Idempotent sandbox effect</small></article>
               </div>
-              <dl>
-                <div><dt>Fault class</dt><dd id="diagnosis-class"></dd></div>
-                <div><dt>Confidence</dt><dd id="diagnosis-confidence"></dd></div>
-                <div><dt>Citations</dt><dd id="diagnosis-citations"></dd></div>
+              <dl class="preview-proof">
+                <div><dt>Definitions</dt><dd>Immutable + fingerprinted</dd></div>
+                <div><dt>Execution</dt><dd>OpenAI Responses + strict tools</dd></div>
+                <div><dt>Evidence</dt><dd>Hash-linked SQLite events</dd></div>
+                <div><dt>Maintenance</dt><dd>Human revision fence · Child rerun + real receipt</dd></div>
               </dl>
             </div>
+          </div>
+        </section>
 
-            <div id="repair-panel" class="repair-panel" hidden>
+        <div id="workspace-surface" hidden>
+          <section class="view" id="overview-view" data-view-panel="overview">
+            <header class="page-header hero-header">
               <div>
-                <p class="section-kicker">Bounded repair proposal</p>
-                <h3 id="repair-summary"></h3>
+                <p class="eyebrow"><span></span> Kyn.ist Agent Studio</p>
+                <h1>One control plane for <em>agent work.</em></h1>
+                <p class="page-lede">
+                  Compose reusable capabilities, execute a pinned graph, and keep the evidence
+                  required to understand, approve, maintain, and rerun it.
+                </p>
               </div>
-              <div class="patch-preview" aria-label="Proposed manifest patch">
-                <span class="patch-remove">− ["staging"]</span>
-                <span class="patch-add" id="patch-add">+ ["staging", "production"]</span>
+              <div class="header-actions">
+                <button class="button button-quiet" id="new-workspace" type="button">New workspace</button>
+                <button class="button button-primary" id="run-example" type="button">Run example Flow</button>
               </div>
-              <div class="repair-fence">
-                <span>Path <code id="repair-path"></code></span>
-                <span>Expected revision <strong id="repair-revision"></strong></span>
-                <span>Risk <strong id="repair-risk"></strong></span>
+            </header>
+
+            <div class="metric-grid" aria-label="Workspace inventory">
+              <article><span>Actions</span><strong id="metric-actions">0</strong><small>typed capabilities</small></article>
+              <article><span>Flows</span><strong id="metric-flows">0</strong><small>pinned graphs</small></article>
+              <article><span>Runs</span><strong id="metric-runs">0</strong><small>authoritative executions</small></article>
+              <article><span>Agent stack</span><strong id="metric-agents">0</strong><small>versioned agents</small></article>
+            </div>
+
+            <div class="overview-grid">
+              <article class="panel getting-started">
+                <div class="panel-heading">
+                  <div><p class="section-kicker">Start anywhere</p><h2>This is a builder, not a scripted tour</h2></div>
+                  <span class="version-chip">live SQLite</span>
+                </div>
+                <div class="capability-grid">
+                  <button type="button" data-view-target="actions">
+                    <span>01</span><strong>Define Actions</strong><small>AI, template, condition, approval, and sandbox effects.</small>
+                  </button>
+                  <button type="button" data-view-target="flows">
+                    <span>02</span><strong>Build Flows</strong><small>Map typed inputs across an explicit acyclic graph.</small>
+                  </button>
+                  <button type="button" data-view-target="runs">
+                    <span>03</span><strong>Observe Runs</strong><small>Inspect Steps, model calls, receipts, approvals, and effects.</small>
+                  </button>
+                  <button type="button" data-view-target="resources">
+                    <span>04</span><strong>Versioned Agents, Prompts, and Skills</strong><small>Pin model behavior and exact Action authority.</small>
+                  </button>
+                </div>
+              </article>
+
+              <article class="panel boundary-panel">
+                <div class="panel-heading">
+                  <div><p class="section-kicker">Public boundary</p><h2>Real where it matters</h2></div>
+                </div>
+                <ul class="check-list">
+                  <li><i aria-hidden="true">✓</i><span><strong>Official OpenAI SDK</strong><small>Every model action uses the Responses API through the server-side SDK.</small></span></li>
+                  <li><i aria-hidden="true">✓</i><span><strong>Browser-owned credential</strong><small>The key crosses only the same-origin request that needs it.</small></span></li>
+                  <li><i aria-hidden="true">✓</i><span><strong>Authoritative runtime</strong><small>SQLite constraints, immutable versions, and a hash-linked event ledger.</small></span></li>
+                  <li><i aria-hidden="true">✓</i><span><strong>Bounded effects</strong><small>No shell, arbitrary HTTP, filesystem, production connector, or private Kyn layer.</small></span></li>
+                </ul>
+              </article>
+            </div>
+
+            <section class="section-block" aria-labelledby="recent-runs-title">
+              <div class="section-heading">
+                <div><p class="section-kicker">Operations</p><h2 id="recent-runs-title">Recent Runs</h2></div>
+                <button class="button button-quiet" type="button" data-view-target="runs">Open Run console</button>
               </div>
+              <div id="overview-runs" class="run-table"></div>
+            </section>
+          </section>
+
+          <section class="view" id="actions-view" data-view-panel="actions" hidden>
+            <header class="page-header">
+              <div><p class="eyebrow"><span></span> Capability registry</p><h1>Actions</h1><p class="page-lede">One typed invocation contract for graph nodes and Agent-called tools.</p></div>
+              <button class="button button-primary" id="create-action" type="button">New Action</button>
+            </header>
+            <div class="filter-bar">
+              <label class="search-field"><span class="visually-hidden">Filter Actions</span><input id="action-filter" type="search" placeholder="Filter Actions…"></label>
+              <div class="kind-legend" aria-label="Action kinds"><span>AI</span><span>Logic</span><span>Human</span><span>Effect</span></div>
+            </div>
+            <div id="action-list" class="definition-grid"></div>
+          </section>
+
+          <section class="view" id="flows-view" data-view-panel="flows" hidden>
+            <header class="page-header">
+              <div><p class="eyebrow"><span></span> Graph composer</p><h1>Flows</h1><p class="page-lede">Bundle immutable Action and Agent versions into an explicit, validated DAG.</p></div>
+              <button class="button button-primary" id="create-flow" type="button">New Flow</button>
+            </header>
+            <div class="split-workspace">
+              <aside class="selection-list" aria-label="Available Flows"><div id="flow-list"></div></aside>
+              <section class="flow-inspector" id="flow-inspector" aria-live="polite"></section>
             </div>
           </section>
 
-          <section id="resources-section" class="section-block" aria-labelledby="resources-title">
-            <div class="section-heading">
-              <div>
-                <p class="section-kicker">First-class, versioned inputs</p>
-                <h2 id="resources-title">Agents, prompts, skills</h2>
-              </div>
-              <p>Every run pins these exact fingerprints.</p>
-            </div>
-            <div class="resource-columns">
-              <article class="resource-group">
-                <header><span class="resource-glyph">P</span><div><h3>Prompts</h3><p>Declared templates</p></div><strong id="prompt-count">0</strong></header>
-                <div id="prompt-list" class="resource-list"></div>
-              </article>
-              <article class="resource-group">
-                <header><span class="resource-glyph">S</span><div><h3>Skills</h3><p>Instructions + authority</p></div><strong id="skill-count">0</strong></header>
-                <div id="skill-list" class="resource-list"></div>
-              </article>
-              <article class="resource-group">
-                <header><span class="resource-glyph">A</span><div><h3>Agents</h3><p>Model + pinned resources</p></div><strong id="agent-count">0</strong></header>
-                <div id="agent-list" class="resource-list"></div>
-              </article>
+          <section class="view" id="runs-view" data-view-panel="runs" hidden>
+            <header class="page-header">
+              <div><p class="eyebrow"><span></span> Operations console</p><h1>Runs</h1><p class="page-lede">Observe state, evidence, model activity, receipts, approvals, and effects without rewriting history.</p></div>
+              <button class="button button-primary" id="start-run" type="button">Start Run</button>
+            </header>
+            <div class="split-workspace run-workspace">
+              <aside class="selection-list" aria-label="Automation Runs"><div id="run-list"></div></aside>
+              <section class="run-inspector" id="run-inspector" aria-live="polite"></section>
             </div>
           </section>
 
-          <section id="runs-section" class="section-block" aria-labelledby="runs-title">
-            <div class="section-heading">
-              <div>
-                <p class="section-kicker">Before / after proof</p>
-                <h2 id="runs-title">Immutable run comparison</h2>
-              </div>
-              <p id="comparison-caption">Run the flow to create the first evidence set.</p>
+          <section class="view" id="resources-view" data-view-panel="resources" hidden>
+            <header class="page-header">
+              <div><p class="eyebrow"><span></span> Agent stack</p><h1>Agents, prompts, skills</h1><p class="page-lede">Behavior, context, and authority are first-class immutable inputs—not hidden strings.</p></div>
+            </header>
+            <div class="resource-toolbar" role="tablist" aria-label="Agent resources">
+              <button class="tab is-active" type="button" role="tab" aria-selected="true" data-resource-tab="agents">Agents</button>
+              <button class="tab" type="button" role="tab" aria-selected="false" data-resource-tab="prompts">Prompts</button>
+              <button class="tab" type="button" role="tab" aria-selected="false" data-resource-tab="skills">Skills</button>
+              <button class="button button-primary" id="create-resource" type="button">New Agent</button>
             </div>
-            <div class="comparison-grid">
-              <article class="run-card" id="before-run-card">
-                <div class="run-card-empty">
-                  <span>01</span>
-                  <p>Failed run will remain here<br>after the repair.</p>
-                </div>
-              </article>
-              <div class="comparison-arrow" aria-hidden="true"><span>→</span><small>new version</small></div>
-              <article class="run-card" id="after-run-card">
-                <div class="run-card-empty">
-                  <span>02</span>
-                  <p>Child rerun will prove<br>the changed outcome.</p>
-                </div>
-              </article>
-            </div>
+            <div id="resource-list" class="resource-definition-list"></div>
           </section>
 
-          <section id="ledger-section" class="section-block ledger-section" aria-labelledby="ledger-title">
-            <div class="section-heading">
-              <div>
-                <p class="section-kicker">Authoritative evidence</p>
-                <h2 id="ledger-title">Hash-linked event ledger</h2>
-              </div>
-              <div class="ledger-controls" id="run-switcher" role="group" aria-label="Select run ledger"></div>
-            </div>
-            <div class="ledger-grid">
-              <div class="panel ledger-table-wrap">
-                <div class="ledger-head" aria-hidden="true">
-                  <span>Seq</span><span>Event</span><span>Actor</span><span>Hash</span>
-                </div>
-                <ol id="event-list" class="event-list">
-                  <li class="event-empty">No event exists until a real run begins.</li>
+          <section class="view" id="repair-view" data-view-panel="repair" hidden>
+            <header class="page-header">
+              <div><p class="eyebrow"><span></span> Closed-loop maintenance</p><h1>Repair Lab</h1><p class="page-lede">A complete executable template: fail under policy, diagnose from owned evidence, propose one bounded repair, approve, and prove it by linked child Run.</p></div>
+              <span class="status-badge" id="repair-phase-badge">Ready</span>
+            </header>
+            <div class="repair-layout">
+              <article class="panel repair-control">
+                <div class="panel-heading"><div><p class="section-kicker">Live template</p><h2>Production release guard</h2></div><span class="version-chip" id="repair-flow-version">v1</span></div>
+                <ol class="repair-phases" id="repair-phases">
+                  <li data-repair-phase="ready"><span>1</span>Execute</li>
+                  <li data-repair-phase="blocked"><span>2</span>Diagnose</li>
+                  <li data-repair-phase="diagnosed"><span>3</span>Repair</li>
+                  <li data-repair-phase="repair"><span>4</span>Approve</li>
+                  <li data-repair-phase="applied"><span>5</span>Rerun</li>
+                  <li data-repair-phase="proven"><span>6</span>Prove</li>
                 </ol>
-              </div>
-              <aside class="panel evidence-inspector" aria-labelledby="evidence-title">
-                <p class="panel-label">Selected evidence</p>
-                <h3 id="evidence-title">Choose an event</h3>
-                <dl>
-                  <div><dt>Event id</dt><dd id="evidence-id" class="mono">—</dd></div>
-                  <div><dt>Previous hash</dt><dd id="evidence-prev" class="mono">—</dd></div>
-                  <div><dt>Event hash</dt><dd id="evidence-hash" class="mono">—</dd></div>
-                </dl>
-                <span class="field-label">Safe payload</span>
-                <pre id="evidence-payload">Select a ledger row to inspect its committed payload.</pre>
-              </aside>
+                <div class="repair-manifest" id="repair-manifest"></div>
+                <button class="button button-primary button-full" id="repair-primary-action" type="button">Run real agent flow</button>
+                <p class="action-help" id="repair-action-help"></p>
+              </article>
+              <article class="panel evidence-console">
+                <div class="panel-heading"><div><p class="section-kicker">Authoritative evidence</p><h2>Failure → changed outcome</h2></div></div>
+                <div id="repair-evidence"></div>
+              </article>
             </div>
           </section>
-        </section>
 
-        <section id="error-panel" class="error-panel" aria-live="assertive" hidden>
-          <div aria-hidden="true">!</div>
-          <p><strong id="error-code">Request failed</strong><span id="error-message"></span></p>
-          <button class="button button-quiet" id="dismiss-error" type="button">Dismiss</button>
-        </section>
+          <section class="view docs-view" id="docs-view" data-view-panel="docs" hidden>
+            <header class="page-header"><div><p class="eyebrow"><span></span> Live documentation</p><h1>How Agent Studio works</h1><p class="page-lede">The public product is intentionally smaller than Kyn.ist. Its contracts are not decorative.</p></div></header>
+            <div class="docs-layout">
+              <nav class="docs-nav" aria-label="Documentation sections">
+                <a href="#what-happens">What actually happens</a>
+                <a href="#more-than-traces">More than traces</a>
+                <a href="#runtime-contract">Runtime contract</a>
+                <a href="#bounded">Deliberate boundary</a>
+              </nav>
+              <div class="docs-content">
+                <article id="what-happens"><p class="section-kicker">Execution</p><h2>What actually happens</h2><p>A Flow pins exact Action or Agent versions. The runtime validates its input, maps it into each Step, invokes every capability through one Action boundary, commits receipts and hash-linked events, and follows only declared routes. External model I/O happens outside SQLite write transactions.</p><div class="doc-sequence"><span>Input</span><i>→</i><span>Validate</span><i>→</i><span>Execute</span><i>→</i><span>Receipt</span><i>→</i><span>Route</span></div></article>
+                <article id="more-than-traces"><p class="section-kicker">Control plane</p><h2>Why this is more than a trace viewer</h2><p>You define executable Actions and compose Flows here. Runs can genuinely pause for Human approval, resume into a bounded effect, fail terminally, and rerun as linked immutable children. The Repair Lab adds evidence-owned diagnosis and a revision-fenced repair loop.</p></article>
+                <article id="runtime-contract"><p class="section-kicker">Contracts</p><h2>Definitions and Runs stay distinct</h2><div class="contract-grid"><div><strong>Definition plane</strong><p>Actions, Flows, Agents, Prompts, and Skills are immutable, fingerprinted versions.</p></div><div><strong>Execution plane</strong><p>Runs, Steps, model calls, receipts, approvals, effects, and events are authoritative records.</p></div><div><strong>Authority plane</strong><p>Skills grant exact Action version IDs. Model text never widens authority.</p></div><div><strong>Maintenance plane</strong><p>Terminal Runs remain absorbing. A rerun is a linked new Run against a pinned Flow version.</p></div></div></article>
+                <article id="bounded"><p class="section-kicker">Safety</p><h2>What is deliberately bounded</h2><p>This public projection excludes Ainou, Parts/Entities, Bricks/Packs/Frames, CE, arbitrary MCP servers, shell access, filesystem access, arbitrary HTTP, and production connectors. The only write effect appends an idempotent record to this workspace’s SQLite sandbox. That keeps the demonstration real without publishing Kyn.ist’s private architecture.</p></article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view config-view" id="config-view" data-view-panel="config" hidden>
+            <header class="page-header"><div><p class="eyebrow"><span></span> Bring your own key</p><h1>Configuration</h1><p class="page-lede">Use your own OpenAI API key for model-backed Actions and the Repair Lab.</p></div></header>
+            <div class="config-grid">
+              <form class="panel config-card" id="config-form">
+                <div class="panel-heading"><div><p class="section-kicker">OpenAI</p><h2>Browser session credential</h2></div><span class="status-badge" id="config-key-badge">Not configured</span></div>
+                <label class="field"><span>OpenAI API key</span><input id="openai-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key"></label>
+                <p class="field-help">Saved in <strong>this browser tab only</strong> using session storage. It is attached only to same-origin model-action requests and is <strong>never written to SQLite</strong>, events, receipts, logs, or Git.</p>
+                <div class="form-actions">
+                  <button class="button button-primary" id="save-api-key" type="submit">Save for this tab</button>
+                  <button class="button button-danger" id="clear-api-key" type="button">Clear key</button>
+                </div>
+              </form>
+              <article class="panel config-explainer">
+                <p class="section-kicker">Credential path</p><h2>No operator fallback</h2>
+                <ol><li><span>1</span><p><strong>Your tab</strong><br>The raw key stays in session storage until the tab closes or you clear it.</p></li><li><span>2</span><p><strong>Same-origin request</strong><br>Only a command forecast to call a model receives the credential header.</p></li><li><span>3</span><p><strong>Ephemeral SDK client</strong><br>The server constructs the official OpenAI SDK client for that bounded operation.</p></li><li><span>4</span><p><strong>Evidence without secrets</strong><br>Only response IDs, hashes, status, model, usage, and request ID are committed.</p></li></ol>
+              </article>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
 
-    <dialog id="approval-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
-      <form id="approval-form" method="dialog">
-        <header>
-          <div>
-            <p class="section-kicker">Human authority boundary</p>
-            <h2 id="dialog-title">Approve one bounded repair</h2>
-          </div>
-          <button class="icon-button" id="close-dialog" type="button" aria-label="Close approval dialog">×</button>
-        </header>
-        <p id="dialog-description">
-          The agents may diagnose and propose. Only this human command can create flow v2.
-        </p>
-        <div class="dialog-patch">
-          <span>Flow revision</span><strong id="dialog-revision">1 → 2</strong>
-          <span>Proposal hash</span><code id="dialog-proposal-hash"></code>
-          <span>Allowed path</span><code>/policy/allowed_environments</code>
+    <aside class="error-panel" id="error-panel" aria-live="assertive" hidden>
+      <div><strong id="error-title">Request failed</strong><p id="error-message"></p></div>
+      <button class="icon-button" id="dismiss-error" type="button" aria-label="Dismiss error">×</button>
+    </aside>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <div class="visually-hidden" id="live-region" aria-live="polite"></div>
+
+    <dialog class="dialog editor-dialog" id="action-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+      <form method="dialog" id="action-form">
+        <header class="dialog-header"><div><p class="section-kicker">Typed capability</p><h2 id="dialog-title">Create Action</h2><p id="dialog-description">Define one immutable executable contract. Advanced JSON remains visible and editable.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="action-dialog" aria-label="Close">×</button></header>
+        <div class="form-grid two-columns">
+          <label class="field"><span>Name</span><input id="action-name" required maxlength="100" value="Greeting formatter"></label>
+          <label class="field"><span>Slug</span><input id="action-slug" required maxlength="64" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="greeting-formatter"></label>
+          <label class="field field-wide"><span>Description</span><input id="action-description" required maxlength="500" value="Render a deterministic greeting from validated input."></label>
+          <label class="field"><span>Kind</span><select id="action-kind"><option value="template">Template</option><option value="condition">Condition</option><option value="approval">Human approval</option><option value="sandbox">Sandbox effect</option><option value="ai">AI / Agent</option></select></label>
+          <label class="field" id="action-agent-field" hidden><span>Pinned Agent version</span><select id="action-agent"></select></label>
+          <label class="field field-wide"><span>Input JSON Schema</span><textarea id="action-input-schema" class="code-input" rows="8" required></textarea></label>
+          <label class="field field-wide"><span>Output JSON Schema</span><textarea id="action-output-schema" class="code-input" rows="8" required></textarea></label>
+          <label class="field field-wide"><span>Action configuration</span><textarea id="action-config" class="code-input" rows="6" required></textarea></label>
         </div>
-        <label>
-          Operator
-          <input id="approval-actor" name="actor" value="build-week-judge" maxlength="100" required>
-        </label>
-        <label>
-          Reason
-          <textarea id="approval-reason" name="reason" rows="3" minlength="12" maxlength="500" required>Approve the evidence-bound sandbox policy repair and preserve immutable history.</textarea>
-        </label>
-        <label class="acknowledgement">
-          <input id="approval-acknowledged" name="acknowledged" type="checkbox" required>
-          <span>I understand the rerun creates a real effect only inside the local sandbox.</span>
-        </label>
-        <footer>
-          <button class="button button-quiet" id="cancel-approval" type="button">Cancel</button>
-          <button class="button button-primary" id="submit-approval" type="submit">
-            Apply with revision fence
-            <span aria-hidden="true">→</span>
-          </button>
-        </footer>
+        <footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="action-dialog">Cancel</button><button class="button button-primary" type="submit">Create immutable v1</button></footer>
       </form>
     </dialog>
 
-    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <div id="live-region" class="visually-hidden" aria-live="polite"></div>
+    <dialog class="dialog editor-dialog dialog-wide" id="flow-dialog" aria-labelledby="flow-dialog-title" aria-describedby="flow-dialog-description">
+      <form method="dialog" id="flow-form">
+        <header class="dialog-header"><div><p class="section-kicker">Graph composer</p><h2 id="flow-dialog-title">Create Flow</h2><p id="flow-dialog-description">Add version-pinned nodes, explicit mappings, and outcome routes. Cycles and unreachable nodes are rejected.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="flow-dialog" aria-label="Close">×</button></header>
+        <div class="form-grid two-columns">
+          <label class="field"><span>Name</span><input id="flow-name" required maxlength="100" value="My automation"></label>
+          <label class="field"><span>Slug</span><input id="flow-slug" required maxlength="64" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="my-automation"></label>
+          <label class="field field-wide"><span>Description</span><input id="flow-description" required maxlength="500" value="A user-defined versioned Action Flow."></label>
+          <label class="field field-wide"><span>Flow input JSON Schema</span><textarea id="flow-input-schema" class="code-input" rows="7" required></textarea></label>
+          <label class="field"><span>Start node ID</span><input id="flow-start-node" required maxlength="64"></label>
+        </div>
+        <section class="sub-editor"><div class="sub-editor-head"><div><strong>Nodes</strong><small>Each node pins one Action or Agent version.</small></div><button class="button button-quiet" id="add-flow-node" type="button">Add node</button></div><div id="flow-node-rows" class="editor-rows"></div></section>
+        <section class="sub-editor"><div class="sub-editor-head"><div><strong>Routes</strong><small>Leave empty for a one-node Flow. Outcomes: success, true, false, approved, rejected.</small></div><button class="button button-quiet" id="add-flow-route" type="button">Add route</button></div><div id="flow-route-rows" class="editor-rows"></div></section>
+        <footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="flow-dialog">Cancel</button><button class="button button-primary" type="submit">Create immutable Flow v1</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="dialog" id="run-dialog" aria-labelledby="run-dialog-title" aria-describedby="run-dialog-description">
+      <form method="dialog" id="run-form">
+        <header class="dialog-header"><div><p class="section-kicker">New execution</p><h2 id="run-dialog-title">Start Run</h2><p id="run-dialog-description">The selected Flow and every transitive resource version will be pinned for this Run.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="run-dialog" aria-label="Close">×</button></header>
+        <label class="field"><span>Flow</span><select id="run-flow"></select></label>
+        <label class="field"><span>Validated input</span><textarea id="run-input" class="code-input" rows="10" required></textarea></label>
+        <p class="field-help" id="run-model-note"></p>
+        <footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="run-dialog">Cancel</button><button class="button button-primary" type="submit">Start authoritative Run</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="dialog" id="approval-dialog" aria-labelledby="approval-dialog-title" aria-describedby="approval-dialog-description">
+      <form method="dialog" id="approval-form">
+        <header class="dialog-header"><div><p class="section-kicker">Human approval</p><h2 id="approval-dialog-title">Decide paused Run</h2><p id="approval-dialog-description">This attributable decision is immutable. Approval resumes the pinned graph; rejection blocks it terminally.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="approval-dialog" aria-label="Close">×</button></header>
+        <blockquote id="approval-message"></blockquote>
+        <input id="approval-request-id" type="hidden">
+        <input id="approval-value" type="hidden">
+        <label class="field"><span>Actor</span><input id="approval-actor" required maxlength="100" value="build-week-reviewer"></label>
+        <label class="field"><span>Reason</span><textarea id="approval-reason" required minlength="12" maxlength="500" rows="4">The pinned evidence and bounded sandbox effect are acceptable.</textarea></label>
+        <footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="approval-dialog">Cancel</button><button class="button button-primary" id="submit-approval" type="submit">Approve and resume</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="dialog" id="prompt-dialog" aria-labelledby="prompt-dialog-title" aria-describedby="prompt-dialog-description">
+      <form method="dialog" id="prompt-form"><header class="dialog-header"><div><p class="section-kicker">Agent context</p><h2 id="prompt-dialog-title">Create Prompt</h2><p id="prompt-dialog-description">Declare every template variable explicitly. The immutable version is fingerprinted.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="prompt-dialog" aria-label="Close">×</button></header><label class="field"><span>Name</span><input id="prompt-name" required value="Brief analyst"></label><label class="field"><span>Slug</span><input id="prompt-slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="brief-analyst"></label><label class="field"><span>Template</span><textarea id="prompt-template" rows="7" required>Analyze this brief and return a concise answer: {{brief}}</textarea></label><label class="field"><span>Variables (comma separated)</span><input id="prompt-variables" required value="brief"></label><footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="prompt-dialog">Cancel</button><button class="button button-primary" type="submit">Create Prompt v1</button></footer></form>
+    </dialog>
+
+    <dialog class="dialog" id="skill-dialog" aria-labelledby="skill-dialog-title" aria-describedby="skill-dialog-description">
+      <form method="dialog" id="skill-form"><header class="dialog-header"><div><p class="section-kicker">Bounded authority</p><h2 id="skill-dialog-title">Create Skill</h2><p id="skill-dialog-description">Instructions and exact callable Action versions become one immutable authority grant.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="skill-dialog" aria-label="Close">×</button></header><label class="field"><span>Name</span><input id="skill-name" required value="Evidence-first analyst"></label><label class="field"><span>Slug</span><input id="skill-slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="evidence-first-analyst"></label><label class="field"><span>Instructions</span><textarea id="skill-instructions" rows="6" required>Use only pinned input and receipts as evidence. Never claim an effect without an Action receipt.</textarea></label><fieldset class="choice-field"><legend>Callable Action versions</legend><div id="skill-action-choices" class="choice-list"></div></fieldset><footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="skill-dialog">Cancel</button><button class="button button-primary" type="submit">Create Skill v1</button></footer></form>
+    </dialog>
+
+    <dialog class="dialog" id="agent-dialog" aria-labelledby="agent-dialog-title" aria-describedby="agent-dialog-description">
+      <form method="dialog" id="agent-form"><header class="dialog-header"><div><p class="section-kicker">Executable behavior</p><h2 id="agent-dialog-title">Create Agent</h2><p id="agent-dialog-description">Pin one model, Prompt version, and set of Skill versions.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="agent-dialog" aria-label="Close">×</button></header><label class="field"><span>Name</span><input id="agent-name" required value="Brief Analyst"></label><label class="field"><span>Slug</span><input id="agent-slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value="brief-analyst-agent"></label><div class="form-grid two-columns"><label class="field"><span>Role</span><select id="agent-role"><option value="executor">Executor</option><option value="diagnostician">Diagnostician</option><option value="repairer">Repairer</option></select></label><label class="field"><span>Model</span><select id="agent-model"><option value="gpt-5.6">gpt-5.6</option><option value="gpt-5.6-sol">gpt-5.6-sol</option><option value="gpt-5.6-terra">gpt-5.6-terra</option><option value="gpt-5.6-luna">gpt-5.6-luna</option></select></label></div><label class="field"><span>Instructions</span><textarea id="agent-instructions" rows="5" required>Follow the pinned Prompt and Skills. Return only the requested output contract.</textarea></label><label class="field"><span>Prompt version</span><select id="agent-prompt"></select></label><fieldset class="choice-field"><legend>Skill versions</legend><div id="agent-skill-choices" class="choice-list"></div></fieldset><footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="agent-dialog">Cancel</button><button class="button button-primary" type="submit">Create Agent v1</button></footer></form>
+    </dialog>
+
+    <dialog class="dialog" id="repair-approval-dialog" aria-labelledby="repair-approval-title" aria-describedby="repair-approval-description">
+      <form method="dialog" id="repair-approval-form"><header class="dialog-header"><div><p class="section-kicker">Revision fence</p><h2 id="repair-approval-title">Apply bounded repair</h2><p id="repair-approval-description">The proposal hash and expected revision must still match. The failed Run remains unchanged.</p></div><button class="icon-button dialog-close" type="button" data-close-dialog="repair-approval-dialog" aria-label="Close">×</button></header><label class="field"><span>Actor</span><input id="repair-approval-actor" required value="build-week-reviewer"></label><label class="field"><span>Reason</span><textarea id="repair-approval-reason" required minlength="12" rows="4">Approve the evidence-bound policy repair and preserve immutable history.</textarea></label><label class="checkbox-field"><input id="repair-approval-ack" type="checkbox" required><span>I reviewed the exact patch, proposal hash, and expected Flow revision.</span></label><footer class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog="repair-approval-dialog">Cancel</button><button class="button button-primary" type="submit">Apply as new Flow version</button></footer></form>
+    </dialog>
 
     <script type="module" src="./app.mjs"></script>
   </body>
