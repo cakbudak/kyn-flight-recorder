@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-19T19:07:39.441Z",
+  "generated_at": "2026-07-19T23:08:49.278Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -11,8 +11,8 @@
     ]
   },
   "summary": {
-    "checks": 30,
-    "passed": 30,
+    "checks": 34,
+    "passed": 34,
     "failed": 0
   },
   "checks": [
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_439070e4e4334ed4ac77de3eab1f58e0",
+        "prompt": "prmv_1f82ce22454b45869aa4dd4de673bf17",
         "skills": [
-          "sklv_2ca1f8fbd0f14e209a37d26471416d52"
+          "sklv_33470e7e3c9c4eb5b94c89f079d354eb"
         ],
         "actions": [
-          "actv_bf5f75495f3d4f0888003e5d93d1916e"
+          "actv_059de5c081b34a6081e51a1d511e52ce"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_bf5f75495f3d4f0888003e5d93d1916e"
+          "version_id": "actv_059de5c081b34a6081e51a1d511e52ce"
         }
       }
     },
@@ -189,7 +189,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_09f442e7de5548b4be483246cdd75536",
+        "id": "arun_d5e66eb39aad4383a0b9340809a3a569",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -227,15 +227,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_1375b57c09bc4247aa6321e8b5cf991f"
+        "version_id": "aflowv_453c3d1cb316456fb34e5476a1513ea4"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_dae17b6b2be94db49e6d7af3874ffc73",
-        "child": "arun_d937c4fec2fe45d98d4a80ac952840a7",
+        "parent": "arun_d89f408796334f428bb5e7a3e243ba13",
+        "child": "arun_9eea9e73901b4111bf88ee283d6e5259",
         "outcome": "standard"
       }
     },
@@ -243,8 +243,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_65d2db5cf4b14f2eaa7bcf71e3771f83",
-        "run": "arun_7003db151d214237a34ea469b4848442",
+        "trigger": "atrg_19462b9d1f6843459e14208e1e9c83d2",
+        "run": "arun_12a0f30175b1466b8c253ac30da9f5e5",
         "outcome": "priority"
       }
     },
@@ -259,7 +259,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_c9736c20e2b949ac9529b7ad14ad96d4",
+        "run": "arun_2a7c43c95ba7419a8e7be3052fc316ae",
         "calls": 1,
         "steps": [
           "completed",
@@ -270,11 +270,42 @@
       }
     },
     {
+      "name": "Run graph renders every pinned node and propagates node measurements, probed through the MiniMap because it alone re-derives from live measured dimensions while the canvas keeps drawing from static positions",
+      "status": "pass",
+      "detail": {
+        "pinned_nodes": 5,
+        "rendered_nodes": 5,
+        "minimap_nodes": 5
+      }
+    },
+    {
       "name": "human decision resumes the exact pinned graph into one attributable idempotent effect",
       "status": "pass",
       "detail": {
         "effects": 1,
         "actor": "build-week-operator"
+      }
+    },
+    {
+      "name": "Run detail surfaces the derived dead end as canonical with its distinct-Run count and citing Run links",
+      "status": "pass",
+      "detail": {
+        "state": "Canonical",
+        "count": "3 distinct Runs",
+        "citations": 3,
+        "derived_state": "canonical",
+        "derived_distinct_runs": 3,
+        "node": "recovery-evidence-store"
+      }
+    },
+    {
+      "name": "the next Run on the canonical path is refused before creation and the refusal cites the three prior Runs",
+      "status": "pass",
+      "detail": {
+        "root_runs": 3,
+        "modals": 0,
+        "cited_runs": 3,
+        "characters": 666
       }
     },
     {
@@ -340,6 +371,13 @@
       "name": "browser journey has no console or page error",
       "status": "pass",
       "detail": []
+    },
+    {
+      "name": "the only refused HTTP response in the journey is the one asserted brake 409",
+      "status": "pass",
+      "detail": [
+        "Failed to load resource: the server responded with a status of 409 ()"
+      ]
     }
   ],
   "diagnostics": {
@@ -347,6 +385,9 @@
       ""
     ],
     "page_errors": [],
-    "failed_requests": []
+    "failed_requests": [],
+    "brake_refusals": [
+      "Failed to load resource: the server responded with a status of 409 ()"
+    ]
   }
 }
