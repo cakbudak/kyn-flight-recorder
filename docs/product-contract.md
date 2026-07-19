@@ -1,137 +1,155 @@
-# Product contract
+# Kyn.ist Agent Studio — product contract
 
 Date frozen: 2026-07-19  
-Maturity: `implemented; local, real-model, and public HTTPS journeys verified`
+Maturity: `implemented; deterministic full-stack journey verified`
 
 ## Promise
 
-Kyn.ist Flight Recorder turns an agent failure into a bounded, provable recovery loop:
+Kyn.ist Agent Studio is a configurable public projection of Kyn's agent and
+automation runtime. A visitor can:
 
-1. Compose a flow from versioned agents, prompts, and skills.
-2. Execute that flow against the OpenAI Responses API and real local tools.
-3. Record every material decision and effect in an authoritative SQLite event ledger.
-4. Diagnose the failure from recorded evidence rather than reconstructed logs.
-5. Propose the smallest allow-listed repair.
-6. Require a revision-fenced human approval before the repair can change a flow.
-7. Rerun against a new immutable version and compare the before/after evidence.
+1. define typed, versioned Actions;
+2. define versioned Prompts, Skills, and Agents;
+3. compose pinned Action/Agent nodes into an acyclic Flow;
+4. execute deterministic and OpenAI-backed Runs;
+5. inspect authoritative Steps, events, model calls, receipts, approvals, and
+   effects;
+6. pause and resume at an immutable Human approval;
+7. rerun terminal work as a linked child; and
+8. operate the included evidence → diagnosis → bounded repair → approval → rerun
+   maintenance loop.
 
-The three-minute judge path is one causal thread from pinned configuration through model
-tool calls, a failed sandbox effect, evidence-grounded diagnosis, bounded repair, approval,
-successful rerun, and hash-linked receipts.
+The seeded launch Flow and Repair Lab are examples. Neither is the only legal
+journey.
 
-## Honest standalone boundary
+## Public boundary
 
-This repository is not the whole Kynist production stack. It is a compact implementation of
-the closed-loop contract, built with:
+This repository is not the whole Kyn.ist production stack. It is an independently
+implemented public cut using one Python HTTP process, the official OpenAI Python
+SDK, a flat SQLite database, bounded built-in Action executors, and a
+dependency-free browser client.
 
-- one Python standard-library HTTP process;
-- one flat SQLite database;
-- the OpenAI Responses API for model inference;
-- a deliberately narrow local sandbox tool surface;
-- a dependency-free browser application.
+It excludes Ainou, CE, Appiyon and Kynllm internals, Parts/Entities,
+Bricks/Packs/Frames, the production graph/queue/connectors, arbitrary MCP, shell,
+filesystem, arbitrary network access, and production-write authority.
 
-It does not import the internal Kynist ontology or PostgreSQL schema. It has no arbitrary
-shell, filesystem, connector, MCP, or production deployment authority. The sample
-`stage_release` tool makes a real, durable change only inside the local `sandbox_releases`
-table. That is a real tool effect and a safe sandbox—not a production release.
+## First-class definitions
 
-## First-class resources
+### Action
+
+An Action version declares kind, strict input schema, strict output schema,
+configuration, effect level, optional Agent pin, and fingerprint. Direct graph
+nodes and model-requested Actions use one invocation path.
 
 ### Prompt
 
-A prompt is a named, immutable template version with declared variables. Rendering fails
-closed on missing or unexpected variables, and the resolved prompt hash is recorded.
+A Prompt version is an immutable template with exact declared variables.
+Rendering rejects missing, extra, or malformed variables.
 
 ### Skill
 
-A skill is a named, immutable instruction version plus an allow-list of local tools. Skill
-instructions influence model behavior; the tool allow-list constrains runtime authority.
+A Skill version combines instructions with exact authority: legacy local-tool
+names and/or public Action version IDs. Database content cannot register code.
 
 ### Agent
 
-An agent version pins a model, role instructions, one prompt version, and one or more skill
-versions. The runtime derives its callable tools from those pinned skills.
+An Agent version pins model, role instructions, one Prompt version, and bounded
+Skill versions. Its effective Action set is derived from those pins.
 
 ### Flow
 
-A flow version pins executor, diagnostician, and repairer agent versions, input, policy, and
-repair bounds. A run always points to one immutable flow version. Applying a repair creates
-the next version and advances the flow revision atomically.
+An Automation Flow version pins input schema, one start node, Action/Agent nodes,
+explicit input mappings, outcome routes, and all transitive resource
+fingerprints. Graphs are bounded, reachable, and acyclic.
 
-## Canonical judge journey
+## Run contract
 
-The seeded `Release Sentinel` lab intentionally contains one policy defect:
-`production` is requested while the flow permits only `staging`.
+- Input is validated before a Run advances.
+- A Run pins one immutable Flow version before external I/O.
+- Each node attempt creates a durable Step.
+- Each Action attempt creates a durable receipt.
+- OpenAI calls record safe metadata and hashes, never raw credentials.
+- Approval is a real non-terminal pause with one immutable attributable decision.
+- `completed`, `blocked`, `failed`, and `cancelled` are absorbing.
+- Rerun creates a linked Run with the same pinned Flow version unless a distinct
+  successor is explicitly selected by a maintenance operation.
+- Events are ordered and hash-linked per Run.
 
-1. Create an isolated lab workspace. The server creates and displays its prompt, skill,
-   agent, and flow versions.
-2. Run the flow. The executor agent inspects policy and calls the real local
-   `stage_release` tool.
-3. The tool rejects the effect at its policy boundary and writes a failed receipt. The run
-   becomes `blocked`; no sandbox release exists.
-4. Hand off the immutable evidence packet to the diagnostician agent. Structured output is
-   accepted only if every cited event belongs to the failed run and matches the deterministic
-   fault candidate.
-5. Hand off the diagnosis and current manifest to the repairer agent. Its single JSON patch
-   must target an allow-listed path and value.
-6. Preview and approve the repair with actor, reason, acknowledgement, proposal hash, and
-   expected flow revision.
-7. Apply atomically. The original flow version remains immutable; a successor version is
-   created.
-8. Rerun as a child of the failed run. The same real tool now succeeds and creates one
-   `sandbox_releases` row.
-9. Compare the two runs, their pinned fingerprints, events, receipts, and effect count.
+## OpenAI credential contract
+
+- The visitor enters the key in the browser.
+- The browser stores it in `sessionStorage` for the current tab.
+- It is attached only to same-origin commands forecast to call a model.
+- The server constructs an ephemeral official SDK client for that operation.
+- `OPENAI_API_KEY` is not loaded from server environment or `.env`.
+- The credential is never persisted, logged, rendered, or returned.
+- Requests use Responses with `store=false`, bounded output, strict Structured
+  Outputs, and strict custom functions where applicable.
+
+## Action kinds
+
+| Kind | Contract | Authority |
+| --- | --- | --- |
+| `ai` | execute pinned Agent/Prompt/Skills; optional strict Action calls | visitor's OpenAI account |
+| `template` | deterministic declared-variable rendering | none |
+| `condition` | one typed comparison and explicit branch outcome | none |
+| `approval` | pause and await immutable Human decision | human |
+| `sandbox` | append one idempotent workspace-local effect | local SQLite |
 
 ## Invariants
 
-- Resource versions and events cannot be updated or deleted.
-- Event sequence is contiguous per run and each event hash commits to its predecessor.
-- A run pins one flow version before model I/O begins.
-- External model I/O never occurs under an open SQLite write transaction.
-- A model can request only a tool; code validates arguments and owns authorization/effects.
-- A tool not granted by every applicable pinned capability check is rejected.
-- `blocked`, `completed`, and `failed` are absorbing run states.
-- Diagnosis evidence ids must exist on the diagnosed run.
-- Repair operations are count-, path-, operation-, and value-bounded.
-- Applying a repair never mutates an existing flow version.
-- A stale expected revision fails without a partial write.
-- Repeated application of the same authorized proposal returns the original result.
-- A rerun is a new run with `parent_run_id`; history is never rewritten.
-- Repeating a rerun command returns that same child run without another model call or effect.
-- Secrets are absent from model evidence packets, SQLite rows, logs, and API responses.
+- Definition versions, events, model calls, receipts, approvals, and effects are
+  immutable at the database layer.
+- External I/O never occurs inside a SQLite write transaction.
+- Model output is untrusted data; code owns validation, routing, authority, and
+  effects.
+- A Skill grants exact Action versions; invocation is rejected outside that
+  intersection.
+- Flow mappings can read only Run input, literals, or reachable predecessor Steps.
+- Stale revisions and illegal state transitions fail without partial writes.
+- Idempotency keys cannot duplicate a Run command, receipt, or sandbox effect.
+- Workspace IDs never bypass opaque-cookie ownership checks.
+- Secret-like payload fields are rejected or redacted before evidence persistence.
+
+## Repair Lab contract
+
+The legacy release template remains because it demonstrates functionality that a
+generic builder alone does not prove:
+
+```text
+blocked tool receipt
+  → deterministic causal candidate
+  → model explanation with exact owned event citations
+  → one allow-listed repair proposal
+  → human proposal-hash + revision fence
+  → successor Flow version
+  → linked child Run with changed authoritative effect
+```
+
+The model cannot invent evidence, apply its proposal, or rewrite the failed Run.
 
 ## Quality gates
 
 | Gate | Acceptance criterion |
 | --- | --- |
-| G1 create | A user can create a lab containing a real flow, prompt, skill, and agent |
-| G2 execute | A real Responses call emits validated local function calls and a durable outcome |
-| G3 record | Ordered hash-linked events, model summaries, receipts, pins, and correlation are visible |
-| G4 diagnose | Structured diagnosis is restricted to existing evidence and deterministic candidates |
-| G5 repair | One allow-listed patch is previewed and applied only through a human revision fence |
-| G6 rerun | A child run uses the successor flow version and proves a changed tool outcome |
-| G7 safety | Same-origin, isolation, input/cost bounds, no secret persistence, no arbitrary tools |
-| G8 reliability | Immutability, terminal absorption, CAS conflict, idempotency, and concurrency tests pass |
-| G9 UX | Keyboard, focus, responsive, loading/error/stale paths, and WCAG 2.2 AA checks pass |
-| G10 proof | Fake-client RED/GREEN suite, real-model sanitized evidence, and local/public Playwright pass |
-
-## Explicit non-goals
-
-- Mirroring Parts, Entities, Bricks, Frames, or the main Kynist database.
-- Shipping the full production queue, MCP, tenant identity, connector, or storage stack.
-- Giving public visitors arbitrary code or network execution.
-- Letting a model directly authorize or apply a repair.
-- Claiming broad superiority over every framework. The measured claim is the closed-loop
-  evidence, bounded repair, revision-fenced approval, and rerun proof delivered here.
+| define | Browser creates Action, Prompt, Skill, Agent, and Flow definitions |
+| execute | Deterministic and real Responses-backed Flows produce validated Runs |
+| observe | Steps, calls, receipts, events, approvals, and effects are inspectable |
+| approve | Run pauses and resumes/blocks only from immutable Human command |
+| maintain | Repair Lab diagnosis is evidence-owned and repair is bounded/fenced |
+| rerun | Child is linked, parent remains unchanged, idempotency prevents duplicates |
+| safety | BYOK, same-origin, isolation, bounds, no arbitrary tools or secret persistence |
+| database | Flat tables, immutability triggers, legal transitions, no private ontology |
+| browser | Desktop/mobile/reduced-motion/accessibility/error/network assertions pass |
+| live | Sanitized real-model journey passes through public HTTPS deployment |
 
 ## Build Week provenance
 
-The repository history is the forward-only chronology. The primary build thread is Codex
-Session ID `019f7621-5200-7400-9242-920cb718d09a`.
+The forward-only Git history is the implementation chronology. The primary Codex
+thread is `019f7621-5200-7400-9242-920cb718d09a`.
 
-Official references used for the transport contract:
+Official transport references:
 
 - <https://developers.openai.com/api/docs/guides/function-calling>
 - <https://developers.openai.com/api/docs/guides/structured-outputs>
-- <https://developers.openai.com/api/docs/guides/agents/define-agents>
-- <https://developers.openai.com/api/docs/guides/tools-skills>
+- <https://developers.openai.com/api/reference/resources/responses/methods/create>

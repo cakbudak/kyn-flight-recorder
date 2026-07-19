@@ -1,1 +1,1 @@
-"""Test package for the standalone Kyn.ist Flight Recorder."""
+"""Test package for the standalone Kyn.ist Agent Studio."""

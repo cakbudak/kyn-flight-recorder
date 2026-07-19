@@ -35,7 +35,7 @@ class DemoServerTests(unittest.TestCase):
         with self.open("/") as response:
             self.assertEqual(response.status, 200)
             self.assertTrue(response.geturl().endswith("/app/"))
-            self.assertIn(b"Kyn.ist Flight Recorder", response.read())
+            self.assertIn(b"Kyn.ist Agent Studio", response.read())
 
     def test_health_is_explicit_about_runtime_availability(self) -> None:
         with self.open("/healthz") as response:

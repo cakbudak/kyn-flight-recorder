@@ -39,11 +39,11 @@ class StaticContractTests(unittest.TestCase):
         cls.state = (APP / "state.mjs").read_text(encoding="utf-8")
         cls.styles = (APP / "styles.css").read_text(encoding="utf-8")
         cls.nginx = (ROOT / "deploy" / "nginx-buildweek.conf").read_text(encoding="utf-8")
-        cls.service = (ROOT / "deploy" / "kyn-flight-recorder.service").read_text(
+        cls.service = (ROOT / "deploy" / "kyn-agent-studio.service").read_text(
             encoding="utf-8"
         )
         cls.user_service = (
-            ROOT / "deploy" / "kyn-flight-recorder-user.service"
+            ROOT / "deploy" / "kyn-agent-studio-user.service"
         ).read_text(encoding="utf-8")
 
     def test_active_product_is_kyn_agent_studio_not_a_recorder_demo(self) -> None:
@@ -67,7 +67,7 @@ class StaticContractTests(unittest.TestCase):
         self.assertEqual(parser.remote_executable_assets, [])
         self.assertNotIn("@import url", self.styles)
         self.assertNotIn("node_modules", self.index)
-        self.assertIn("https://github.com/cakbudak/kyn-flight-recorder", self.index)
+        self.assertIn("https://github.com/cakbudak/kyn-agent-studio", self.index)
 
     def test_content_security_policy_can_reject_inline_code(self) -> None:
         parser = SurfaceParser()
@@ -258,7 +258,7 @@ class StaticContractTests(unittest.TestCase):
             with self.subTest(directive=directive):
                 self.assertIn(directive, self.service)
                 self.assertIn(directive, self.user_service)
-        self.assertIn("StateDirectory=kyn-flight-recorder", self.service)
+        self.assertIn("StateDirectory=kyn-agent-studio", self.service)
         self.assertIn("ReadWritePaths=/opt/server/projects/buildweek.kyn.ist/var", self.user_service)
         self.assertNotIn("User=", self.user_service)
         self.assertIn("WantedBy=default.target", self.user_service)

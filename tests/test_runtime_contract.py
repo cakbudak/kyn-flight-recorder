@@ -171,7 +171,7 @@ class RuntimeContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.database_path = Path(self.temporary.name) / "kyn-flight-recorder.sqlite3"
+        self.database_path = Path(self.temporary.name) / "kyn-agent-studio.sqlite3"
         self.store = Store(self.database_path)
         self.store.initialize()
         self.client = ScriptedResponsesClient(self.store)

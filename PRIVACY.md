@@ -1,8 +1,9 @@
 # Privacy and data lifecycle
 
-Kyn.ist Flight Recorder has no analytics, advertising, remote fonts, third-party browser
-scripts, or application telemetry. The browser talks only to its own origin. OpenAI access
-occurs from the server.
+Kyn.ist Agent Studio has no analytics, advertising, remote fonts, third-party
+browser scripts, or application telemetry. The browser talks only to its own
+origin. OpenAI access occurs through the same-origin server using the visitor's
+browser-owned credential.
 
 | Data | Stored where | Purpose | Lifetime / deletion |
 | --- | --- | --- | --- |
@@ -11,8 +12,8 @@ occurs from the server.
 | Safe event payloads | local SQLite | authoritative replay evidence | same as workspace rows |
 | Model-call metadata | local SQLite | response id, model, status, usage, input/output hashes | same as workspace rows |
 | Tool arguments/results | local SQLite after recursive secret-key redaction | receipt and effect proof | same as workspace rows |
-| Sandbox release | local SQLite | prove one safe local effect | same as workspace rows |
-| API key | server process memory; ignored `.env` or environment | authenticate Responses calls | never written by the application |
+| Sandbox effects | local SQLite | prove safe idempotent local effects | same as workspace rows |
+| API key | browser `sessionStorage`, then ephemeral server SDK client for one model command | authenticate Responses calls | tab lifetime; never written by the application |
 | OpenAI request | OpenAI API transit with `store: false` | agent inference | governed by the API account and OpenAI API policy |
 | HTTP metadata | process/hosting access logs | operation and abuse response | operator/infrastructure policy |
 
@@ -21,10 +22,11 @@ evidence. The Build Week operator may rotate or remove the entire demo SQLite da
 its retention policy. Do not submit personal, confidential, or regulated data to this public
 lab.
 
-Prompts sent to OpenAI contain the seeded Build Week request, pinned agent/skill instructions,
-and bounded safe evidence required for diagnosis or repair. They do not contain the workspace
-cookie, API key, authorization headers, raw hidden reasoning, or unrestricted database rows.
-Every request sets `store: false`.
+Prompts sent to OpenAI contain visitor-supplied Flow input, pinned
+Agent/Prompt/Skill instructions, and bounded safe evidence required for the
+selected Action or Repair Lab command. They do not contain the workspace cookie,
+API key, unrelated workspace rows, or hidden reasoning. Every request sets
+`store: false`.
 
 The application recursively redacts values whose keys look like credentials, tokens,
 passwords, secrets, cookies, or authorization data before tool arguments/results enter the

@@ -334,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             handler,
             control_plane=control_plane,
             model_configured=False,
-            workspace_model_call_limit=int(os.environ.get("KYN_WORKSPACE_MODEL_CALL_LIMIT", "12")),
+            workspace_model_call_limit=int(os.environ.get("KYN_WORKSPACE_MODEL_CALL_LIMIT", "24")),
         )
     except (OSError, ValueError) as error:
         print(f"error: cannot bind {args.host}:{args.port}: {error}", file=sys.stderr)

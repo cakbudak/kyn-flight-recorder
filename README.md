@@ -4,7 +4,7 @@
 compose executable Flows, and operate every Run from authoritative evidence.**
 
 **[Open the live Studio](https://buildweek.kyn.ist/app/)** ·
-**[Inspect the source](https://github.com/cakbudak/kyn-flight-recorder)**
+**[Inspect the source](https://github.com/cakbudak/kyn-agent-studio)**
 
 Kyn.ist Agent Studio is a standalone OpenAI Build Week 2026 projection of one
 part of Kyn.ist: its agent execution and maintenance discipline. It is a real,

@@ -1,8 +1,8 @@
 # Authoritative ledger contract
 
-The standalone Flight Recorder does not accept a client-authored graph or trace fixture.
-Runtime evidence is created by the control plane and committed to flat SQLite rows as work
-happens.
+Kyn.ist Agent Studio accepts validated client-authored Flow definitions, but never
+client-authored runtime evidence or a trace fixture. Evidence is created only by
+the control plane and committed to flat SQLite rows as work happens.
 
 ## Run envelope
 
@@ -39,8 +39,8 @@ sequence, predecessor, and event hashes independently from API projections.
 
 ## Material evidence rows
 
-Events are the readable ordered ledger. The following explicit tables carry the material
-receipts that events reference:
+Events are the readable ordered ledger. The following explicit Repair Lab tables
+carry the material receipts that its events reference:
 
 - `model_calls`: agent version, role, provider response id, model, status, safe usage, and
   request/response hashes—never raw prompts or provider bodies;
@@ -52,6 +52,12 @@ receipts that events reference:
 - `repair_approvals`: proposal hash, expected revision, actor, reason, acknowledgement, and
   applied flow-version id;
 - `sandbox_releases`: successful local effect linked to run and flow version.
+
+The configurable Studio uses parallel explicit tables with the same evidence
+discipline: `automation_run_steps`, `automation_model_calls`,
+`automation_action_receipts`, `automation_approval_requests` plus immutable
+decisions, and `automation_effects`. Those records are linked from
+`automation_events`; the browser cannot submit any of them directly.
 
 An event cannot truthfully claim a sandbox effect without the corresponding receipt/effect
 row committed by the same tool transaction.
