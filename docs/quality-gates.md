@@ -34,7 +34,7 @@ reports are superseded and are not accepted as evidence for this product surface
  6 pure browser-state tests:                              PASS
 24 Chromium full-stack Studio checks:                    PASS
  1 real GPT-5.6 end-to-end Studio Run:                   PASS
-24 public HTTPS + real GPT-5.6 Chromium checks:          PENDING REDEPLOY
+24 public HTTPS + real GPT-5.6 Chromium checks:          PASS
 ```
 
 The real-model proof executed the official Python SDK with a per-operation key,

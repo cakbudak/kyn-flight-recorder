@@ -46,16 +46,13 @@ The committed proof shows:
 Screenshots:
 
 - [`live/01-agent-studio.png`](live/01-agent-studio.png)
+- [`live/02-action-contract.png`](live/02-action-contract.png)
+- [`live/02-visual-flow-builder.png`](live/02-visual-flow-builder.png)
 - [`live/02-waiting-approval.png`](live/02-waiting-approval.png)
 - [`live/03-run-evidence.png`](live/03-run-evidence.png)
-- [`live/04-repair-proven.png`](live/04-repair-proven.png)
-- [`live/05-mobile-studio.png`](live/05-mobile-studio.png)
-- [`live/06-action-builder.png`](live/06-action-builder.png)
-- [`live/07-flow-builder.png`](live/07-flow-builder.png)
-
-The last two frames are a separate visual audit of the live creation surfaces.
-They show editable strict schemas/configuration and a Flow composer with pinned
-Action-or-Agent nodes, explicit mappings, and addable outcome routes.
+- [`live/04-repair-approved.png`](live/04-repair-approved.png)
+- [`live/05-repair-proven.png`](live/05-repair-proven.png)
+- [`live/06-mobile-studio.png`](live/06-mobile-studio.png)
 
 ## Reproduce
 

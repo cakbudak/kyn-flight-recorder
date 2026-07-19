@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-19T13:33:46.343Z",
+  "generated_at": "2026-07-19T15:36:45.859Z",
   "surface": "Kyn.ist Agent Studio full Playwright journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -11,8 +11,8 @@
     ]
   },
   "summary": {
-    "checks": 21,
-    "passed": 21,
+    "checks": 24,
+    "passed": 24,
     "failed": 0
   },
   "checks": [
@@ -42,17 +42,21 @@
       "detail": 0
     },
     {
-      "name": "workspace seeds five Action kinds and one editable Flow",
+      "name": "workspace seeds the complete bounded Action palette and one editable Flow",
       "status": "pass",
       "detail": {
-        "actions": 5,
+        "actions": 9,
         "flows": 1,
         "kinds": [
-          "approval",
-          "ai",
-          "sandbox",
+          "template",
+          "assert",
           "condition",
-          "template"
+          "approval",
+          "sandbox",
+          "transform",
+          "delay",
+          "data_store",
+          "ai"
         ]
       }
     },
@@ -60,15 +64,15 @@
       "name": "browser can define a typed immutable Action",
       "status": "pass",
       "detail": {
-        "id": "act_6a260a7dc68e4d4aa78bd233c2b3bcc0",
-        "version": "actv_3eb64d3ab7724b7ba6bbcb11d2aebd1c"
+        "id": "act_d5b375a9005c4186ae21ac80f45dbe57",
+        "version": "actv_436fe64651cc4c7b8987d4b3e0db9760"
       }
     },
     {
       "name": "browser composes a user-defined version-pinned Flow",
       "status": "pass",
       "detail": {
-        "id": "aflow_62045b396ce24673bc33d9287c929432",
+        "id": "aflow_46754fc5f0664fb08d70171ae3a7d124",
         "nodes": 1
       }
     },
@@ -76,10 +80,35 @@
       "name": "deterministic Flow executes without a credential and emits authoritative evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_3931cdcb1e7b49bfa5f5410290d94fa8",
+        "id": "arun_2e1bec75cff0400c8501c58777fb4b9b",
         "status": "completed",
         "model_calls": 0,
         "receipts": 1
+      }
+    },
+    {
+      "name": "a public webhook trigger executes its pinned deterministic Flow version",
+      "status": "pass",
+      "detail": {
+        "status": "completed",
+        "flow_version": 1
+      }
+    },
+    {
+      "name": "trigger operations can disable a binding through an optimistic revision fence",
+      "status": "pass",
+      "detail": {
+        "enabled": false,
+        "revision": 2
+      }
+    },
+    {
+      "name": "canvas editing publishes a successor while prior Runs keep their exact graph pin",
+      "status": "pass",
+      "detail": {
+        "current_version": 2,
+        "prior_run_version": 1,
+        "prior_run_attempt_policy": 1
       }
     },
     {
@@ -93,7 +122,7 @@
       "name": "AI Flow uses pinned Agent stack and pauses at a real Human approval",
       "status": "pass",
       "detail": {
-        "id": "arun_de892e5809b04023a334c26686471f71",
+        "id": "arun_ed6d8d7700864ec4a91315dc6c061735",
         "status": "waiting_approval",
         "steps": [
           "completed",
@@ -117,9 +146,9 @@
       "name": "rerun creates a linked child against the same immutable Flow version",
       "status": "pass",
       "detail": {
-        "id": "arun_66ad1058b01b4909b0b15cbcae822fa1",
-        "parent": "arun_de892e5809b04023a334c26686471f71",
-        "flow_version_id": "aflowv_28afddf2117c4c43a70c6b2659853a43"
+        "id": "arun_662d0db4d9544b01bc6dd071764af6ee",
+        "parent": "arun_ed6d8d7700864ec4a91315dc6c061735",
+        "flow_version_id": "aflowv_d360b0ff38ab4c64be21086f73b2e67e"
       }
     },
     {
@@ -128,7 +157,7 @@
       "detail": {
         "status": "completed",
         "effects": 1,
-        "events": 22
+        "events": 23
       }
     },
     {
@@ -141,12 +170,12 @@
       }
     },
     {
-      "name": "Repair Lab proves evidence-owned diagnosis bounded repair and linked changed outcome",
+      "name": "integrated Run maintenance proves evidence-owned diagnosis bounded repair and linked outcome",
       "status": "pass",
       "detail": {
         "parent_status": "blocked",
         "child_status": "completed",
-        "citations": 2,
+        "citations": 4,
         "parent_effects": 0,
         "child_effects": 1
       }
@@ -155,7 +184,7 @@
       "name": "every browser button has an accessible name",
       "status": "pass",
       "detail": {
-        "buttons": 71
+        "buttons": 85
       }
     },
     {
