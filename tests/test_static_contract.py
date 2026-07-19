@@ -46,6 +46,21 @@ class StaticContractTests(unittest.TestCase):
             ROOT / "deploy" / "kyn-flight-recorder-user.service"
         ).read_text(encoding="utf-8")
 
+    def test_active_product_is_kyn_agent_studio_not_a_recorder_demo(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for surface in (self.index, readme):
+            self.assertIn("Kyn.ist Agent Studio", surface)
+            self.assertNotIn("Kyn.ist Flight Recorder", surface)
+        for phrase in (
+            "Define Actions",
+            "Build Flows",
+            "Observe Runs",
+            "Human approval",
+            "Versioned Agents, Prompts, and Skills",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.index)
+
     def test_application_has_no_remote_executable_or_style_dependency(self) -> None:
         parser = SurfaceParser()
         parser.feed(self.index)
@@ -84,6 +99,11 @@ class StaticContractTests(unittest.TestCase):
             "/repairs",
             "/apply",
             "/rerun",
+            "/api/v1/studio",
+            "/api/v1/studio/actions",
+            "/api/v1/studio/flows",
+            "/api/v1/studio/runs",
+            "/approvals",
         ):
             with self.subTest(route=route):
                 self.assertIn(route, self.client)
