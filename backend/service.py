@@ -12,6 +12,7 @@ from .contracts import (
     PLACEHOLDER_RE,
     new_id,
     normalize_json_schema,
+    normalize_outcomes,
     require_slug,
     require_string,
     require_string_list,
@@ -87,6 +88,12 @@ class ControlPlane:
         snapshot["studio"] = self.studio.snapshot(workspace_id)
         return snapshot
 
+    @staticmethod
+    def _expected_resource_version(value: Any, resource: str) -> int:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ContractViolation(f"expected {resource} version is invalid")
+        return value
+
     def create_prompt(
         self,
         workspace_id: str,
@@ -114,6 +121,41 @@ class ControlPlane:
             workspace_id,
             name=normalized_name,
             slug=normalized_slug,
+            template=normalized_template,
+            variables=normalized_variables,
+        )
+
+    def revise_prompt(
+        self,
+        workspace_id: str,
+        prompt_id: str,
+        *,
+        expected_version: Any,
+        name: Any,
+        template: Any,
+        variables: Any,
+    ) -> dict[str, Any]:
+        expected = self._expected_resource_version(expected_version, "Prompt")
+        normalized_name = require_string(name, "prompt name", maximum=100)
+        normalized_template = require_string(
+            template, "prompt template", maximum=12_000
+        )
+        normalized_variables = require_string_list(
+            variables,
+            "prompt variables",
+            maximum_items=12,
+            maximum_item_length=48,
+        )
+        render_prompt(
+            normalized_template,
+            declared_variables=normalized_variables,
+            values={variable: f"<{variable}>" for variable in normalized_variables},
+        )
+        return self.store.revise_prompt(
+            workspace_id,
+            prompt_id,
+            expected_version=expected,
+            name=normalized_name,
             template=normalized_template,
             variables=normalized_variables,
         )
@@ -157,6 +199,44 @@ class ControlPlane:
             allowed_action_version_ids=normalized_actions,
         )
 
+    def revise_skill(
+        self,
+        workspace_id: str,
+        skill_id: str,
+        *,
+        expected_version: Any,
+        name: Any,
+        instructions: Any,
+        allowed_tools: Any,
+        allowed_action_version_ids: Any,
+    ) -> dict[str, Any]:
+        expected = self._expected_resource_version(expected_version, "Skill")
+        normalized_tools = require_string_list(
+            allowed_tools,
+            "allowed tools",
+            maximum_items=8,
+            maximum_item_length=64,
+        )
+        unknown = sorted(set(normalized_tools) - self.tools.known_names)
+        if unknown:
+            raise ContractViolation(f"unknown tool: {', '.join(unknown)}")
+        return self.store.revise_skill(
+            workspace_id,
+            skill_id,
+            expected_version=expected,
+            name=require_string(name, "skill name", maximum=100),
+            instructions=require_string(
+                instructions, "skill instructions", maximum=8_000
+            ),
+            allowed_tools=normalized_tools,
+            allowed_action_version_ids=require_string_list(
+                allowed_action_version_ids,
+                "allowed Action version ids",
+                maximum_items=12,
+                maximum_item_length=80,
+            ),
+        )
+
     def create_action(
         self,
         workspace_id: str,
@@ -169,6 +249,9 @@ class ControlPlane:
         output_schema: Any,
         config: Any,
         agent_version_id: Any,
+        outcomes: Any = None,
+        _action_id: str | None = None,
+        _expected_version: int | None = None,
     ) -> dict[str, Any]:
         normalized_kind = require_string(kind, "Action kind", maximum=32)
         normalized_input = normalize_json_schema(input_schema, "Action input schema")
@@ -189,6 +272,7 @@ class ControlPlane:
             "transform": "none",
             "delay": "none",
             "condition": "none",
+            "router": "none",
             "assert": "none",
             "approval": "approval",
             "sandbox": "sandbox_write",
@@ -200,6 +284,7 @@ class ControlPlane:
             "transform": "template",
             "delay": "template",
             "condition": "condition",
+            "router": "condition",
             "assert": "condition",
             "approval": "approval",
             "sandbox": "sandbox",
@@ -207,11 +292,17 @@ class ControlPlane:
         }
         if normalized_kind not in effect_levels:
             raise ContractViolation("Action kind is not supported")
+        normalized_outcomes = normalize_outcomes(
+            outcomes,
+            "Action outcomes",
+            default_kind=normalized_kind,
+        )
+        outcome_ids = {item["id"] for item in normalized_outcomes}
         properties = set(normalized_input["properties"])
         if normalized_kind == "ai":
-            if normalized_agent is None or set(normalized_config) != {
-                "max_tool_calls",
-                "reasoning_effort",
+            if normalized_agent is None or frozenset(normalized_config) not in {
+                frozenset({"max_tool_calls", "reasoning_effort"}),
+                frozenset({"max_tool_calls", "reasoning_effort", "outcome_path"}),
             }:
                 raise ContractViolation("AI Action config or Agent pin is invalid")
             max_calls = normalized_config["max_tool_calls"]
@@ -223,6 +314,28 @@ class ControlPlane:
             if set(agent["prompt"]["variables"]) != properties:
                 raise ContractViolation(
                     "AI Action input properties must exactly match its pinned Prompt variables"
+                )
+            if "outcome_path" in normalized_config:
+                outcome_path = require_string(
+                    normalized_config["outcome_path"],
+                    "AI Action outcome path",
+                    maximum=64,
+                )
+                if not re.fullmatch(r"[a-z][a-z0-9_]*", outcome_path):
+                    raise ContractViolation("AI Action outcome path must be a top-level field")
+                outcome_property = normalized_output["properties"].get(outcome_path)
+                if (
+                    not isinstance(outcome_property, dict)
+                    or outcome_property.get("type") != "string"
+                    or set(outcome_property.get("enum", [])) != (outcome_ids - {"error"})
+                ):
+                    raise ContractViolation(
+                        "AI Action outcome field enum must exactly match declared non-error outcomes"
+                    )
+                normalized_config["outcome_path"] = outcome_path
+            elif outcome_ids != {"success", "error"}:
+                raise ContractViolation(
+                    "AI Action custom outcomes require an outcome_path"
                 )
         elif normalized_kind == "template":
             if normalized_agent is not None or set(normalized_config) != {"template"}:
@@ -291,6 +404,73 @@ class ControlPlane:
                 "lte",
             }:
                 raise ContractViolation("condition operator is invalid")
+            if outcome_ids != {"true", "false", "error"}:
+                raise ContractViolation(
+                    "condition Action outcomes must be true, false, and error"
+                )
+        elif normalized_kind == "router":
+            if normalized_agent is not None or set(normalized_config) != {
+                "branches",
+                "fallback_outcome",
+            }:
+                raise ContractViolation("router Action config is invalid")
+            branches = normalized_config["branches"]
+            if not isinstance(branches, list) or not 1 <= len(branches) <= 10:
+                raise ContractViolation("router Action must declare one to ten branches")
+            normalized_branches: list[dict[str, Any]] = []
+            branch_outcomes: set[str] = set()
+            for index, branch in enumerate(branches):
+                if not isinstance(branch, dict) or set(branch) != {
+                    "outcome",
+                    "path",
+                    "operator",
+                    "value",
+                }:
+                    raise ContractViolation(f"router branch {index} is invalid")
+                branch_outcome = require_slug(
+                    branch["outcome"], f"router branch {index} outcome"
+                )
+                if branch_outcome in branch_outcomes or branch_outcome not in outcome_ids:
+                    raise ContractViolation("router branch outcomes must be unique and declared")
+                branch_outcomes.add(branch_outcome)
+                branch_path = require_string(
+                    branch["path"], f"router branch {index} path", maximum=160
+                )
+                if not re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*", branch_path):
+                    raise ContractViolation(f"router branch {index} path is invalid")
+                if branch["operator"] not in {
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "gt",
+                    "gte",
+                    "lt",
+                    "lte",
+                }:
+                    raise ContractViolation(f"router branch {index} operator is invalid")
+                normalized_branches.append(
+                    {
+                        "outcome": branch_outcome,
+                        "path": branch_path,
+                        "operator": branch["operator"],
+                        "value": json.loads(json.dumps(branch["value"])),
+                    }
+                )
+            fallback = require_slug(
+                normalized_config["fallback_outcome"], "router fallback outcome"
+            )
+            if fallback not in outcome_ids or fallback in branch_outcomes or fallback == "error":
+                raise ContractViolation("router fallback outcome must be a distinct declared outcome")
+            normalized_config = {
+                "branches": normalized_branches,
+                "fallback_outcome": fallback,
+            }
+            if outcome_ids != branch_outcomes | {fallback, "error"}:
+                raise ContractViolation(
+                    "router outcomes must exactly match branches, fallback, and error"
+                )
+            if set(normalized_output["properties"]) != {"outcome", "actual"}:
+                raise ContractViolation("router Action output must contain outcome and actual")
         elif normalized_kind == "assert":
             if normalized_agent is not None or set(normalized_config) != {
                 "path",
@@ -329,6 +509,10 @@ class ControlPlane:
             if not variables or not variables.issubset(properties):
                 raise ContractViolation("approval message variables must exist in its input schema")
             normalized_config["message_template"] = template
+            if outcome_ids != {"approved", "rejected", "error"}:
+                raise ContractViolation(
+                    "approval Action outcomes must be approved, rejected, and error"
+                )
         else:
             allowed_keys = {"operation", "collection"}
             if normalized_kind == "data_store":
@@ -348,22 +532,79 @@ class ControlPlane:
                 if not isinstance(write_enabled, bool):
                     raise ContractViolation("Data Store write_enabled must be a boolean")
                 normalized_config["write_enabled"] = write_enabled
-        return self.studio.create_action(
-            workspace_id,
-            name=require_string(name, "Action name", maximum=100),
-            slug=require_slug(slug),
-            description=require_string(description, "Action description", maximum=500),
-            kind=storage_kinds[normalized_kind],
-            input_schema=normalized_input,
-            output_schema=normalized_output,
-            config=normalized_config,
-            agent_version_id=normalized_agent,
-            effect_level=effect_levels[normalized_kind],
-            executor_kind=(
+        if normalized_kind not in {"condition", "router", "approval", "ai"} and not {
+            "success",
+            "error",
+        }.issubset(outcome_ids):
+            raise ContractViolation("Action outcomes must include success and error")
+        common = {
+            "name": require_string(name, "Action name", maximum=100),
+            "description": require_string(
+                description, "Action description", maximum=500
+            ),
+            "kind": storage_kinds[normalized_kind],
+            "input_schema": normalized_input,
+            "output_schema": normalized_output,
+            "outcomes": normalized_outcomes,
+            "config": normalized_config,
+            "agent_version_id": normalized_agent,
+            "effect_level": effect_levels[normalized_kind],
+            "executor_kind": (
                 normalized_kind
                 if storage_kinds[normalized_kind] != normalized_kind
                 else None
             ),
+        }
+        if _action_id is not None:
+            if _expected_version is None:
+                raise ContractViolation("expected Action version is required")
+            return self.studio.revise_action(
+                workspace_id,
+                _action_id,
+                expected_version=_expected_version,
+                **common,
+            )
+        return self.studio.create_action(
+            workspace_id,
+            slug=require_slug(slug),
+            **common,
+        )
+
+    def revise_action(
+        self,
+        workspace_id: str,
+        action_id: str,
+        *,
+        expected_version: Any,
+        name: Any,
+        description: Any,
+        kind: Any,
+        input_schema: Any,
+        output_schema: Any,
+        outcomes: Any,
+        config: Any,
+        agent_version_id: Any,
+    ) -> dict[str, Any]:
+        if (
+            not isinstance(expected_version, int)
+            or isinstance(expected_version, bool)
+            or expected_version < 1
+        ):
+            raise ContractViolation("expected Action version is invalid")
+        current = self.studio.get_action(workspace_id, action_id)
+        return self.create_action(
+            workspace_id,
+            name=name,
+            slug=current["slug"],
+            description=description,
+            kind=kind,
+            input_schema=input_schema,
+            output_schema=output_schema,
+            outcomes=outcomes,
+            config=config,
+            agent_version_id=agent_version_id,
+            _action_id=action_id,
+            _expected_version=expected_version,
         )
 
     def create_studio_flow(
@@ -374,6 +615,8 @@ class ControlPlane:
         slug: Any,
         description: Any,
         input_schema: Any,
+        output_schema: Any = None,
+        outcomes: Any = None,
         start_node_id: Any,
         nodes: Any,
         routes: Any,
@@ -381,23 +624,19 @@ class ControlPlane:
         normalized_schema = normalize_json_schema(input_schema, "Flow input schema")
         if normalized_schema["type"] != "object":
             raise ContractViolation("Flow input schema must be an object")
+        normalized_outcomes = normalize_outcomes(
+            outcomes, "Flow outcomes", default_kind="flow"
+        )
         start, normalized_nodes, normalized_routes = validate_flow_definition(
             start_node_id=start_node_id,
             nodes=nodes,
             routes=routes,
         )
+        contracts: dict[str, dict[str, Any]] = {}
         for node in normalized_nodes:
-            if node["type"] == "action":
-                target = self.studio.get_action_version(workspace_id, node["version_id"])
-                expected = target["input_schema"]
-            else:
-                agent = self.studio.get_agent_runtime(workspace_id, node["version_id"])
-                expected = {
-                    "properties": {
-                        variable: {} for variable in agent["prompt"]["variables"]
-                    },
-                    "required": list(agent["prompt"]["variables"]),
-                }
+            contract = self._studio_node_contract(workspace_id, node)
+            contracts[node["id"]] = contract
+            expected = contract["input_schema"]
             mapped = set(node["input_mapping"])
             properties = set(expected["properties"])
             required = set(expected["required"])
@@ -405,12 +644,24 @@ class ControlPlane:
                 raise ContractViolation(
                     f"Flow node {node['id']} mapping does not satisfy its pinned input contract"
                 )
+        self._validate_route_outcome_ownership(normalized_routes, contracts)
+        normalized_output = (
+            normalize_json_schema(output_schema, "Flow output schema")
+            if output_schema is not None
+            else self._derive_flow_output_schema(
+                normalized_nodes, normalized_routes, contracts
+            )
+        )
+        if normalized_output["type"] != "object":
+            raise ContractViolation("Flow output schema must be an object")
         return self.studio.create_flow(
             workspace_id,
             name=require_string(name, "Flow name", maximum=100),
             slug=require_slug(slug),
             description=require_string(description, "Flow description", maximum=500),
             input_schema=normalized_schema,
+            output_schema=normalized_output,
+            outcomes=normalized_outcomes,
             start_node_id=start,
             nodes=normalized_nodes,
             routes=normalized_routes,
@@ -423,6 +674,8 @@ class ControlPlane:
         *,
         expected_revision: Any,
         input_schema: Any,
+        output_schema: Any = None,
+        outcomes: Any = None,
         start_node_id: Any,
         nodes: Any,
         routes: Any,
@@ -436,26 +689,22 @@ class ControlPlane:
         normalized_schema = normalize_json_schema(input_schema, "Flow input schema")
         if normalized_schema["type"] != "object":
             raise ContractViolation("Flow input schema must be an object")
+        current = self.studio.get_flow(workspace_id, flow_id)
+        normalized_outcomes = normalize_outcomes(
+            outcomes if outcomes is not None else current["version"]["outcomes"],
+            "Flow outcomes",
+            default_kind="flow",
+        )
         start, normalized_nodes, normalized_routes = validate_flow_definition(
             start_node_id=start_node_id,
             nodes=nodes,
             routes=routes,
         )
+        contracts: dict[str, dict[str, Any]] = {}
         for node in normalized_nodes:
-            if node["type"] == "action":
-                expected = self.studio.get_action_version(
-                    workspace_id, node["version_id"]
-                )["input_schema"]
-            else:
-                agent = self.studio.get_agent_runtime(
-                    workspace_id, node["version_id"]
-                )
-                expected = {
-                    "properties": {
-                        variable: {} for variable in agent["prompt"]["variables"]
-                    },
-                    "required": list(agent["prompt"]["variables"]),
-                }
+            contract = self._studio_node_contract(workspace_id, node)
+            contracts[node["id"]] = contract
+            expected = contract["input_schema"]
             mapped = set(node["input_mapping"])
             properties = set(expected["properties"])
             required = set(expected["required"])
@@ -463,14 +712,117 @@ class ControlPlane:
                 raise ContractViolation(
                     f"Flow node {node['id']} mapping does not satisfy its pinned input contract"
                 )
+        self._validate_route_outcome_ownership(normalized_routes, contracts)
+        normalized_output = (
+            normalize_json_schema(output_schema, "Flow output schema")
+            if output_schema is not None
+            else (
+                current["version"]["output_schema"]
+                or self._derive_flow_output_schema(
+                    normalized_nodes, normalized_routes, contracts
+                )
+            )
+        )
+        if normalized_output["type"] != "object":
+            raise ContractViolation("Flow output schema must be an object")
         return self.studio.revise_flow(
             workspace_id,
             flow_id,
             expected_revision=expected_revision,
             input_schema=normalized_schema,
+            output_schema=normalized_output,
+            outcomes=normalized_outcomes,
             start_node_id=start,
             nodes=normalized_nodes,
             routes=normalized_routes,
+        )
+
+    def _studio_node_contract(
+        self, workspace_id: str, node: dict[str, Any]
+    ) -> dict[str, Any]:
+        if node["type"] == "action":
+            action = self.studio.get_action_version(workspace_id, node["version_id"])
+            return {
+                "input_schema": action["input_schema"],
+                "output_schema": action["output_schema"],
+                "outcomes": action["outcomes"],
+            }
+        if node["type"] == "agent":
+            agent = self.studio.get_agent_runtime(workspace_id, node["version_id"])
+            return {
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        variable: {"type": "string"}
+                        for variable in agent["prompt"]["variables"]
+                    },
+                    "required": list(agent["prompt"]["variables"]),
+                    "additionalProperties": False,
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                    "additionalProperties": False,
+                },
+                "outcomes": normalize_outcomes(
+                    None, "Agent outcomes", default_kind="agent"
+                ),
+            }
+        flow = self.studio.get_flow_version_by_id(
+            workspace_id, node["version_id"]
+        )
+        if flow["output_schema"] is None:
+            raise ContractViolation(
+                "Flow reuse requires a child version with an explicit output schema"
+            )
+        return {
+            "input_schema": flow["input_schema"],
+            "output_schema": flow["output_schema"],
+            "outcomes": flow["outcomes"],
+        }
+
+    @staticmethod
+    def _validate_route_outcome_ownership(
+        routes: list[dict[str, str]], contracts: dict[str, dict[str, Any]]
+    ) -> None:
+        for route in routes:
+            owned = {item["id"] for item in contracts[route["from"]]["outcomes"]}
+            if route["outcome"] not in owned:
+                raise ContractViolation(
+                    f"Flow route outcome {route['outcome']} is not declared by node {route['from']}"
+                )
+
+    @staticmethod
+    def _derive_flow_output_schema(
+        nodes: list[dict[str, Any]],
+        routes: list[dict[str, str]],
+        contracts: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        non_terminal = {route["from"] for route in routes}
+        terminal_ids = [node["id"] for node in nodes if node["id"] not in non_terminal]
+        terminal_schemas = [contracts[node_id]["output_schema"] for node_id in terminal_ids]
+        if not terminal_schemas:
+            raise ContractViolation("Flow must expose at least one terminal output")
+        properties: dict[str, Any] = {}
+        required = set(terminal_schemas[0].get("required", []))
+        for schema in terminal_schemas:
+            required &= set(schema.get("required", []))
+            for name, definition in schema.get("properties", {}).items():
+                current = properties.get(name)
+                if current is not None and current != definition:
+                    raise ContractViolation(
+                        "Flow terminal output schemas conflict; declare a Flow output schema"
+                    )
+                properties[name] = definition
+        return normalize_json_schema(
+            {
+                "type": "object",
+                "properties": properties,
+                "required": sorted(required),
+                "additionalProperties": False,
+            },
+            "derived Flow output schema",
         )
 
     def start_studio_run(
@@ -626,7 +978,20 @@ class ControlPlane:
             actor=require_string(actor, "approval actor", maximum=100),
             reason=require_string(reason, "approval reason", minimum=12, maximum=500),
         )
-        return self._studio_runtime(client).resume_after_approval(workspace_id, run_id)
+        runtime = self._studio_runtime(client)
+        result = runtime.resume_after_approval(workspace_id, run_id)
+        cursor = result
+        while cursor["relation_kind"] == "subflow" and cursor["status"] in {
+            "completed",
+            "blocked",
+            "failed",
+            "cancelled",
+        }:
+            parent = runtime.resume_parent_from_subflow(workspace_id, cursor["id"])
+            if parent is None:
+                break
+            cursor = parent
+        return result
 
     def rerun_studio_run(
         self,
@@ -649,6 +1014,7 @@ class ControlPlane:
             input_data=input_data,
             flow_version=int(parent["flow_version"]),
             parent_run_id=parent["id"],
+            relation_kind="rerun",
             correlation_id=parent["correlation_id"],
             idempotency_key=f"rerun:{parent['id']}:{key}",
         )
@@ -855,6 +1221,7 @@ class ControlPlane:
             input_data=input_data,
             flow_version=int(proposal["applied_flow_version"]),
             parent_run_id=parent["id"],
+            relation_kind="proof",
             correlation_id=parent["correlation_id"],
             idempotency_key=f"repair-proof:{proposal_id}",
         )
@@ -1027,6 +1394,16 @@ class ControlPlane:
             if node["type"] == "agent":
                 weights[node_id] = 1
                 continue
+            if node["type"] == "flow":
+                child = self.studio.get_flow_version_by_id(
+                    workspace_id, node["version_id"]
+                )
+                weights[node_id] = self.studio_flow_model_call_forecast(
+                    workspace_id,
+                    child["flow_id"],
+                    version=int(child["version"]),
+                )
+                continue
             action = self.studio.get_action_version(workspace_id, node["version_id"])
             weights[node_id] = (
                 int(action["config"].get("max_tool_calls", 0)) + 1
@@ -1111,6 +1488,47 @@ class ControlPlane:
                 prompt_version_id, "prompt version id", maximum=80
             ),
             skill_version_ids=skills,
+        )
+
+    def revise_agent(
+        self,
+        workspace_id: str,
+        agent_id: str,
+        *,
+        expected_version: Any,
+        name: Any,
+        role: Any,
+        model: Any,
+        instructions: Any,
+        prompt_version_id: Any,
+        skill_version_ids: Any,
+    ) -> dict[str, Any]:
+        expected = self._expected_resource_version(expected_version, "Agent")
+        normalized_role = require_string(role, "agent role", maximum=32)
+        if normalized_role not in ROLE_NAMES:
+            raise ContractViolation("agent role is not supported")
+        normalized_model = require_string(model, "agent model", maximum=64)
+        if normalized_model not in SUPPORTED_MODELS:
+            raise ContractViolation("agent model is not supported")
+        return self.store.revise_agent(
+            workspace_id,
+            agent_id,
+            expected_version=expected,
+            name=require_string(name, "agent name", maximum=100),
+            role=normalized_role,
+            model=normalized_model,
+            instructions=require_string(
+                instructions, "agent instructions", maximum=8_000
+            ),
+            prompt_version_id=require_string(
+                prompt_version_id, "prompt version id", maximum=80
+            ),
+            skill_version_ids=require_string_list(
+                skill_version_ids,
+                "agent skill version ids",
+                maximum_items=8,
+                maximum_item_length=80,
+            ),
         )
 
     def create_flow(

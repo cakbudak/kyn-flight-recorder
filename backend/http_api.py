@@ -24,7 +24,7 @@ from .contracts import (
 from .service import ControlPlane
 
 
-MAX_API_BODY = 32 * 1024
+MAX_API_BODY = 256 * 1024
 RESOURCE_ID = r"([a-z]+_[0-9a-f]{32})"
 WEBHOOK_PATH = re.compile(r"/api/v1/hooks/(hook_[A-Za-z0-9_-]{32,80})")
 
@@ -96,7 +96,7 @@ class ApiApplication:
     def dispatch(self, request: ApiRequest) -> ApiResponse:
         try:
             if request.body_too_large:
-                raise PayloadTooLarge("request body exceeds 32 KiB")
+                raise PayloadTooLarge("request body exceeds 256 KiB")
             if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
                 is_public_webhook = WEBHOOK_PATH.fullmatch(request.path) is not None
                 if not is_public_webhook:
@@ -196,7 +196,7 @@ class ApiApplication:
 
         workspace_id = self._workspace_id(request)
         if request.path == "/api/v1/studio/actions":
-            self._require_exact_keys(
+            self._require_keys(
                 body,
                 {
                     "name",
@@ -208,13 +208,38 @@ class ApiApplication:
                     "config",
                     "agent_version_id",
                 },
+                {"outcomes"},
             )
             return self._ok(
                 self.control_plane.create_action(workspace_id, **body),
                 status=HTTPStatus.CREATED,
             )
-        if request.path == "/api/v1/studio/flows":
+        match = re.fullmatch(
+            rf"/api/v1/studio/actions/{RESOURCE_ID}/versions", request.path
+        )
+        if match:
             self._require_exact_keys(
+                body,
+                {
+                    "expected_version",
+                    "name",
+                    "description",
+                    "kind",
+                    "input_schema",
+                    "output_schema",
+                    "outcomes",
+                    "config",
+                    "agent_version_id",
+                },
+            )
+            return self._ok(
+                self.control_plane.revise_action(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        if request.path == "/api/v1/studio/flows":
+            self._require_keys(
                 body,
                 {
                     "name",
@@ -225,6 +250,7 @@ class ApiApplication:
                     "nodes",
                     "routes",
                 },
+                {"output_schema", "outcomes"},
             )
             return self._ok(
                 self.control_plane.create_studio_flow(workspace_id, **body),
@@ -234,7 +260,7 @@ class ApiApplication:
             rf"/api/v1/studio/flows/{RESOURCE_ID}/versions", request.path
         )
         if match:
-            self._require_exact_keys(
+            self._require_keys(
                 body,
                 {
                     "expected_revision",
@@ -243,6 +269,7 @@ class ApiApplication:
                     "nodes",
                     "routes",
                 },
+                {"output_schema", "outcomes"},
             )
             return self._ok(
                 self.control_plane.revise_studio_flow(
@@ -536,6 +563,17 @@ class ApiApplication:
                 self.control_plane.create_prompt(workspace_id, **body),
                 status=HTTPStatus.CREATED,
             )
+        match = re.fullmatch(rf"/api/v1/prompts/{RESOURCE_ID}/versions", request.path)
+        if match:
+            self._require_exact_keys(
+                body, {"expected_version", "name", "template", "variables"}
+            )
+            return self._ok(
+                self.control_plane.revise_prompt(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
         if request.path == "/api/v1/skills":
             self._require_exact_keys(
                 body,
@@ -549,6 +587,24 @@ class ApiApplication:
             )
             return self._ok(
                 self.control_plane.create_skill(workspace_id, **body),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(rf"/api/v1/skills/{RESOURCE_ID}/versions", request.path)
+        if match:
+            self._require_exact_keys(
+                body,
+                {
+                    "expected_version",
+                    "name",
+                    "instructions",
+                    "allowed_tools",
+                    "allowed_action_version_ids",
+                },
+            )
+            return self._ok(
+                self.control_plane.revise_skill(
+                    workspace_id, match.group(1), **body
+                ),
                 status=HTTPStatus.CREATED,
             )
         if request.path == "/api/v1/agents":
@@ -566,6 +622,26 @@ class ApiApplication:
             )
             return self._ok(
                 self.control_plane.create_agent(workspace_id, **body),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(rf"/api/v1/agents/{RESOURCE_ID}/versions", request.path)
+        if match:
+            self._require_exact_keys(
+                body,
+                {
+                    "expected_version",
+                    "name",
+                    "role",
+                    "model",
+                    "instructions",
+                    "prompt_version_id",
+                    "skill_version_ids",
+                },
+            )
+            return self._ok(
+                self.control_plane.revise_agent(
+                    workspace_id, match.group(1), **body
+                ),
                 status=HTTPStatus.CREATED,
             )
         if request.path == "/api/v1/flows":
@@ -691,7 +767,7 @@ class ApiApplication:
         if not content_type.lower().startswith("application/json"):
             raise RuntimeErrorBase("Content-Type must be application/json")
         if len(request.body) > MAX_API_BODY:
-            raise PayloadTooLarge("request body exceeds 32 KiB")
+            raise PayloadTooLarge("request body exceeds 256 KiB")
         parsed = json.loads(request.body.decode("utf-8") or "{}")
         if not isinstance(parsed, dict):
             raise RuntimeErrorBase("request JSON must be an object")
@@ -708,6 +784,23 @@ class ApiApplication:
             if unexpected:
                 details.append(f"unexpected: {', '.join(unexpected)}")
             raise RuntimeErrorBase("request fields do not match the route contract", detail={"issues": details})
+
+    @staticmethod
+    def _require_keys(
+        body: Mapping[str, Any], required: set[str], optional: set[str]
+    ) -> None:
+        missing = sorted(required - set(body))
+        unexpected = sorted(set(body) - required - optional)
+        if missing or unexpected:
+            issues = []
+            if missing:
+                issues.append(f"missing: {', '.join(missing)}")
+            if unexpected:
+                issues.append(f"unexpected: {', '.join(unexpected)}")
+            raise RuntimeErrorBase(
+                "request fields do not match the route contract",
+                detail={"issues": issues},
+            )
 
     @staticmethod
     def _ok(

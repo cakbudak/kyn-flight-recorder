@@ -15,6 +15,7 @@ from .contracts import (
     NotFound,
     canonical_json,
     compute_event_hash,
+    default_outcomes_for_kind,
     fingerprint,
     hash_text,
     new_id,
@@ -55,6 +56,7 @@ class StudioStore:
         kind: str,
         input_schema: Mapping[str, Any],
         output_schema: Mapping[str, Any],
+        outcomes: Sequence[Mapping[str, Any]],
         config: Mapping[str, Any],
         agent_version_id: str | None,
         effect_level: str,
@@ -71,6 +73,7 @@ class StudioStore:
                 kind=kind,
                 input_schema=input_schema,
                 output_schema=output_schema,
+                outcomes=outcomes,
                 config=config,
                 agent_version_id=agent_version_id,
                 effect_level=effect_level,
@@ -90,6 +93,7 @@ class StudioStore:
         kind: str,
         input_schema: Mapping[str, Any],
         output_schema: Mapping[str, Any],
+        outcomes: Sequence[Mapping[str, Any]] | None = None,
         config: Mapping[str, Any],
         agent_version_id: str | None,
         effect_level: str,
@@ -114,6 +118,9 @@ class StudioStore:
             "storage_kind": kind,
             "input_schema": dict(input_schema),
             "output_schema": dict(output_schema),
+            "outcomes": [dict(item) for item in (
+                outcomes or default_outcomes_for_kind(executor_kind or kind)
+            )],
             "config": dict(config),
             "agent": agent_material,
             "effect_level": effect_level,
@@ -130,9 +137,9 @@ class StudioStore:
             """
             INSERT INTO action_versions
                 (id, workspace_id, action_id, version, kind, executor_kind, input_schema_json,
-                 output_schema_json, config_json, agent_version_id, effect_level,
+                 output_schema_json, outcomes_json, config_json, agent_version_id, effect_level,
                  fingerprint, created_by, created_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 version_id,
@@ -142,6 +149,7 @@ class StudioStore:
                 executor_kind,
                 canonical_json(dict(input_schema)),
                 canonical_json(dict(output_schema)),
+                canonical_json(material["outcomes"]),
                 canonical_json(dict(config)),
                 agent_version_id,
                 effect_level,
@@ -155,6 +163,11 @@ class StudioStore:
     @staticmethod
     def _action_version_projection(row: sqlite3.Row) -> dict[str, Any]:
         logical_kind = row["executor_kind"] or row["kind"]
+        outcomes = (
+            _decode(row["outcomes_json"])
+            if "outcomes_json" in row.keys() and row["outcomes_json"]
+            else default_outcomes_for_kind(logical_kind)
+        )
         return {
             "id": row["id"],
             "version": row["version"],
@@ -162,6 +175,7 @@ class StudioStore:
             "storage_kind": row["kind"],
             "input_schema": _decode(row["input_schema_json"]),
             "output_schema": _decode(row["output_schema_json"]),
+            "outcomes": outcomes,
             "config": _decode(row["config_json"]),
             "agent_version_id": row["agent_version_id"],
             "effect_level": row["effect_level"],
@@ -188,7 +202,110 @@ class StudioStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "version": self._action_version_projection(version),
+            "versions": [
+                self._action_version_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM action_versions WHERE action_id = ? "
+                    "ORDER BY version DESC",
+                    (row["id"],),
+                )
+            ],
         }
+
+    def revise_action(
+        self,
+        workspace_id: str,
+        action_id: str,
+        *,
+        expected_version: int,
+        name: str,
+        description: str,
+        kind: str,
+        input_schema: Mapping[str, Any],
+        output_schema: Mapping[str, Any],
+        outcomes: Sequence[Mapping[str, Any]],
+        config: Mapping[str, Any],
+        agent_version_id: str | None,
+        effect_level: str,
+        created_by: str = "user",
+        executor_kind: str | None = None,
+    ) -> dict[str, Any]:
+        with self.store.write() as connection:
+            action = connection.execute(
+                "SELECT * FROM actions WHERE id = ? AND workspace_id = ?",
+                (action_id, workspace_id),
+            ).fetchone()
+            if action is None:
+                raise NotFound("Action was not found")
+            if int(action["current_version"]) != expected_version:
+                raise Conflict("Action version changed")
+            agent_material: dict[str, str] | None = None
+            if agent_version_id is not None:
+                agent = connection.execute(
+                    "SELECT id, fingerprint FROM agent_versions "
+                    "WHERE id = ? AND workspace_id = ?",
+                    (agent_version_id, workspace_id),
+                ).fetchone()
+                if agent is None:
+                    raise ContractViolation(
+                        "Action Agent version does not belong to the workspace"
+                    )
+                agent_material = {
+                    "id": str(agent["id"]),
+                    "fingerprint": str(agent["fingerprint"]),
+                }
+            next_version = expected_version + 1
+            version_id = new_id("actv")
+            now = utc_now()
+            material = {
+                "kind": executor_kind or kind,
+                "storage_kind": kind,
+                "input_schema": dict(input_schema),
+                "output_schema": dict(output_schema),
+                "outcomes": [dict(item) for item in outcomes],
+                "config": dict(config),
+                "agent": agent_material,
+                "effect_level": effect_level,
+                "parent_version": action["current_version"],
+            }
+            connection.execute(
+                """
+                INSERT INTO action_versions
+                    (id, workspace_id, action_id, version, kind, executor_kind,
+                     input_schema_json, output_schema_json, outcomes_json, config_json,
+                     agent_version_id, effect_level, fingerprint, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    workspace_id,
+                    action_id,
+                    next_version,
+                    kind,
+                    executor_kind,
+                    canonical_json(dict(input_schema)),
+                    canonical_json(dict(output_schema)),
+                    canonical_json([dict(item) for item in outcomes]),
+                    canonical_json(dict(config)),
+                    agent_version_id,
+                    effect_level,
+                    fingerprint(material),
+                    created_by,
+                    now,
+                ),
+            )
+            cursor = connection.execute(
+                """
+                UPDATE actions
+                SET name = ?, description = ?, current_version = current_version + 1,
+                    updated_at = ?
+                WHERE id = ? AND workspace_id = ? AND current_version = ?
+                """,
+                (name, description, now, action_id, workspace_id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("Action version changed")
+        return self.get_action(workspace_id, action_id)
 
     def get_action(self, workspace_id: str, action_id: str) -> dict[str, Any]:
         with self.store.read() as connection:
@@ -265,6 +382,8 @@ class StudioStore:
         slug: str,
         description: str,
         input_schema: Mapping[str, Any],
+        output_schema: Mapping[str, Any],
+        outcomes: Sequence[Mapping[str, Any]],
         start_node_id: str,
         nodes: Sequence[Mapping[str, Any]],
         routes: Sequence[Mapping[str, Any]],
@@ -278,6 +397,8 @@ class StudioStore:
                 slug=slug,
                 description=description,
                 input_schema=input_schema,
+                output_schema=output_schema,
+                outcomes=outcomes,
                 start_node_id=start_node_id,
                 nodes=nodes,
                 routes=routes,
@@ -294,24 +415,28 @@ class StudioStore:
         slug: str,
         description: str,
         input_schema: Mapping[str, Any],
+        output_schema: Mapping[str, Any],
+        outcomes: Sequence[Mapping[str, Any]],
         start_node_id: str,
         nodes: Sequence[Mapping[str, Any]],
         routes: Sequence[Mapping[str, Any]],
         created_by: str,
     ) -> str:
         self.store._require_workspace(connection, workspace_id)
+        flow_id = new_id("aflow")
         pinned, requires_model = self._resolve_flow_pins(
-            connection, workspace_id, nodes
+            connection, workspace_id, nodes, owner_flow_id=flow_id
         )
 
         material = {
             "input_schema": dict(input_schema),
+            "output_schema": dict(output_schema),
+            "outcomes": [dict(item) for item in outcomes],
             "start_node_id": start_node_id,
             "nodes": [dict(node) for node in nodes],
             "routes": [dict(route) for route in routes],
             "pinned_resources": pinned,
         }
-        flow_id = new_id("aflow")
         version_id = new_id("aflowv")
         now = utc_now()
         connection.execute(
@@ -326,16 +451,19 @@ class StudioStore:
         connection.execute(
             """
             INSERT INTO automation_flow_versions
-                (id, workspace_id, flow_id, version, input_schema_json, start_node_id,
-                 nodes_json, routes_json, pinned_resources_json, requires_model,
+                (id, workspace_id, flow_id, version, input_schema_json, output_schema_json,
+                 outcomes_json, start_node_id, nodes_json, routes_json,
+                 pinned_resources_json, requires_model,
                  fingerprint, parent_version_id, created_by, created_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             """,
             (
                 version_id,
                 workspace_id,
                 flow_id,
                 canonical_json(dict(input_schema)),
+                canonical_json(dict(output_schema)),
+                canonical_json([dict(item) for item in outcomes]),
                 start_node_id,
                 canonical_json([dict(node) for node in nodes]),
                 canonical_json([dict(route) for route in routes]),
@@ -353,9 +481,12 @@ class StudioStore:
         connection: sqlite3.Connection,
         workspace_id: str,
         nodes: Sequence[Mapping[str, Any]],
+        *,
+        owner_flow_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         pinned: list[dict[str, Any]] = []
         requires_model = False
+        expanded_nodes = len(nodes)
         for node in nodes:
             version_id = str(node["version_id"])
             if node["type"] == "action":
@@ -374,7 +505,7 @@ class StudioStore:
                     }
                 )
                 requires_model = requires_model or (row["executor_kind"] or row["kind"]) == "ai"
-            else:
+            elif node["type"] == "agent":
                 row = connection.execute(
                     "SELECT id, fingerprint FROM agent_versions WHERE id = ? AND workspace_id = ?",
                     (version_id, workspace_id),
@@ -390,7 +521,97 @@ class StudioStore:
                     }
                 )
                 requires_model = True
+            else:
+                row = connection.execute(
+                    """
+                    SELECT afv.id, afv.flow_id, afv.version, afv.fingerprint,
+                           afv.requires_model, afv.pinned_resources_json
+                    FROM automation_flow_versions afv
+                    JOIN automation_flows af ON af.id = afv.flow_id
+                    WHERE afv.id = ? AND afv.workspace_id = ?
+                    """,
+                    (version_id, workspace_id),
+                ).fetchone()
+                if row is None:
+                    raise ContractViolation(
+                        "Flow node version does not belong to the workspace"
+                    )
+                if owner_flow_id is not None and StudioStore._flow_version_reaches_flow(
+                    connection, str(row["id"]), owner_flow_id
+                ):
+                    raise ContractViolation("Flow reuse dependency would create a cycle")
+                pinned.append(
+                    {
+                        "node_id": node["id"],
+                        "type": "flow",
+                        "version_id": row["id"],
+                        "flow_id": row["flow_id"],
+                        "version": int(row["version"]),
+                        "fingerprint": row["fingerprint"],
+                    }
+                )
+                requires_model = requires_model or bool(row["requires_model"])
+                expanded_nodes += StudioStore._flow_version_node_count(
+                    connection, str(row["id"])
+                )
+                if expanded_nodes > 200:
+                    raise ContractViolation(
+                        "Flow and its pinned subflows exceed two hundred nodes"
+                    )
         return pinned, requires_model
+
+    @staticmethod
+    def _flow_version_node_count(
+        connection: sqlite3.Connection,
+        version_id: str,
+        stack: set[str] | None = None,
+    ) -> int:
+        active = stack if stack is not None else set()
+        if version_id in active:
+            raise ContractViolation("Flow reuse dependency contains a cycle")
+        active.add(version_id)
+        row = connection.execute(
+            "SELECT nodes_json, pinned_resources_json "
+            "FROM automation_flow_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if row is None:
+            raise ContractViolation("Pinned subflow version is missing")
+        total = len(_decode(row["nodes_json"]))
+        for pin in _decode(row["pinned_resources_json"]):
+            if pin.get("type") == "flow":
+                total += StudioStore._flow_version_node_count(
+                    connection, str(pin["version_id"]), active
+                )
+        active.remove(version_id)
+        return total
+
+    @staticmethod
+    def _flow_version_reaches_flow(
+        connection: sqlite3.Connection,
+        version_id: str,
+        target_flow_id: str,
+        seen: set[str] | None = None,
+    ) -> bool:
+        visited = seen if seen is not None else set()
+        if version_id in visited:
+            return False
+        visited.add(version_id)
+        row = connection.execute(
+            "SELECT flow_id, pinned_resources_json FROM automation_flow_versions "
+            "WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if row is None:
+            raise ContractViolation("Pinned subflow version is missing")
+        if str(row["flow_id"]) == target_flow_id:
+            return True
+        for pin in _decode(row["pinned_resources_json"]):
+            if pin.get("type") == "flow" and StudioStore._flow_version_reaches_flow(
+                connection, str(pin["version_id"]), target_flow_id, visited
+            ):
+                return True
+        return False
 
     def revise_flow(
         self,
@@ -399,6 +620,8 @@ class StudioStore:
         *,
         expected_revision: int,
         input_schema: Mapping[str, Any],
+        output_schema: Mapping[str, Any],
+        outcomes: Sequence[Mapping[str, Any]],
         start_node_id: str,
         nodes: Sequence[Mapping[str, Any]],
         routes: Sequence[Mapping[str, Any]],
@@ -420,13 +643,15 @@ class StudioStore:
             if parent is None:
                 raise RuntimeError("Automation Flow current version is missing")
             pinned, requires_model = self._resolve_flow_pins(
-                connection, workspace_id, nodes
+                connection, workspace_id, nodes, owner_flow_id=flow_id
             )
             next_version = int(flow["current_version"]) + 1
             version_id = new_id("aflowv")
             now = utc_now()
             material = {
                 "input_schema": dict(input_schema),
+                "output_schema": dict(output_schema),
+                "outcomes": [dict(item) for item in outcomes],
                 "start_node_id": start_node_id,
                 "nodes": [dict(node) for node in nodes],
                 "routes": [dict(route) for route in routes],
@@ -436,10 +661,11 @@ class StudioStore:
             connection.execute(
                 """
                 INSERT INTO automation_flow_versions
-                    (id, workspace_id, flow_id, version, input_schema_json, start_node_id,
+                    (id, workspace_id, flow_id, version, input_schema_json,
+                     output_schema_json, outcomes_json, start_node_id,
                      nodes_json, routes_json, pinned_resources_json, requires_model,
                      fingerprint, parent_version_id, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     version_id,
@@ -447,6 +673,8 @@ class StudioStore:
                     flow_id,
                     next_version,
                     canonical_json(dict(input_schema)),
+                    canonical_json(dict(output_schema)),
+                    canonical_json([dict(item) for item in outcomes]),
                     start_node_id,
                     canonical_json([dict(node) for node in nodes]),
                     canonical_json([dict(route) for route in routes]),
@@ -473,10 +701,22 @@ class StudioStore:
 
     @staticmethod
     def _flow_version_projection(row: sqlite3.Row) -> dict[str, Any]:
+        output_schema = (
+            _decode(row["output_schema_json"])
+            if "output_schema_json" in row.keys() and row["output_schema_json"]
+            else None
+        )
+        outcomes = (
+            _decode(row["outcomes_json"])
+            if "outcomes_json" in row.keys() and row["outcomes_json"]
+            else default_outcomes_for_kind("flow")
+        )
         return {
             "id": row["id"],
             "version": row["version"],
             "input_schema": _decode(row["input_schema_json"]),
+            "output_schema": output_schema,
+            "outcomes": outcomes,
             "start_node_id": row["start_node_id"],
             "nodes": _decode(row["nodes_json"]),
             "routes": _decode(row["routes_json"]),
@@ -507,6 +747,14 @@ class StudioStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "version": self._flow_version_projection(version),
+            "versions": [
+                self._flow_version_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM automation_flow_versions WHERE flow_id = ? "
+                    "ORDER BY version DESC",
+                    (row["id"],),
+                )
+            ],
         }
 
     def get_flow(self, workspace_id: str, flow_id: str) -> dict[str, Any]:
@@ -539,6 +787,31 @@ class StudioStore:
             return {
                 "flow": self._flow_projection(connection, flow),
                 "version": self._flow_version_projection(flow_version),
+            }
+
+    def get_flow_version_by_id(
+        self, workspace_id: str, version_id: str
+    ) -> dict[str, Any]:
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_flow_versions "
+                "WHERE id = ? AND workspace_id = ?",
+                (version_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation Flow version was not found")
+            flow = connection.execute(
+                "SELECT id, slug, name, description FROM automation_flows WHERE id = ?",
+                (row["flow_id"],),
+            ).fetchone()
+            if flow is None:
+                raise RuntimeError("Automation Flow resource is missing")
+            return {
+                **self._flow_version_projection(row),
+                "flow_id": flow["id"],
+                "slug": flow["slug"],
+                "name": flow["name"],
+                "description": flow["description"],
             }
 
     # -- Trigger bindings ---------------------------------------------
@@ -1111,6 +1384,17 @@ class StudioStore:
                     "AI analysis → deterministic quality route → human approval → idempotent sandbox effect."
                 ),
                 input_schema=analysis_input,
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "effect_id": {"type": "string"},
+                        "collection": {"type": "string"},
+                        "text": {"type": "string"},
+                    },
+                    "required": [],
+                    "additionalProperties": False,
+                },
+                outcomes=default_outcomes_for_kind("flow"),
                 start_node_id="analyze",
                 nodes=[
                     {
@@ -1205,11 +1489,18 @@ class StudioStore:
                 "transform",
                 "delay",
                 "condition",
+                "router",
                 "assert",
                 "approval",
                 "data_store",
             ],
-            "route_outcomes": ["success", "true", "false", "approved", "rejected", "error"],
+            "route_outcomes": sorted(
+                {
+                    outcome["id"]
+                    for action in actions
+                    for outcome in action["version"]["outcomes"]
+                }
+            ),
         }
 
     # -- Runs, Steps, and evidence ------------------------------------
@@ -1222,6 +1513,8 @@ class StudioStore:
         input_data: Mapping[str, Any],
         flow_version: int | None = None,
         parent_run_id: str | None = None,
+        parent_step_id: str | None = None,
+        relation_kind: str | None = None,
         correlation_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> tuple[str, bool]:
@@ -1247,13 +1540,55 @@ class StudioStore:
             if version is None:
                 raise NotFound("Automation Flow version was not found")
             parent = None
+            normalized_relation = relation_kind or (
+                "rerun" if parent_run_id is not None else "root"
+            )
+            if normalized_relation not in {"root", "rerun", "proof", "subflow"}:
+                raise ContractViolation("Run relation kind is invalid")
             if parent_run_id is not None:
                 parent = connection.execute(
-                    "SELECT * FROM automation_runs WHERE id = ? AND workspace_id = ? AND flow_id = ?",
-                    (parent_run_id, workspace_id, flow_id),
+                    "SELECT * FROM automation_runs WHERE id = ? AND workspace_id = ?",
+                    (parent_run_id, workspace_id),
                 ).fetchone()
-                if parent is None or parent["status"] not in TERMINAL_STATUSES:
-                    raise ContractViolation("parent Run must be a terminal Run of this Flow")
+                if parent is None:
+                    raise ContractViolation("parent Run does not belong to the workspace")
+                if normalized_relation == "subflow":
+                    if parent["status"] != "running" or parent_step_id is None:
+                        raise ContractViolation(
+                            "subflow parent must be a running Run with a parent Step"
+                        )
+                    parent_step = connection.execute(
+                        "SELECT id FROM automation_run_steps "
+                        "WHERE id = ? AND run_id = ? AND workspace_id = ? AND status = 'running'",
+                        (parent_step_id, parent_run_id, workspace_id),
+                    ).fetchone()
+                    if parent_step is None:
+                        raise ContractViolation("subflow parent Step is not running")
+                    depth = 1
+                    ancestor_id = parent_run_id
+                    while ancestor_id is not None:
+                        ancestor = connection.execute(
+                            "SELECT parent_run_id, relation_kind FROM automation_runs WHERE id = ?",
+                            (ancestor_id,),
+                        ).fetchone()
+                        if ancestor is None or ancestor["parent_run_id"] is None:
+                            break
+                        if ancestor["relation_kind"] == "subflow":
+                            depth += 1
+                        ancestor_id = ancestor["parent_run_id"]
+                    if depth > 4:
+                        raise ContractViolation("subflow nesting exceeds four levels")
+                elif (
+                    parent["status"] not in TERMINAL_STATUSES
+                    or parent["flow_id"] != flow_id
+                ):
+                    raise ContractViolation(
+                        "rerun or proof parent must be a terminal Run of this Flow"
+                    )
+                if normalized_relation != "subflow" and parent_step_id is not None:
+                    raise ContractViolation("only subflow Runs may pin a parent Step")
+            elif normalized_relation != "root" or parent_step_id is not None:
+                raise ContractViolation("root Run relation fields are inconsistent")
             run_id = new_id("arun")
             now = utc_now()
             correlation = correlation_id or (
@@ -1263,9 +1598,10 @@ class StudioStore:
                 """
                 INSERT INTO automation_runs
                     (id, workspace_id, flow_id, flow_version_id, parent_run_id,
-                     correlation_id, idempotency_key, status, revision, input_json,
+                     parent_step_id, relation_kind, correlation_id, idempotency_key,
+                     status, revision, input_json,
                      current_node_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'created', 1, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', 1, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -1273,6 +1609,8 @@ class StudioStore:
                     flow_id,
                     version["id"],
                     parent_run_id,
+                    parent_step_id,
+                    normalized_relation,
                     correlation,
                     idempotency_key,
                     canonical_json(dict(input_data)),
@@ -1293,6 +1631,8 @@ class StudioStore:
                     "flow_version": selected,
                     "flow_fingerprint": version["fingerprint"],
                     "parent_run_id": parent_run_id,
+                    "parent_step_id": parent_step_id,
+                    "relation_kind": normalized_relation,
                     "correlation_id": correlation,
                 },
             )
@@ -1318,6 +1658,7 @@ class StudioStore:
         status: str,
         current_node_id: str | None = None,
         output: Any = None,
+        outcome: str | None = None,
         error_code: str | None = None,
         error_message: str | None = None,
     ) -> None:
@@ -1337,7 +1678,7 @@ class StudioStore:
                 """
                 UPDATE automation_runs
                 SET status = ?, revision = revision + 1, current_node_id = ?,
-                    output_json = ?, error_code = ?, error_message = ?,
+                    output_json = ?, outcome = ?, error_code = ?, error_message = ?,
                     started_at = ?, finished_at = ?
                 WHERE id = ? AND workspace_id = ? AND revision = ?
                 """,
@@ -1345,6 +1686,7 @@ class StudioStore:
                     status,
                     current_node_id,
                     canonical_json(output) if output is not None else row["output_json"],
+                    outcome if outcome is not None else row["outcome"],
                     error_code,
                     error_message,
                     started_at,
@@ -1369,6 +1711,7 @@ class StudioStore:
                     "revision": int(row["revision"]) + 1,
                     "current_node_id": current_node_id,
                     "error_code": error_code,
+                    "outcome": outcome,
                 },
             )
 
@@ -1417,7 +1760,8 @@ class StudioStore:
                 """
                 UPDATE automation_runs
                 SET status = 'cancelled', revision = revision + 1, current_node_id = NULL,
-                    error_code = 'cancelled', error_message = ?, finished_at = ?
+                    outcome = 'cancelled', error_code = 'cancelled',
+                    error_message = ?, finished_at = ?
                 WHERE id = ? AND revision = ?
                 """,
                 (reason, now, run_id, run["revision"]),
@@ -1894,12 +2238,13 @@ class StudioStore:
                 """
                 UPDATE automation_runs
                 SET status = ?, revision = revision + 1, current_node_id = ?,
-                    error_code = ?, error_message = ?, finished_at = ?
+                    outcome = ?, error_code = ?, error_message = ?, finished_at = ?
                 WHERE id = ? AND revision = ?
                 """,
                 (
                     next_status,
                     next_node,
+                    None if approved else "rejected",
                     None if approved else "approval_rejected",
                     None if approved else reason,
                     None if approved else now,
@@ -2374,6 +2719,14 @@ class StudioStore:
                     "storage_kind": old_action_version["kind"],
                     "input_schema": _decode(old_action_version["input_schema_json"]),
                     "output_schema": _decode(old_action_version["output_schema_json"]),
+                    "outcomes": (
+                        _decode(old_action_version["outcomes_json"])
+                        if old_action_version["outcomes_json"]
+                        else default_outcomes_for_kind(
+                            old_action_version["executor_kind"]
+                            or old_action_version["kind"]
+                        )
+                    ),
                     "config": config,
                     "agent": None,
                     "effect_level": old_action_version["effect_level"],
@@ -2383,9 +2736,9 @@ class StudioStore:
                     """
                     INSERT INTO action_versions
                         (id, workspace_id, action_id, version, kind, executor_kind,
-                         input_schema_json, output_schema_json, config_json,
+                         input_schema_json, output_schema_json, outcomes_json, config_json,
                          agent_version_id, effect_level, fingerprint, created_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         action_version_id,
@@ -2396,6 +2749,7 @@ class StudioStore:
                         old_action_version["executor_kind"],
                         old_action_version["input_schema_json"],
                         old_action_version["output_schema_json"],
+                        old_action_version["outcomes_json"],
                         canonical_json(config),
                         old_action_version["agent_version_id"],
                         old_action_version["effect_level"],
@@ -2426,12 +2780,18 @@ class StudioStore:
                 if replaced != 1:
                     raise Conflict("repair target node is no longer uniquely pinned")
                 pinned, requires_model = self._resolve_flow_pins(
-                    connection, workspace_id, nodes
+                    connection, workspace_id, nodes, owner_flow_id=flow["id"]
                 )
                 next_flow_version = int(flow["current_version"]) + 1
                 flow_version_id = new_id("aflowv")
                 flow_material = {
                     "input_schema": _decode(old_flow_version["input_schema_json"]),
+                    "output_schema": _decode(old_flow_version["output_schema_json"]),
+                    "outcomes": (
+                        _decode(old_flow_version["outcomes_json"])
+                        if old_flow_version["outcomes_json"]
+                        else default_outcomes_for_kind("flow")
+                    ),
                     "start_node_id": old_flow_version["start_node_id"],
                     "nodes": nodes,
                     "routes": _decode(old_flow_version["routes_json"]),
@@ -2442,9 +2802,10 @@ class StudioStore:
                     """
                     INSERT INTO automation_flow_versions
                         (id, workspace_id, flow_id, version, input_schema_json,
-                         start_node_id, nodes_json, routes_json, pinned_resources_json,
-                         requires_model, fingerprint, parent_version_id, created_by, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         output_schema_json, outcomes_json, start_node_id, nodes_json,
+                         routes_json, pinned_resources_json, requires_model, fingerprint,
+                         parent_version_id, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         flow_version_id,
@@ -2452,6 +2813,8 @@ class StudioStore:
                         flow["id"],
                         next_flow_version,
                         old_flow_version["input_schema_json"],
+                        old_flow_version["output_schema_json"],
+                        old_flow_version["outcomes_json"],
                         old_flow_version["start_node_id"],
                         canonical_json(nodes),
                         old_flow_version["routes_json"],
@@ -2631,6 +2994,8 @@ class StudioStore:
                 SELECT r.*, fv.version AS flow_version_number,
                        fv.fingerprint AS flow_fingerprint,
                        fv.start_node_id AS flow_start_node_id,
+                       fv.output_schema_json AS flow_output_schema_json,
+                       fv.outcomes_json AS flow_outcomes_json,
                        fv.nodes_json AS flow_nodes_json,
                        fv.routes_json AS flow_routes_json
                 FROM automation_runs r
@@ -2683,6 +3048,25 @@ class StudioStore:
                     (run_id,),
                 )
             ]
+            children = [
+                {
+                    "id": item["id"],
+                    "flow_id": item["flow_id"],
+                    "flow_version_id": item["flow_version_id"],
+                    "parent_step_id": item["parent_step_id"],
+                    "relation_kind": item["relation_kind"],
+                    "status": item["status"],
+                    "outcome": item["outcome"],
+                    "error_code": item["error_code"],
+                    "created_at": item["created_at"],
+                    "finished_at": item["finished_at"],
+                }
+                for item in connection.execute(
+                    "SELECT * FROM automation_runs WHERE parent_run_id = ? "
+                    "ORDER BY created_at, id",
+                    (run_id,),
+                )
+            ]
             pending = next(
                 (approval for approval in reversed(approvals) if approval["decision"] is None),
                 None,
@@ -2732,15 +3116,24 @@ class StudioStore:
                 "flow_fingerprint": row["flow_fingerprint"],
                 "flow_graph": {
                     "start_node_id": row["flow_start_node_id"],
+                    "output_schema": _decode(row["flow_output_schema_json"]),
+                    "outcomes": (
+                        _decode(row["flow_outcomes_json"])
+                        if row["flow_outcomes_json"]
+                        else default_outcomes_for_kind("flow")
+                    ),
                     "nodes": _decode(row["flow_nodes_json"]),
                     "routes": _decode(row["flow_routes_json"]),
                 },
                 "parent_run_id": row["parent_run_id"],
+                "parent_step_id": row["parent_step_id"],
+                "relation_kind": row["relation_kind"],
                 "correlation_id": row["correlation_id"],
                 "status": row["status"],
                 "revision": row["revision"],
                 "input": _decode(row["input_json"]),
                 "output": _decode(row["output_json"]),
+                "outcome": row["outcome"],
                 "current_node_id": row["current_node_id"],
                 "error_code": row["error_code"],
                 "error_message": row["error_message"],
@@ -2754,6 +3147,7 @@ class StudioStore:
                 "approvals": approvals,
                 "pending_approval": pending,
                 "effects": effects,
+                "children": children,
                 "diagnosis": diagnosis,
                 "repair": repair,
             }

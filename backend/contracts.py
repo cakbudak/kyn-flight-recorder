@@ -317,6 +317,90 @@ def require_string_list(
     return normalized
 
 
+OUTCOME_TONES = frozenset({"neutral", "success", "warning", "danger", "ai"})
+
+
+def default_outcomes_for_kind(kind: str) -> list[dict[str, str]]:
+    """Compatibility contract for versions created before declared ports existed."""
+
+    ids = {
+        "condition": ("true", "false", "error"),
+        "router": ("matched", "fallback", "error"),
+        "approval": ("approved", "rejected", "error"),
+    }.get(kind, ("success", "error"))
+    tone_by_id = {
+        "success": "success",
+        "true": "success",
+        "approved": "success",
+        "false": "warning",
+        "rejected": "warning",
+        "fallback": "warning",
+        "error": "danger",
+    }
+    return [
+        {
+            "id": outcome_id,
+            "label": outcome_id.replace("-", " ").title(),
+            "description": "",
+            "tone": tone_by_id.get(outcome_id, "neutral"),
+        }
+        for outcome_id in ids
+    ]
+
+
+def normalize_outcomes(
+    value: Any,
+    field: str,
+    *,
+    default_kind: str | None = None,
+    require_error: bool = True,
+) -> list[dict[str, str]]:
+    """Validate the immutable named source-port contract for an Action or Flow."""
+
+    if value is None and default_kind is not None:
+        value = default_outcomes_for_kind(default_kind)
+    if not isinstance(value, list) or not 1 <= len(value) <= 12:
+        raise ContractViolation(f"{field} must contain between one and twelve outcomes")
+    normalized: list[dict[str, str]] = []
+    ids: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) - {
+            "id",
+            "label",
+            "description",
+            "tone",
+        } or not {"id", "label"}.issubset(item):
+            raise ContractViolation(f"{field}[{index}] has an invalid shape")
+        outcome_id = require_slug(item["id"], f"{field}[{index}] id")
+        if outcome_id in ids:
+            raise ContractViolation(f"{field} outcome ids must be unique")
+        ids.add(outcome_id)
+        tone = item.get("tone", "neutral")
+        if tone not in OUTCOME_TONES:
+            raise ContractViolation(f"{field}[{index}] tone is invalid")
+        normalized.append(
+            {
+                "id": outcome_id,
+                "label": require_string(
+                    item["label"], f"{field}[{index}] label", maximum=48
+                ),
+                "description": (
+                    require_string(
+                        item["description"],
+                        f"{field}[{index}] description",
+                        maximum=240,
+                    )
+                    if item.get("description")
+                    else ""
+                ),
+                "tone": str(tone),
+            }
+        )
+    if require_error and "error" not in ids:
+        raise ContractViolation(f"{field} must declare an error outcome")
+    return normalized
+
+
 def render_prompt(
     template: str,
     *,

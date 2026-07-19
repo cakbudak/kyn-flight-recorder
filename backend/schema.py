@@ -256,6 +256,7 @@ CREATE TABLE IF NOT EXISTS action_versions (
     executor_kind TEXT,
     input_schema_json TEXT NOT NULL,
     output_schema_json TEXT NOT NULL,
+    outcomes_json TEXT,
     config_json TEXT NOT NULL,
     agent_version_id TEXT REFERENCES agent_versions(id) ON DELETE RESTRICT,
     effect_level TEXT NOT NULL CHECK (effect_level IN ('none', 'model', 'approval', 'sandbox_write')),
@@ -284,6 +285,8 @@ CREATE TABLE IF NOT EXISTS automation_flow_versions (
     flow_id TEXT NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
     version INTEGER NOT NULL CHECK (version >= 1),
     input_schema_json TEXT NOT NULL,
+    output_schema_json TEXT,
+    outcomes_json TEXT,
     start_node_id TEXT NOT NULL,
     nodes_json TEXT NOT NULL,
     routes_json TEXT NOT NULL,
@@ -302,6 +305,10 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     flow_id TEXT NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
     flow_version_id TEXT NOT NULL REFERENCES automation_flow_versions(id) ON DELETE RESTRICT,
     parent_run_id TEXT REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    parent_step_id TEXT REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    relation_kind TEXT NOT NULL DEFAULT 'root' CHECK (
+        relation_kind IN ('root', 'rerun', 'proof', 'subflow')
+    ),
     correlation_id TEXT NOT NULL,
     idempotency_key TEXT,
     status TEXT NOT NULL CHECK (status IN (
@@ -310,6 +317,7 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     input_json TEXT NOT NULL,
     output_json TEXT,
+    outcome TEXT,
     current_node_id TEXT,
     error_code TEXT,
     error_message TEXT,
@@ -324,7 +332,7 @@ CREATE TABLE IF NOT EXISTS automation_run_steps (
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
     run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
     node_id TEXT NOT NULL,
-    node_type TEXT NOT NULL CHECK (node_type IN ('action', 'agent')),
+    node_type TEXT NOT NULL CHECK (node_type IN ('action', 'agent', 'flow')),
     target_version_id TEXT NOT NULL,
     attempt INTEGER NOT NULL CHECK (attempt >= 1),
     status TEXT NOT NULL CHECK (status IN (
@@ -654,6 +662,21 @@ CREATE TRIGGER IF NOT EXISTS trg_actions_version_fence
 BEFORE UPDATE OF current_version ON actions
 WHEN NEW.current_version <> OLD.current_version + 1
 BEGIN SELECT RAISE(ABORT, 'action update must advance one version'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_prompts_version_fence
+BEFORE UPDATE OF current_version ON prompts
+WHEN NEW.current_version <> OLD.current_version + 1
+BEGIN SELECT RAISE(ABORT, 'prompt update must advance one version'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_skills_version_fence
+BEFORE UPDATE OF current_version ON skills
+WHEN NEW.current_version <> OLD.current_version + 1
+BEGIN SELECT RAISE(ABORT, 'skill update must advance one version'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_agents_version_fence
+BEFORE UPDATE OF current_version ON agents
+WHEN NEW.current_version <> OLD.current_version + 1
+BEGIN SELECT RAISE(ABORT, 'agent update must advance one version'); END;
 
 CREATE TRIGGER IF NOT EXISTS trg_automation_repairs_transition
 BEFORE UPDATE OF status ON automation_repair_proposals

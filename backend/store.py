@@ -66,8 +66,119 @@ class Store:
             }
             if "executor_kind" not in action_version_columns:
                 connection.execute("ALTER TABLE action_versions ADD COLUMN executor_kind TEXT")
+            if "outcomes_json" not in action_version_columns:
+                connection.execute("ALTER TABLE action_versions ADD COLUMN outcomes_json TEXT")
+            flow_version_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(automation_flow_versions)"
+                )
+            }
+            if "output_schema_json" not in flow_version_columns:
+                connection.execute(
+                    "ALTER TABLE automation_flow_versions ADD COLUMN output_schema_json TEXT"
+                )
+            if "outcomes_json" not in flow_version_columns:
+                connection.execute(
+                    "ALTER TABLE automation_flow_versions ADD COLUMN outcomes_json TEXT"
+                )
+            run_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(automation_runs)")
+            }
+            if "parent_step_id" not in run_columns:
+                connection.execute(
+                    "ALTER TABLE automation_runs ADD COLUMN parent_step_id TEXT "
+                    "REFERENCES automation_run_steps(id) ON DELETE RESTRICT"
+                )
+            if "relation_kind" not in run_columns:
+                connection.execute(
+                    "ALTER TABLE automation_runs ADD COLUMN relation_kind TEXT NOT NULL "
+                    "DEFAULT 'root' CHECK (relation_kind IN "
+                    "('root', 'rerun', 'proof', 'subflow'))"
+                )
+            if "outcome" not in run_columns:
+                connection.execute("ALTER TABLE automation_runs ADD COLUMN outcome TEXT")
+            self._migrate_studio_step_node_types(connection)
         finally:
             connection.close()
+
+    @staticmethod
+    def _migrate_studio_step_node_types(connection: sqlite3.Connection) -> None:
+        """Add the truthful `flow` Step kind without rewriting any Step row."""
+
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'automation_run_steps'"
+        ).fetchone()
+        if row is None or "'flow'" in str(row["sql"]):
+            return
+        connection.execute("PRAGMA foreign_keys=OFF")
+        try:
+            connection.executescript(
+                """
+                BEGIN IMMEDIATE;
+                CREATE TABLE automation_run_steps_v4 (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+                    run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+                    node_id TEXT NOT NULL,
+                    node_type TEXT NOT NULL CHECK (node_type IN ('action', 'agent', 'flow')),
+                    target_version_id TEXT NOT NULL,
+                    attempt INTEGER NOT NULL CHECK (attempt >= 1),
+                    status TEXT NOT NULL CHECK (status IN (
+                        'running', 'waiting_approval', 'completed', 'blocked', 'failed', 'skipped'
+                    )),
+                    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+                    input_json TEXT NOT NULL,
+                    output_json TEXT,
+                    route_outcome TEXT,
+                    error_code TEXT,
+                    error_message TEXT,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    UNIQUE (run_id, node_id, attempt)
+                );
+                INSERT INTO automation_run_steps_v4 (
+                    id, workspace_id, run_id, node_id, node_type, target_version_id,
+                    attempt, status, revision, input_json, output_json, route_outcome,
+                    error_code, error_message, started_at, finished_at
+                )
+                SELECT
+                    id, workspace_id, run_id, node_id, node_type, target_version_id,
+                    attempt, status, revision, input_json, output_json, route_outcome,
+                    error_code, error_message, started_at, finished_at
+                FROM automation_run_steps;
+                DROP TABLE automation_run_steps;
+                ALTER TABLE automation_run_steps_v4 RENAME TO automation_run_steps;
+                CREATE INDEX ix_automation_steps_run
+                ON automation_run_steps(run_id, started_at, id);
+                CREATE TRIGGER trg_automation_steps_transition_shape
+                BEFORE UPDATE OF status ON automation_run_steps
+                WHEN NEW.status <> OLD.status
+                AND NOT (
+                    (OLD.status = 'running' AND NEW.status IN (
+                        'waiting_approval', 'completed', 'blocked', 'failed', 'skipped'
+                    )) OR
+                    (OLD.status = 'waiting_approval' AND NEW.status IN ('completed', 'blocked'))
+                )
+                BEGIN SELECT RAISE(ABORT, 'illegal automation step status transition'); END;
+                CREATE TRIGGER trg_automation_steps_revision_fence
+                BEFORE UPDATE OF status ON automation_run_steps
+                WHEN NEW.status <> OLD.status AND NEW.revision <> OLD.revision + 1
+                BEGIN SELECT RAISE(ABORT, 'automation step transition must advance one revision'); END;
+                COMMIT;
+                """
+            )
+        except BaseException:
+            if connection.in_transaction:
+                connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys=ON")
+        violation = connection.execute("PRAGMA foreign_key_check").fetchone()
+        if violation is not None:
+            raise RuntimeError("Studio Step migration violated a foreign key")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
@@ -272,7 +383,63 @@ class Store:
             "current_version": row["current_version"],
             "created_at": row["created_at"],
             "version": self._prompt_version_projection(version),
+            "versions": [
+                self._prompt_version_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM prompt_versions WHERE prompt_id = ? "
+                    "ORDER BY version DESC",
+                    (row["id"],),
+                )
+            ],
         }
+
+    def revise_prompt(
+        self,
+        workspace_id: str,
+        prompt_id: str,
+        *,
+        expected_version: int,
+        name: str,
+        template: str,
+        variables: Sequence[str],
+    ) -> dict[str, Any]:
+        with self.write() as connection:
+            prompt = connection.execute(
+                "SELECT * FROM prompts WHERE id = ? AND workspace_id = ?",
+                (prompt_id, workspace_id),
+            ).fetchone()
+            if prompt is None:
+                raise NotFound("prompt was not found")
+            if int(prompt["current_version"]) != expected_version:
+                raise Conflict("prompt version changed")
+            now = utc_now()
+            material = {"template": template, "variables": list(variables)}
+            connection.execute(
+                """
+                INSERT INTO prompt_versions
+                    (id, workspace_id, prompt_id, version, template, variables_json,
+                     fingerprint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id("prmv"),
+                    workspace_id,
+                    prompt_id,
+                    expected_version + 1,
+                    template,
+                    canonical_json(list(variables)),
+                    fingerprint(material),
+                    now,
+                ),
+            )
+            cursor = connection.execute(
+                "UPDATE prompts SET name = ?, current_version = current_version + 1 "
+                "WHERE id = ? AND workspace_id = ? AND current_version = ?",
+                (name, prompt_id, workspace_id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("prompt version changed")
+        return self.get_prompt(workspace_id, prompt_id)
 
     def create_skill(
         self,
@@ -390,7 +557,79 @@ class Store:
             "current_version": row["current_version"],
             "created_at": row["created_at"],
             "version": self._skill_version_projection(version),
+            "versions": [
+                self._skill_version_projection(item)
+                for item in connection.execute(
+                    "SELECT * FROM skill_versions WHERE skill_id = ? "
+                    "ORDER BY version DESC",
+                    (row["id"],),
+                )
+            ],
         }
+
+    def revise_skill(
+        self,
+        workspace_id: str,
+        skill_id: str,
+        *,
+        expected_version: int,
+        name: str,
+        instructions: str,
+        allowed_tools: Sequence[str],
+        allowed_action_version_ids: Sequence[str],
+    ) -> dict[str, Any]:
+        with self.write() as connection:
+            skill = connection.execute(
+                "SELECT * FROM skills WHERE id = ? AND workspace_id = ?",
+                (skill_id, workspace_id),
+            ).fetchone()
+            if skill is None:
+                raise NotFound("skill was not found")
+            if int(skill["current_version"]) != expected_version:
+                raise Conflict("skill version changed")
+            for version_id in allowed_action_version_ids:
+                owned = connection.execute(
+                    "SELECT id FROM action_versions WHERE id = ? AND workspace_id = ?",
+                    (version_id, workspace_id),
+                ).fetchone()
+                if owned is None:
+                    raise ContractViolation(
+                        "Skill Action version does not belong to the workspace"
+                    )
+            now = utc_now()
+            material = {
+                "instructions": instructions,
+                "allowed_tools": list(allowed_tools),
+                "allowed_action_version_ids": list(allowed_action_version_ids),
+            }
+            connection.execute(
+                """
+                INSERT INTO skill_versions
+                    (id, workspace_id, skill_id, version, instructions,
+                     allowed_tools_json, allowed_action_version_ids_json,
+                     fingerprint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id("sklv"),
+                    workspace_id,
+                    skill_id,
+                    expected_version + 1,
+                    instructions,
+                    canonical_json(list(allowed_tools)),
+                    canonical_json(list(allowed_action_version_ids)),
+                    fingerprint(material),
+                    now,
+                ),
+            )
+            cursor = connection.execute(
+                "UPDATE skills SET name = ?, current_version = current_version + 1 "
+                "WHERE id = ? AND workspace_id = ? AND current_version = ?",
+                (name, skill_id, workspace_id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("skill version changed")
+        return self.get_skill(workspace_id, skill_id)
 
     def create_agent(
         self,
@@ -563,7 +802,102 @@ class Store:
             "current_version": row["current_version"],
             "created_at": row["created_at"],
             "version": self._agent_version_projection(connection, version),
+            "versions": [
+                self._agent_version_projection(connection, item)
+                for item in connection.execute(
+                    "SELECT * FROM agent_versions WHERE agent_id = ? "
+                    "ORDER BY version DESC",
+                    (row["id"],),
+                )
+            ],
         }
+
+    def revise_agent(
+        self,
+        workspace_id: str,
+        agent_id: str,
+        *,
+        expected_version: int,
+        name: str,
+        role: str,
+        model: str,
+        instructions: str,
+        prompt_version_id: str,
+        skill_version_ids: Sequence[str],
+    ) -> dict[str, Any]:
+        with self.write() as connection:
+            agent = connection.execute(
+                "SELECT * FROM agents WHERE id = ? AND workspace_id = ?",
+                (agent_id, workspace_id),
+            ).fetchone()
+            if agent is None:
+                raise NotFound("agent was not found")
+            if int(agent["current_version"]) != expected_version:
+                raise Conflict("agent version changed")
+            prompt = connection.execute(
+                "SELECT id, fingerprint FROM prompt_versions "
+                "WHERE id = ? AND workspace_id = ?",
+                (prompt_version_id, workspace_id),
+            ).fetchone()
+            if prompt is None:
+                raise ContractViolation(
+                    "agent prompt version does not belong to the workspace"
+                )
+            skills: list[sqlite3.Row] = []
+            for version_id in skill_version_ids:
+                skill = connection.execute(
+                    "SELECT id, fingerprint FROM skill_versions "
+                    "WHERE id = ? AND workspace_id = ?",
+                    (version_id, workspace_id),
+                ).fetchone()
+                if skill is None:
+                    raise ContractViolation(
+                        "agent skill version does not belong to the workspace"
+                    )
+                skills.append(skill)
+            now = utc_now()
+            material = {
+                "role": role,
+                "model": model,
+                "instructions": instructions,
+                "prompt": {
+                    "id": prompt_version_id,
+                    "fingerprint": prompt["fingerprint"],
+                },
+                "skills": [
+                    {"id": row["id"], "fingerprint": row["fingerprint"]}
+                    for row in skills
+                ],
+            }
+            connection.execute(
+                """
+                INSERT INTO agent_versions
+                    (id, workspace_id, agent_id, version, role, model, instructions,
+                     prompt_version_id, skill_version_ids_json, fingerprint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id("agtv"),
+                    workspace_id,
+                    agent_id,
+                    expected_version + 1,
+                    role,
+                    model,
+                    instructions,
+                    prompt_version_id,
+                    canonical_json(list(skill_version_ids)),
+                    fingerprint(material),
+                    now,
+                ),
+            )
+            cursor = connection.execute(
+                "UPDATE agents SET name = ?, current_version = current_version + 1 "
+                "WHERE id = ? AND workspace_id = ? AND current_version = ?",
+                (name, agent_id, workspace_id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise Conflict("agent version changed")
+        return self.get_agent(workspace_id, agent_id)
 
     def create_flow(
         self,

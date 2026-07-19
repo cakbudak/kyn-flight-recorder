@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from backend.http_api import ApiApplication, ApiRequest
+from backend.http_api import MAX_API_BODY, ApiApplication, ApiRequest
 from backend.service import ControlPlane
 from backend.store import Store
 from serve import DemoRequestHandler, DemoServer, ROOT
@@ -387,7 +387,7 @@ class RuntimeHttpTest(unittest.TestCase):
             "POST",
             "/api/v1/workspaces",
             origin=self.base_url,
-            raw_body=b"{" + b"x" * (32 * 1024) + b"}",
+            raw_body=b"{" + b"x" * MAX_API_BODY + b"}",
         )
         self.assertEqual(status, 413)
         self.assertEqual(payload["error"]["code"], "body_too_large")

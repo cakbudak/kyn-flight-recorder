@@ -29,8 +29,9 @@ from .studio_store import StudioStore
 
 
 NODE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
-ROUTE_OUTCOMES = frozenset({"success", "true", "false", "approved", "rejected", "error"})
-CALLABLE_ACTION_KINDS = frozenset({"template", "condition", "sandbox", "transform", "assert"})
+CALLABLE_ACTION_KINDS = frozenset(
+    {"template", "condition", "router", "sandbox", "transform", "assert"}
+)
 RETRYABLE_ERROR_CODES = frozenset(
     {"provider_failure", "action_blocked", "contract_violation"}
 )
@@ -45,6 +46,7 @@ class ActionResult:
     route_outcome: str
     paused: bool = False
     approval_message: str | None = None
+    child_run_id: str | None = None
 
 
 def _safe_provider_detail(error: ProviderFailure) -> dict[str, Any]:
@@ -81,8 +83,8 @@ def validate_flow_definition(
     start = require_string(start_node_id, "Flow start node", maximum=64)
     if not NODE_ID_RE.fullmatch(start):
         raise ContractViolation("Flow start node has an invalid id")
-    if not isinstance(nodes, list) or not 1 <= len(nodes) <= 12:
-        raise ContractViolation("Flow must contain between one and twelve nodes")
+    if not isinstance(nodes, list) or not 1 <= len(nodes) <= 64:
+        raise ContractViolation("Flow must contain between one and sixty-four nodes")
     normalized_nodes: list[dict[str, Any]] = []
     ids: set[str] = set()
     for index, node in enumerate(nodes):
@@ -99,8 +101,8 @@ def validate_flow_definition(
             raise ContractViolation("Flow node ids must be unique lowercase slugs")
         ids.add(node_id)
         node_type = node["type"]
-        if node_type not in {"action", "agent"}:
-            raise ContractViolation("Flow node type must be action or agent")
+        if node_type not in {"action", "agent", "flow"}:
+            raise ContractViolation("Flow node type must be action, agent, or flow")
         version_id = require_string(
             node["version_id"], f"Flow node {node_id} version", maximum=80
         )
@@ -156,7 +158,7 @@ def validate_flow_definition(
                 not isinstance(coordinate, (int, float))
                 or isinstance(coordinate, bool)
                 or not math.isfinite(coordinate)
-                or not 0 <= coordinate <= 4_000
+                or not -20_000 <= coordinate <= 20_000
             ):
                 raise ContractViolation(f"Flow node {node_id} position is out of bounds")
             normalized_position[axis] = int(round(coordinate))
@@ -214,7 +216,7 @@ def validate_flow_definition(
         )
     if start not in ids:
         raise ContractViolation("Flow start node does not exist")
-    if not isinstance(routes, list) or len(routes) > 24:
+    if not isinstance(routes, list) or len(routes) > 192:
         raise ContractViolation("Flow routes are invalid or exceed the limit")
     normalized_routes: list[dict[str, str]] = []
     unique_routes: set[tuple[str, str]] = set()
@@ -224,11 +226,11 @@ def validate_flow_definition(
             raise ContractViolation(f"Flow route {index} has an invalid shape")
         source = require_string(route["from"], "Flow route source", maximum=64)
         target = require_string(route["to"], "Flow route target", maximum=64)
-        outcome = require_string(route["outcome"], "Flow route outcome", maximum=16)
+        outcome = require_string(route["outcome"], "Flow route outcome", maximum=64)
         if source not in ids or target not in ids or source == target:
             raise ContractViolation("Flow route references invalid nodes")
-        if outcome not in ROUTE_OUTCOMES:
-            raise ContractViolation("Flow route outcome is unsupported")
+        if not NODE_ID_RE.fullmatch(outcome):
+            raise ContractViolation("Flow route outcome has an invalid id")
         if (source, outcome) in unique_routes:
             raise ContractViolation("Flow has an ambiguous route for one outcome")
         unique_routes.add((source, outcome))
@@ -317,6 +319,8 @@ class StudioRuntime:
         input_data: Mapping[str, Any],
         flow_version: int | None = None,
         parent_run_id: str | None = None,
+        parent_step_id: str | None = None,
+        relation_kind: str | None = None,
         correlation_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
@@ -326,6 +330,8 @@ class StudioRuntime:
             input_data=input_data,
             flow_version=flow_version,
             parent_run_id=parent_run_id,
+            parent_step_id=parent_step_id,
+            relation_kind=relation_kind,
             correlation_id=correlation_id,
             idempotency_key=idempotency_key,
         )
@@ -341,6 +347,8 @@ class StudioRuntime:
         input_data: Mapping[str, Any],
         flow_version: int | None = None,
         parent_run_id: str | None = None,
+        parent_step_id: str | None = None,
+        relation_kind: str | None = None,
         correlation_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
@@ -356,6 +364,8 @@ class StudioRuntime:
             input_data=validated_input,
             flow_version=int(context["version"]["version"]),
             parent_run_id=parent_run_id,
+            parent_step_id=parent_step_id,
+            relation_kind=relation_kind,
             correlation_id=correlation_id,
             idempotency_key=idempotency_key,
         )
@@ -555,13 +565,22 @@ class StudioRuntime:
                             attempt=attempt,
                             invocation_key=f"node:{node_id}:attempt:{attempt}",
                         )
-                    else:
+                    elif node["type"] == "agent":
                         result = self._invoke_agent_node(
                             workspace_id,
                             run_id,
                             step_id,
                             node_id=node_id,
                             agent_version_id=node["version_id"],
+                            input_data=mapped_input,
+                        )
+                    else:
+                        result = self._invoke_subflow(
+                            workspace_id,
+                            run_id,
+                            step_id,
+                            node_id=node_id,
+                            flow_version_id=node["version_id"],
                             input_data=mapped_input,
                         )
                 except (ContractViolation, ProviderFailure, ActionBlocked) as error:
@@ -619,23 +638,40 @@ class StudioRuntime:
                         status="blocked" if isinstance(error, ActionBlocked) else "failed",
                     )
                 if result.paused:
-                    next_node = self._next_node(routes, node_id, "approved")
                     self.repository.finish_step(
                         workspace_id,
                         run_id,
                         step_id,
                         status="waiting_approval",
                         output=result.output,
-                        route_outcome="approved",
+                        route_outcome=(
+                            "approved" if result.child_run_id is None else "waiting"
+                        ),
                     )
-                    self.repository.create_approval_request(
-                        workspace_id,
-                        run_id,
-                        step_id,
-                        node_id=node_id,
-                        message=result.approval_message or "Human approval required",
-                        context=mapped_input,
-                    )
+                    if result.child_run_id is None:
+                        next_node = self._next_node(routes, node_id, "approved")
+                        self.repository.create_approval_request(
+                            workspace_id,
+                            run_id,
+                            step_id,
+                            node_id=node_id,
+                            message=result.approval_message or "Human approval required",
+                            context=mapped_input,
+                        )
+                    else:
+                        next_node = node_id
+                        self.repository.append_event(
+                            workspace_id,
+                            run_id,
+                            event_type="subflow.waiting",
+                            actor_type="runtime",
+                            actor_id=None,
+                            payload={
+                                "node_id": node_id,
+                                "step_id": step_id,
+                                "child_run_id": result.child_run_id,
+                            },
+                        )
                     self.repository.transition_run(
                         workspace_id,
                         run_id,
@@ -661,12 +697,22 @@ class StudioRuntime:
                     routes, node_id, result.route_outcome
                 )
                 if next_node is None:
+                    flow_outcome = self._flow_terminal_outcome(
+                        context["version"], result.route_outcome
+                    )
+                    if context["version"]["output_schema"] is not None:
+                        validate_json_schema(
+                            last_output,
+                            context["version"]["output_schema"],
+                            "Flow output",
+                        )
                     self.repository.transition_run(
                         workspace_id,
                         run_id,
                         status="completed",
                         current_node_id=None,
                         output=last_output,
+                        outcome=flow_outcome,
                     )
                     return self.repository.get_run(workspace_id, run_id)
                 node_id = next_node
@@ -679,6 +725,7 @@ class StudioRuntime:
             status="completed",
             current_node_id=None,
             output=last_output,
+            outcome="success",
         )
         return self.repository.get_run(workspace_id, run_id)
 
@@ -701,6 +748,7 @@ class StudioRuntime:
             current_node_id=None,
             error_code=code,
             error_message=message[:500],
+            outcome="error",
         )
         return self.repository.get_run(workspace_id, run_id)
 
@@ -739,6 +787,11 @@ class StudioRuntime:
             return self.repository.get_action_version(
                 workspace_id, node["version_id"]
             )["input_schema"]
+        if node["type"] == "flow":
+            flow = self.repository.get_flow_version_by_id(
+                workspace_id, node["version_id"]
+            )
+            return flow["input_schema"]
         agent = self.repository.get_agent_runtime(workspace_id, node["version_id"])
         return {
             "type": "object",
@@ -757,6 +810,13 @@ class StudioRuntime:
             return self.repository.get_action_version(
                 workspace_id, node["version_id"]
             )["output_schema"]
+        if node["type"] == "flow":
+            flow = self.repository.get_flow_version_by_id(
+                workspace_id, node["version_id"]
+            )
+            if flow["output_schema"] is None:
+                raise ContractViolation("Pinned subflow has no output contract")
+            return flow["output_schema"]
         return {
             "type": "object",
             "properties": {"text": {"type": "string"}},
@@ -773,17 +833,143 @@ class StudioRuntime:
             for route in routes
             if route["from"] == node_id and route["outcome"] == outcome
         ]
-        if exact:
-            return exact[0]
-        if outcome != "success":
-            fallback = [
-                route["to"]
-                for route in routes
-                if route["from"] == node_id and route["outcome"] == "success"
-            ]
-            if fallback:
-                return fallback[0]
-        return None
+        return exact[0] if exact else None
+
+    @staticmethod
+    def _flow_terminal_outcome(
+        flow_version: Mapping[str, Any], node_outcome: str
+    ) -> str:
+        declared = {item["id"] for item in flow_version["outcomes"]}
+        if node_outcome in declared:
+            return node_outcome
+        if "success" in declared:
+            return "success"
+        raise ContractViolation("terminal node outcome is not declared by the Flow")
+
+    def _invoke_subflow(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        node_id: str,
+        flow_version_id: str,
+        input_data: Mapping[str, Any],
+    ) -> ActionResult:
+        target = self.repository.get_flow_version_by_id(
+            workspace_id, flow_version_id
+        )
+        child = self.execute(
+            workspace_id,
+            target["flow_id"],
+            input_data=input_data,
+            flow_version=int(target["version"]),
+            parent_run_id=run_id,
+            parent_step_id=step_id,
+            relation_kind="subflow",
+            correlation_id=self.repository.get_run(workspace_id, run_id)[
+                "correlation_id"
+            ],
+            idempotency_key=f"subflow:{run_id}:{node_id}",
+        )
+        if child["status"] == "waiting_approval":
+            return ActionResult(
+                output={"child_run_id": child["id"], "status": child["status"]},
+                route_outcome="waiting",
+                paused=True,
+                child_run_id=child["id"],
+            )
+        if child["status"] == "completed":
+            return ActionResult(
+                output=child["output"],
+                route_outcome=child["outcome"] or "success",
+            )
+        if child["status"] == "blocked":
+            raise ActionBlocked(
+                f"Subflow {target['name']} blocked: {child['error_message'] or 'authority denied'}"
+            )
+        raise ContractViolation(
+            f"Subflow {target['name']} ended as {child['status']}: "
+            f"{child['error_message'] or child['error_code'] or 'unknown failure'}"
+        )
+
+    def resume_parent_from_subflow(
+        self, workspace_id: str, child_run_id: str
+    ) -> dict[str, Any] | None:
+        child = self.repository.get_run(workspace_id, child_run_id)
+        if (
+            child["relation_kind"] != "subflow"
+            or child["parent_run_id"] is None
+            or child["parent_step_id"] is None
+            or child["status"] not in {"completed", "blocked", "failed", "cancelled"}
+        ):
+            return None
+        parent = self.repository.get_run(workspace_id, child["parent_run_id"])
+        if parent["status"] != "waiting_approval":
+            return parent
+        step = next(
+            (
+                item
+                for item in parent["steps"]
+                if item["id"] == child["parent_step_id"]
+            ),
+            None,
+        )
+        if step is None or step["status"] != "waiting_approval":
+            raise Conflict("parent subflow Step is no longer waiting")
+        context = self.repository.flow_context(
+            workspace_id, parent["flow_id"], int(parent["flow_version"])
+        )
+        routes = context["version"]["routes"]
+        if child["status"] == "completed":
+            output = validate_json_schema(
+                child["output"],
+                self._node_output_schema(
+                    workspace_id,
+                    next(
+                        node
+                        for node in context["version"]["nodes"]
+                        if node["id"] == step["node_id"]
+                    ),
+                ),
+                f"subflow node {step['node_id']} output",
+            )
+            route_outcome = child["outcome"] or "success"
+            self.repository.finish_step(
+                workspace_id,
+                parent["id"],
+                step["id"],
+                status="completed",
+                output=output,
+                route_outcome=route_outcome,
+            )
+            next_node = self._next_node(routes, step["node_id"], route_outcome)
+            self.repository.transition_run(
+                workspace_id,
+                parent["id"],
+                status="running",
+                current_node_id=next_node,
+                output=output,
+            )
+            return self._drive(workspace_id, parent["id"])
+        message = child["error_message"] or f"Subflow ended as {child['status']}"
+        self.repository.finish_step(
+            workspace_id,
+            parent["id"],
+            step["id"],
+            status="blocked" if child["status"] == "blocked" else "failed",
+            output=None,
+            route_outcome="error",
+            error_code=child["error_code"] or "subflow_failure",
+            error_message=message,
+        )
+        return self._fail_run(
+            workspace_id,
+            parent["id"],
+            child["error_code"] or "subflow_failure",
+            message,
+            status="blocked" if child["status"] == "blocked" else "failed",
+        )
 
     def _invoke_action(
         self,
@@ -863,6 +1049,22 @@ class StudioRuntime:
                     ),
                     route_outcome=("success" if kind == "assert" else ("true" if matched else "false")),
                 )
+            elif kind == "router":
+                selected = action["config"]["fallback_outcome"]
+                actual: Any = None
+                for branch in action["config"]["branches"]:
+                    actual = _value_at(
+                        validated_input,
+                        branch["path"],
+                        field=f"Action {action['slug']} router",
+                    )
+                    if self._compare(actual, branch["operator"], branch["value"]):
+                        selected = branch["outcome"]
+                        break
+                result = ActionResult(
+                    output={"outcome": selected, "actual": actual},
+                    route_outcome=selected,
+                )
             elif kind == "approval":
                 template = action["config"]["message_template"]
                 variables = sorted(set(PLACEHOLDER_RE.findall(template)))
@@ -922,12 +1124,39 @@ class StudioRuntime:
                 idempotency_key=receipt_key,
             )
             raise
-        if not result.paused:
-            validate_json_schema(
-                result.output,
-                action["output_schema"],
-                f"Action {action['slug']} output",
+        try:
+            if not result.paused:
+                validate_json_schema(
+                    result.output,
+                    action["output_schema"],
+                    f"Action {action['slug']} output",
+                )
+            declared_outcomes = {item["id"] for item in action["outcomes"]}
+            if result.route_outcome not in declared_outcomes:
+                raise ContractViolation(
+                    f"Action {action['slug']} emitted undeclared outcome "
+                    f"{result.route_outcome}"
+                )
+        except ContractViolation as error:
+            self.repository.record_receipt(
+                workspace_id,
+                run_id,
+                step_id,
+                node_id=node_id,
+                action_version_id=action["id"],
+                attempt=attempt,
+                outcome="failed",
+                input_data=validated_input,
+                output={
+                    "error": {
+                        "code": error.code,
+                        "message": _public_error_message(error),
+                    }
+                },
+                error_code=error.code,
+                idempotency_key=receipt_key,
             )
+            raise
         outcome = "waiting_approval" if result.paused else "succeeded"
         self.repository.record_receipt(
             workspace_id,
@@ -1035,7 +1264,19 @@ class StudioRuntime:
                     raise ContractViolation("AI Action output is not valid JSON") from None
                 if not isinstance(output, dict):
                     raise ContractViolation("AI Action output must be an object")
-                return ActionResult(output=output, route_outcome="success")
+                outcome_path = action["config"].get("outcome_path")
+                route_outcome = (
+                    _value_at(
+                        output,
+                        outcome_path,
+                        field=f"AI Action {action['slug']} outcome",
+                    )
+                    if outcome_path
+                    else "success"
+                )
+                if not isinstance(route_outcome, str):
+                    raise ContractViolation("AI Action outcome must be a string")
+                return ActionResult(output=output, route_outcome=route_outcome)
             if used_tool_calls + len(calls) > max_tool_calls:
                 raise ContractViolation("Agent exceeded the pinned Action-call budget")
             response_output = response.get("output")
