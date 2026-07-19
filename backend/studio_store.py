@@ -619,6 +619,8 @@ class StudioStore:
         flow_id: str,
         *,
         expected_revision: int,
+        name: str,
+        description: str,
         input_schema: Mapping[str, Any],
         output_schema: Mapping[str, Any],
         outcomes: Sequence[Mapping[str, Any]],
@@ -689,11 +691,11 @@ class StudioStore:
             cursor = connection.execute(
                 """
                 UPDATE automation_flows
-                SET revision = revision + 1, current_version = current_version + 1,
-                    updated_at = ?
+                SET name = ?, description = ?, revision = revision + 1,
+                    current_version = current_version + 1, updated_at = ?
                 WHERE id = ? AND workspace_id = ? AND revision = ?
                 """,
-                (now, flow_id, workspace_id, expected_revision),
+                (name, description, now, flow_id, workspace_id, expected_revision),
             )
             if cursor.rowcount != 1:
                 raise Conflict("Automation Flow revision changed")

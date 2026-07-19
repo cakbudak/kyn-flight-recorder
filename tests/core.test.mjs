@@ -7,7 +7,7 @@ import {
   latestStepForNode,
   maintenancePhase,
   selectedStudioRun
-} from "../app/state.mjs";
+} from "../src/lib.js";
 
 function run(overrides = {}) {
   return {
@@ -53,12 +53,15 @@ test("maintenance advances only through diagnosis, proposal, application, and pr
   assert.equal(maintenancePhase(root), "proposed");
   root.repair = { id: "repair_1", status: "applied", applied_flow_version: 2 };
   assert.equal(maintenancePhase(root), "applied");
-  const proof = run({ id: "run_proof", parent_run_id: root.id, flow_version: 2, status: "completed" });
+  const proof = run({ id: "run_proof", parent_run_id: root.id, relation_kind: "proof", flow_version: 2, status: "completed" });
   assert.equal(maintenancePhase(root, [root, proof]), "proven");
 });
 
 test("an unrelated or failed child cannot prove a repair", () => {
-  const root = run({ repair: { id: "repair_1", status: "applied", applied_flow_version: 2 } });
+  const root = run({
+    diagnosis: { id: "diag_1" },
+    repair: { id: "repair_1", status: "applied", applied_flow_version: 2 }
+  });
   const unrelated = run({ id: "run_other", parent_run_id: "another", flow_version: 2, status: "completed" });
   const failed = run({ id: "run_failed", parent_run_id: root.id, flow_version: 2, status: "failed" });
   assert.equal(maintenancePhase(root, [root, unrelated, failed]), "applied");

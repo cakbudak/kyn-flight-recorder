@@ -269,7 +269,7 @@ class ApiApplication:
                     "nodes",
                     "routes",
                 },
-                {"output_schema", "outcomes"},
+                {"name", "description", "output_schema", "outcomes"},
             )
             return self._ok(
                 self.control_plane.revise_studio_flow(

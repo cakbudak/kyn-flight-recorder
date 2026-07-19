@@ -493,6 +493,18 @@ class StudioRuntime:
         }
         node_id = run["current_node_id"]
         last_output = run["output"]
+        terminal_resume_outcome: str | None = None
+        if node_id is None:
+            completed_steps = [
+                step for step in run["steps"] if step["status"] == "completed"
+            ]
+            if completed_steps:
+                last_step = completed_steps[-1]
+                last_output = last_step["output"]
+                if last_step["route_outcome"] is not None:
+                    terminal_resume_outcome = self._flow_terminal_outcome(
+                        context["version"], last_step["route_outcome"]
+                    )
         traversed = 0
         while node_id is not None:
             traversed += 1
@@ -700,32 +712,51 @@ class StudioRuntime:
                     flow_outcome = self._flow_terminal_outcome(
                         context["version"], result.route_outcome
                     )
-                    if context["version"]["output_schema"] is not None:
-                        validate_json_schema(
-                            last_output,
-                            context["version"]["output_schema"],
-                            "Flow output",
-                        )
-                    self.repository.transition_run(
+                    return self._complete_run(
                         workspace_id,
                         run_id,
-                        status="completed",
-                        current_node_id=None,
                         output=last_output,
                         outcome=flow_outcome,
+                        flow_version=context["version"],
                     )
-                    return self.repository.get_run(workspace_id, run_id)
                 node_id = next_node
                 break
             if continued_after_error:
                 continue
+        return self._complete_run(
+            workspace_id,
+            run_id,
+            output=last_output,
+            outcome=terminal_resume_outcome or "success",
+            flow_version=context["version"],
+        )
+
+    def _complete_run(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        output: Any,
+        outcome: str,
+        flow_version: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            if flow_version["output_schema"] is not None:
+                validate_json_schema(output, flow_version["output_schema"], "Flow output")
+        except ContractViolation as error:
+            return self._fail_run(
+                workspace_id,
+                run_id,
+                error.code,
+                _public_error_message(error),
+            )
         self.repository.transition_run(
             workspace_id,
             run_id,
             status="completed",
             current_node_id=None,
-            output=last_output,
-            outcome="success",
+            output=output,
+            outcome=outcome,
         )
         return self.repository.get_run(workspace_id, run_id)
 

@@ -36,6 +36,22 @@ SUCCESS_ERROR = outcomes(
     ("error", "Error", "danger"),
 )
 
+APPROVAL_OUTCOMES = outcomes(
+    ("approved", "Approved", "success"),
+    ("rejected", "Rejected", "warning"),
+    ("error", "Error", "danger"),
+)
+
+APPROVAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "approved": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["approved", "reason"],
+    "additionalProperties": False,
+}
+
 
 class NoModelClient:
     def create(self, payload: dict[str, object]) -> dict[str, object]:
@@ -407,6 +423,149 @@ class ProfessionalWorkbenchContractTest(unittest.TestCase):
                 ],
                 routes=[],
             )
+
+    def test_subflow_human_gate_pauses_and_resumes_parent_with_separate_evidence(self) -> None:
+        approval = self.plane.create_action(
+            self.workspace_id,
+            name="Reusable human gate",
+            slug="reusable-human-gate",
+            description="A durable decision inside a reusable Flow.",
+            kind="approval",
+            input_schema=VALUE_SCHEMA,
+            output_schema=APPROVAL_SCHEMA,
+            outcomes=APPROVAL_OUTCOMES,
+            config={"message_template": "Approve {{value}}?"},
+            agent_version_id=None,
+        )
+        child = self.plane.create_studio_flow(
+            self.workspace_id,
+            name="Approval child",
+            slug="approval-child",
+            description="A reusable Flow that owns its human decision.",
+            input_schema=VALUE_SCHEMA,
+            output_schema=APPROVAL_SCHEMA,
+            outcomes=APPROVAL_OUTCOMES,
+            start_node_id="approve",
+            nodes=[
+                {
+                    "id": "approve",
+                    "type": "action",
+                    "version_id": approval["version"]["id"],
+                    "input_mapping": {
+                        "value": {"source": "input", "path": "value"}
+                    },
+                }
+            ],
+            routes=[],
+        )
+        parent = self.plane.create_studio_flow(
+            self.workspace_id,
+            name="Approval parent",
+            slug="approval-parent",
+            description="The parent must wait for and resume from its child Run.",
+            input_schema=VALUE_SCHEMA,
+            output_schema=APPROVAL_SCHEMA,
+            outcomes=APPROVAL_OUTCOMES,
+            start_node_id="approval-flow",
+            nodes=[
+                {
+                    "id": "approval-flow",
+                    "type": "flow",
+                    "version_id": child["version"]["id"],
+                    "input_mapping": {
+                        "value": {"source": "input", "path": "value"}
+                    },
+                }
+            ],
+            routes=[],
+        )
+
+        waiting_parent = self.plane.start_studio_run(
+            self.workspace_id, parent["id"], input_data={"value": "release-42"}
+        )
+        self.assertEqual(waiting_parent["status"], "waiting_approval")
+        self.assertIsNone(waiting_parent["pending_approval"])
+        self.assertEqual(waiting_parent["steps"][0]["status"], "waiting_approval")
+        self.assertEqual(len(waiting_parent["children"]), 1)
+
+        waiting_child = self.plane.get_studio_run(
+            self.workspace_id, waiting_parent["children"][0]["id"]
+        )
+        self.assertEqual(waiting_child["status"], "waiting_approval")
+        self.assertIsNotNone(waiting_child["pending_approval"])
+        self.assertEqual(waiting_child["relation_kind"], "subflow")
+
+        completed_child = self.plane.decide_studio_approval(
+            self.workspace_id,
+            waiting_child["pending_approval"]["id"],
+            approved=True,
+            actor="browser-operator",
+            reason="The exact pinned child context authorizes this continuation.",
+        )
+        completed_parent = self.plane.get_studio_run(
+            self.workspace_id, waiting_parent["id"]
+        )
+
+        self.assertEqual(completed_child["status"], "completed")
+        self.assertEqual(completed_child["outcome"], "approved")
+        self.assertEqual(completed_parent["status"], "completed")
+        self.assertEqual(completed_parent["outcome"], "approved")
+        self.assertEqual(completed_parent["output"], completed_child["output"])
+        self.assertEqual(completed_parent["steps"][0]["status"], "completed")
+        self.assertTrue(verify_event_chain(completed_child["events"]))
+        self.assertTrue(verify_event_chain(completed_parent["events"]))
+
+    def test_terminal_approval_output_contract_failure_does_not_leave_a_live_run(self) -> None:
+        approval = self.plane.create_action(
+            self.workspace_id,
+            name="Mismatched terminal gate",
+            slug="mismatched-terminal-gate",
+            description="Exercise terminal output validation after a durable pause.",
+            kind="approval",
+            input_schema=VALUE_SCHEMA,
+            output_schema=APPROVAL_SCHEMA,
+            outcomes=APPROVAL_OUTCOMES,
+            config={"message_template": "Approve {{value}}?"},
+            agent_version_id=None,
+        )
+        flow = self.plane.create_studio_flow(
+            self.workspace_id,
+            name="Mismatched approval output",
+            slug="mismatched-approval-output",
+            description="A terminal mismatch must fail closed after approval.",
+            input_schema=VALUE_SCHEMA,
+            output_schema=VALUE_SCHEMA,
+            outcomes=APPROVAL_OUTCOMES,
+            start_node_id="approve",
+            nodes=[
+                {
+                    "id": "approve",
+                    "type": "action",
+                    "version_id": approval["version"]["id"],
+                    "input_mapping": {
+                        "value": {"source": "input", "path": "value"}
+                    },
+                }
+            ],
+            routes=[],
+        )
+
+        waiting = self.plane.start_studio_run(
+            self.workspace_id, flow["id"], input_data={"value": "release-43"}
+        )
+        failed = self.plane.decide_studio_approval(
+            self.workspace_id,
+            waiting["pending_approval"]["id"],
+            approved=True,
+            actor="browser-operator",
+            reason="The decision is valid even though the Flow contract is deliberately wrong.",
+        )
+
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["error_code"], "contract_violation")
+        self.assertIsNone(failed["current_node_id"])
+        self.assertEqual(failed["steps"][0]["status"], "completed")
+        self.assertTrue(verify_event_chain(failed["events"]))
 
 
 if __name__ == "__main__":

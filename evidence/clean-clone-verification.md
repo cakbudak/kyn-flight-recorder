@@ -2,7 +2,7 @@
 
 The standalone runtime requires Python 3.11+ and the official OpenAI SDK. A key is
 optional: deterministic Actions and Flows work without one; model commands take a
-visitor-supplied key through the browser Configuration view.
+visitor-supplied key through the browser Settings view.
 
 ```bash
 git clone https://github.com/cakbudak/kyn-agent-studio.git
@@ -29,7 +29,7 @@ node scripts/browser_verify.mjs
 The default browser proof is deterministic. A real-model run is intentionally
 separate because it consumes the visitor's API quota.
 
-## Recorded clean-clone proof
+## Previous clean-clone proof
 
 On 2026-07-19, public commit `3a667b8` was cloned from the renamed GitHub URL with
 the credential helper disabled. In that untouched clone:
@@ -37,6 +37,11 @@ the credential helper disabled. In that untouched clone:
 - `pip install -r requirements.txt` completed;
 - 68 Python contract tests passed;
 - 6 pure browser-state tests passed;
-- the Chromium product journey passed 24/24;
+- the then-current Chromium product journey passed 24/24;
 - `OPENAI_API_KEY` was absent;
 - `git status --short` remained empty after verification.
+
+That proof predates the professional React workbench and is retained only as
+historical provenance. The current 68-test, 30-check release is re-cloned from
+GitHub and recorded in a forward evidence commit after the release source is
+pushed.

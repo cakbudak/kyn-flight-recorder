@@ -9,6 +9,8 @@ reports are superseded and are not accepted as evidence for this product surface
 | --- | --- | --- |
 | define | browser creates a strict-schema Action and immutable version | PASS |
 | compose | browser creates a Flow with a pinned Action version and explicit input mapping | PASS |
+| route | Router exposes four named ports and the Run records the exact selected outcome | PASS |
+| reuse | published Flow executes as an evidence-linked child Run with a shared correlation ID | PASS |
 | execute | user-defined deterministic Flow completes without an OpenAI credential | PASS |
 | AI contract | AI Action pins Agent → Prompt + Skills; strict final schema and exact Action tools share one Responses request | PASS |
 | stateless tools | `store:false` tool turns preserve provider reasoning items and encrypted reasoning context | PASS |
@@ -24,7 +26,7 @@ reports are superseded and are not accepted as evidence for this product surface
 | credential | browser-tab `sessionStorage` only; server has no operator-key fallback and never persists the key | PASS |
 | browser | desktop + 390 px, reduced motion, named controls, no overflow, failed request, or console error | PASS |
 | real model | real GPT-5.6 analysis pauses, approves, and commits exactly one bounded SQLite effect | PASS |
-| public HTTPS | full real-model Studio journey through the deployed origin | PASS |
+| public HTTPS | full real-model Studio journey through the deployed origin | PENDING REVALIDATION |
 | assistive tech | physical screen-reader pass | NOT RUN |
 
 ## Current verification
@@ -32,9 +34,9 @@ reports are superseded and are not accepted as evidence for this product surface
 ```text
 68 Python runtime/database/HTTP/security/UI contract tests: PASS
  6 pure browser-state tests:                              PASS
-24 Chromium full-stack Studio checks:                    PASS
+30 Chromium full-stack Studio checks:                    PASS
  1 real GPT-5.6 end-to-end Studio Run:                   PASS
-24 public HTTPS + real GPT-5.6 Chromium checks:          PASS
+30 public HTTPS + real GPT-5.6 Chromium checks:          PENDING REVALIDATION
 ```
 
 The real-model proof executed the official Python SDK with a per-operation key,

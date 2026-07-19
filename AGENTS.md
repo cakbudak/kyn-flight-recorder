@@ -28,7 +28,7 @@ These rules apply to the whole repository.
 - Actions, agents, prompts, skills, and flows are explicit resources with immutable
   versions. An Action is a declarative contract over a bounded built-in executor; database
   data can configure and grant an executor but can never register arbitrary server code.
-- A Flow is a bounded acyclic graph of Action or Agent nodes with explicit input mappings
+- A Flow is a bounded acyclic graph of Action, Agent, or published Flow nodes with explicit input mappings
   and routes. Every run pins one immutable flow version and therefore all transitive Action,
   Agent, Prompt, and Skill versions. A repair creates a successor version; it never edits
   history.

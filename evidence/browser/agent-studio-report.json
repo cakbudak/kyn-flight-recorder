@@ -1,23 +1,23 @@
 {
-  "generated_at": "2026-07-19T15:32:32.255Z",
-  "surface": "Kyn.ist Agent Studio full Playwright journey",
+  "generated_at": "2026-07-19T18:24:47.263Z",
+  "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:46753",
+    "base_url": "http://127.0.0.1:45933",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
     ]
   },
   "summary": {
-    "checks": 24,
-    "passed": 24,
+    "checks": 30,
+    "passed": 30,
     "failed": 0
   },
   "checks": [
     {
-      "name": "runtime exposes SQLite plus browser-session BYOK and official SDK transport",
+      "name": "runtime exposes SQLite, browser-session BYOK, and official OpenAI SDK transport",
       "status": "pass",
       "detail": {
         "status": "ok",
@@ -28,10 +28,10 @@
       }
     },
     {
-      "name": "onboarding presents a configurable agent builder rather than a scripted demo",
+      "name": "onboarding explains a configurable operating system rather than a scripted click demo",
       "status": "pass",
       "detail": {
-        "title": "Build agent systems.\nSee what they actually did.",
+        "title": "Build agent workflows.\nOperate their truth.",
         "previewNodes": 4,
         "overflow": 0
       }
@@ -42,164 +42,283 @@
       "detail": 0
     },
     {
-      "name": "workspace seeds the complete bounded Action palette and one editable Flow",
+      "name": "fresh workspace seeds editable Actions, Agents, Prompts, Skills, and a nontrivial Flow",
       "status": "pass",
       "detail": {
         "actions": 9,
-        "flows": 1,
-        "kinds": [
-          "template",
-          "condition",
-          "approval",
-          "transform",
-          "ai",
-          "data_store",
-          "assert",
-          "delay",
-          "sandbox"
+        "agents": 4,
+        "prompts": 4,
+        "skills": 4,
+        "seeded_nodes": 5
+      }
+    },
+    {
+      "name": "published Flow renders as a real editable graph with independent named ports",
+      "status": "pass",
+      "detail": {
+        "nodes": 5,
+        "edges": 4,
+        "sourceHandles": 12,
+        "width": 962,
+        "first_node_handle_tops": [
+          486,
+          503
         ]
       }
     },
     {
-      "name": "browser can define a typed immutable Action",
+      "name": "both side panels collapse into a genuinely full canvas",
       "status": "pass",
       "detail": {
-        "id": "act_f50682017c724adbb407408a9603e42f",
-        "version": "actv_a51c9d835eae4c44890d183eb08fd229"
+        "initial": 962,
+        "expanded": 1230
       }
     },
     {
-      "name": "browser composes a user-defined version-pinned Flow",
+      "name": "a seeded Action is selectable, editable, and append-versioned without mutation",
       "status": "pass",
       "detail": {
-        "id": "aflow_964155d91113424cb59c8284e6851775",
+        "versions": [
+          2,
+          1
+        ]
+      }
+    },
+    {
+      "name": "Action authoring exposes more than success and failure as first-class outputs",
+      "status": "pass",
+      "detail": [
+        "Priority",
+        "Standard",
+        "Fallback",
+        "Error"
+      ]
+    },
+    {
+      "name": "Router Action publishes a typed four-port contract",
+      "status": "pass",
+      "detail": [
+        {
+          "description": "Priority rule matched.",
+          "id": "priority",
+          "label": "Priority",
+          "tone": "ai"
+        },
+        {
+          "description": "Standard rule matched.",
+          "id": "standard",
+          "label": "Standard",
+          "tone": "success"
+        },
+        {
+          "description": "No rule matched.",
+          "id": "fallback",
+          "label": "Fallback",
+          "tone": "warning"
+        },
+        {
+          "description": "Routing failed.",
+          "id": "error",
+          "label": "Error",
+          "tone": "danger"
+        }
+      ]
+    },
+    {
+      "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
+      "status": "pass",
+      "detail": {
+        "prompt": "prmv_ee2defcdf3e942d78f6b248648d86369",
+        "skills": [
+          "sklv_2fcba1f097c44f77b556d23297ebc0b7"
+        ],
+        "actions": [
+          "actv_39c981bc24be441381cd07f9b1bcb345"
+        ]
+      }
+    },
+    {
+      "name": "AI configuration is visible as an Agent stack rather than hidden node state",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "New Flow starts from an actually empty graph",
+      "status": "pass",
+      "detail": {
         "nodes": 1
       }
     },
     {
-      "name": "deterministic Flow executes without a credential and emits authoritative evidence",
+      "name": "visual authoring publishes the graph, positions, mappings, and four outcomes",
       "status": "pass",
       "detail": {
-        "id": "arun_d75287b386bd404fb419cfc40435c92d",
+        "ports": 4,
+        "outcomes": [
+          "priority",
+          "standard",
+          "fallback",
+          "error"
+        ],
+        "node": {
+          "id": "browser-segment-router",
+          "input_mapping": {
+            "value": {
+              "path": "value",
+              "source": "input"
+            }
+          },
+          "position": {
+            "x": 120,
+            "y": 110
+          },
+          "settings": {
+            "backoff_seconds": 0,
+            "max_attempts": 1,
+            "on_error": "fail",
+            "retry_on": [
+              "provider_failure"
+            ]
+          },
+          "type": "action",
+          "version_id": "actv_39c981bc24be441381cd07f9b1bcb345"
+        }
+      }
+    },
+    {
+      "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
+      "status": "pass",
+      "detail": {
+        "id": "arun_f1a174c5227f4189b7dfb711e7d1aa22",
         "status": "completed",
-        "model_calls": 0,
-        "receipts": 1
+        "outcome": "priority",
+        "events": 8
       }
     },
     {
-      "name": "a public webhook trigger executes its pinned deterministic Flow version",
+      "name": "Flow editing appends a successor while prior Run graph pins remain unchanged",
       "status": "pass",
       "detail": {
-        "status": "completed",
-        "flow_version": 1
+        "current": 2,
+        "old_run": 1
       }
     },
     {
-      "name": "trigger operations can disable a binding through an optimistic revision fence",
+      "name": "published Flows appear in the node library as immutable subflow capabilities",
       "status": "pass",
       "detail": {
-        "enabled": false,
-        "revision": 2
+        "id": "browser-decision-flow",
+        "input_mapping": {
+          "value": {
+            "path": "value",
+            "source": "input"
+          }
+        },
+        "position": {
+          "x": 120,
+          "y": 110
+        },
+        "settings": {
+          "backoff_seconds": 0,
+          "max_attempts": 1,
+          "on_error": "fail",
+          "retry_on": [
+            "provider_failure"
+          ]
+        },
+        "type": "flow",
+        "version_id": "aflowv_a785942c8e6a4923ba2daadbe6de4107"
       }
     },
     {
-      "name": "canvas editing publishes a successor while prior Runs keep their exact graph pin",
+      "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "current_version": 2,
-        "prior_run_version": 1,
-        "prior_run_attempt_policy": 1
+        "parent": "arun_c52f5c2de3ac47e0a5c378cb61255425",
+        "child": "arun_69d346213be741a4902d0a740ec9fba2",
+        "outcome": "standard"
       }
     },
     {
-      "name": "configuration keeps the key in this tab and exposes no key text in the page",
+      "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "configured": true
+        "trigger": "atrg_bf66b4a0331c4cfa815f33c047e49455",
+        "run": "arun_192f12054e0b4ae7b5afee5ceb15e847",
+        "outcome": "priority"
       }
     },
     {
-      "name": "AI Flow uses pinned Agent stack and pauses at a real Human approval",
+      "name": "OpenAI key remains browser-session state and is never rendered back into the document",
       "status": "pass",
       "detail": {
-        "id": "arun_a1af20803ba845f58aac2889899741b4",
-        "status": "waiting_approval",
+        "stored_in_session": true
+      }
+    },
+    {
+      "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
+      "status": "pass",
+      "detail": {
+        "run": "arun_46d006f5069c4f3c826ce98d68b40748",
+        "calls": 1,
         "steps": [
           "completed",
           "completed",
           "waiting_approval"
         ],
-        "model_calls": 1,
         "effects": 0
       }
     },
     {
-      "name": "approval resumes the pinned graph into exactly one bounded sandbox effect",
+      "name": "human decision resumes the exact pinned graph into one attributable idempotent effect",
       "status": "pass",
       "detail": {
-        "status": "completed",
         "effects": 1,
-        "decision": true
+        "actor": "build-week-operator"
       }
     },
     {
-      "name": "rerun creates a linked child against the same immutable Flow version",
+      "name": "maintenance cites owned evidence, appends bounded successors, preserves failure, and proves changed behavior",
       "status": "pass",
       "detail": {
-        "id": "arun_48ec7fa114df45c5a5c1c1abc61b6c68",
-        "parent": "arun_a1af20803ba845f58aac2889899741b4",
-        "flow_version_id": "aflowv_07a589f43129418d8d507207511ac68c"
+        "root": "blocked",
+        "action_versions": [
+          2,
+          1
+        ],
+        "proof": "completed",
+        "root_effects": 0,
+        "proof_effects": 1
       }
     },
     {
-      "name": "linked child completes independently with its own valid event chain",
+      "name": "live documentation explains outputs, AI pins, subflows, Run truth, maintenance, BYOK, and public limits",
       "status": "pass",
       "detail": {
-        "status": "completed",
-        "effects": 1,
-        "events": 23
+        "characters": 9612,
+        "missing": []
       }
     },
     {
-      "name": "Prompt Skill and Agent creation are first-class browser workflows",
+      "name": "every rendered button has an accessible name",
       "status": "pass",
       "detail": {
-        "prompts": 5,
-        "skills": 5,
-        "agents": 5
+        "unnamed": 0
       }
     },
     {
-      "name": "integrated Run maintenance proves evidence-owned diagnosis bounded repair and linked outcome",
+      "name": "reduced-motion preference collapses interaction transitions",
       "status": "pass",
-      "detail": {
-        "parent_status": "blocked",
-        "child_status": "completed",
-        "citations": 4,
-        "parent_effects": 0,
-        "child_effects": 1
-      }
+      "detail": "1e-06s"
     },
     {
-      "name": "every browser button has an accessible name",
+      "name": "390px reload preserves the workspace and graph without page overflow",
       "status": "pass",
       "detail": {
-        "buttons": 85
-      }
-    },
-    {
-      "name": "reduced motion collapses interaction transitions",
-      "status": "pass",
-      "detail": "0.001s"
-    },
-    {
-      "name": "390px reload preserves the workspace without document overflow",
-      "status": "pass",
-      "detail": {
-        "viewport": 390,
+        "clientWidth": 390,
         "scrollWidth": 390,
-        "sidebarHeight": 51,
-        "errorHidden": true
+        "nodes": 5,
+        "mainTop": 107
       }
     },
     {
@@ -225,20 +344,26 @@
   ],
   "diagnostics": {
     "server_output": [
-      "19/Jul/2026 17:32:30 127.0.0.1 \"POST /api/v1/studio/repairs/arep_ce012e1ea3ad4f9fb671efc54574d30b/apply HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:30 127.0.0.1 \"POST /api/v1/studio/repairs/arep_ce012e1ea3ad4f9fb671efc54574d30b/proof HTTP/1.1\" 201 -",
-      "19/Jul/2026 17:32:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:30 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/styles.css HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/app.mjs HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/state.mjs HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/favicon.svg HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "19/Jul/2026 17:32:31 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:41 127.0.0.1 \"POST /api/v1/studio/repairs/arep_26604354a40e406c88e5461ec9c40a5d/apply HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:45 127.0.0.1 \"POST /api/v1/studio/repairs/arep_26604354a40e406c88e5461ec9c40a5d/proof HTTP/1.1\" 201 -",
+      "19/Jul/2026 20:24:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:45 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-BEMf5NJG.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-nFJ5q2j8.css HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "19/Jul/2026 20:24:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
     ],
     "page_errors": [],
     "failed_requests": []

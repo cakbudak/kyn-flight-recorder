@@ -1,12 +1,21 @@
 {
-  "name": "kyn-agent-studio-verification",
+  "name": "kyn-agent-studio",
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1",
     "test:state": "node --test tests/core.test.mjs",
     "test:browser": "node scripts/browser_verify.mjs"
   },
+  "dependencies": {
+    "@xyflow/react": "12.8.5",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
   "devDependencies": {
-    "playwright-core": "1.61.1"
+    "@vitejs/plugin-react": "4.7.0",
+    "playwright-core": "1.61.1",
+    "vite": "^7.3.6"
   }
 }

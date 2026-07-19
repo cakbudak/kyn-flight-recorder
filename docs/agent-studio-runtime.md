@@ -12,8 +12,9 @@ A visitor can create and operate a real automation system:
 2. **Prompts** declare templates and their exact variables.
 3. **Skills** carry instructions and exact Action-version authority grants.
 4. **Agents** pin one model, Prompt version, and Skill versions.
-5. **Flows** arrange pinned Actions or Agents on a visual acyclic graph with
-   mappings, outcomes, retry settings, and canvas positions.
+5. **Flows** arrange pinned Actions, Agents, or published Flows on a visual
+   acyclic graph with mappings, named outcomes, retry settings, and canvas
+   positions.
 6. **Triggers** start a pinned Flow version manually, by secret webhook, or on a
    bounded interval.
 7. **Runs** expose live node state, attempts, receipts, model calls, approvals,
@@ -34,6 +35,7 @@ surface.
 | `transform` | Maps input paths or literals into a declared output schema | none |
 | `delay` | Waits 0–5000 ms and passes validated input through | none |
 | `condition` | Evaluates one declared comparison and emits `true` or `false` | none |
+| `router` | Evaluates up to ten ordered rules and emits one declared branch or fallback outcome | none |
 | `assert` | Blocks when one declared comparison fails | none |
 | `approval` | Persists a request and pauses until an attributable human decision | human decision |
 | `data_store` | Appends one idempotent record in a named workspace-local collection | local SQLite only |
@@ -47,28 +49,31 @@ operation.
 
 A Flow version contains:
 
-- a strict JSON Schema subset for Run input;
-- at most twelve uniquely named nodes;
+- strict JSON Schema subsets for Run input and terminal output;
+- one to sixty-four uniquely named nodes;
 - one explicit start node;
-- immutable Action or Agent version pins;
+- immutable Action, Agent, or child Flow version pins;
 - an `{x, y}` position for every canvas node;
 - mappings from Run input, a reachable predecessor Step, or a literal;
 - bounded attempts, backoff, retryable codes, and error policy per node;
-- outcome routes selected by `success`, `true`, `false`, `approved`, or
-  `rejected`; and
+- one to twelve declared public Flow outcomes and per-node routes selected by
+  the exact outcome IDs owned by each capability; and
 - a complete transitive resource-pin and fingerprint set.
 
 Publication rejects cycles, unreachable nodes, duplicate outcomes, impossible
-data reads, and schema mismatches. Editing a published graph creates a successor
-version and advances its optimistic revision exactly once. Existing Runs retain
-the graph they originally pinned.
+data reads, schema mismatches, transitive subflow cycles, nesting beyond four
+levels, more than 192 routes, and more than 200 expanded nodes. A subflow runs as
+an evidence-linked child with the same correlation ID and separate Steps,
+receipts, events, effects, and outcome. Editing a published graph creates a
+successor version and advances its optimistic revision exactly once. Existing
+Runs retain the graph they originally pinned.
 
 ## Trigger contract
 
 - **Manual:** validates operator-provided JSON and enqueues a pinned Run.
 - **Webhook:** generates a one-time secret URL; only its hash is stored. The
   binding keeps the Flow version active at creation time.
-- **Schedule:** accepts a 1–10,080 minute interval and bounded validated input.
+- **Schedule:** accepts a 5–10,080 minute interval and bounded validated input.
 
 Bindings can be disabled or re-enabled through an optimistic trigger revision
 fence. Execution timestamps do not advance that configuration revision, so a

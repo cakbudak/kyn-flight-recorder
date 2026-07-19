@@ -673,6 +673,8 @@ class ControlPlane:
         flow_id: str,
         *,
         expected_revision: Any,
+        name: Any = None,
+        description: Any = None,
         input_schema: Any,
         output_schema: Any = None,
         outcomes: Any = None,
@@ -690,6 +692,16 @@ class ControlPlane:
         if normalized_schema["type"] != "object":
             raise ContractViolation("Flow input schema must be an object")
         current = self.studio.get_flow(workspace_id, flow_id)
+        normalized_name = require_string(
+            current["name"] if name is None else name,
+            "Flow name",
+            maximum=100,
+        )
+        normalized_description = require_string(
+            current["description"] if description is None else description,
+            "Flow description",
+            maximum=500,
+        )
         normalized_outcomes = normalize_outcomes(
             outcomes if outcomes is not None else current["version"]["outcomes"],
             "Flow outcomes",
@@ -729,6 +741,8 @@ class ControlPlane:
             workspace_id,
             flow_id,
             expected_revision=expected_revision,
+            name=normalized_name,
+            description=normalized_description,
             input_schema=normalized_schema,
             output_schema=normalized_output,
             outcomes=normalized_outcomes,
@@ -1262,10 +1276,10 @@ class ControlPlane:
             if (
                 not isinstance(interval, int)
                 or isinstance(interval, bool)
-                or not 1 <= interval <= 10_080
+                or not 5 <= interval <= 10_080
             ):
                 raise ContractViolation(
-                    "schedule interval must be between one minute and seven days"
+                    "schedule interval must be between five minutes and seven days"
                 )
             if not isinstance(normalized_config["input"], dict):
                 raise ContractViolation("schedule input must be an object")

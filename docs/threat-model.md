@@ -24,7 +24,7 @@ fetch, MCP connector, production deployer, or generic code registry.
 | Cross-workspace read | random opaque cookie token, only hash stored, every lookup scoped by workspace | anonymous bearer cookie can be used by anyone who steals it |
 | CSRF/cross-origin mutation | exact same-origin validation, SameSite=Strict cookie, no CORS | same-origin script compromise remains in scope of CSP/code integrity |
 | Overspend/denial of service | body, turn, tool, output-token, workspace, address/global hourly, and concurrency bounds | distributed abuse behind shared/proxied addresses can still consume global budget |
-| API-key disclosure | browser-tab session storage, same-origin model-command header, ephemeral SDK client, no operator fallback, no key in DB/events/responses/logs | browser or host compromise is outside this app boundary |
+| API-key disclosure | explicit temporary/restricted-key warning, browser-tab session storage, same-origin model-command header, ephemeral SDK client, no operator fallback, no key in DB/events/responses/logs | browser or host compromise remains a visitor-owned risk; never use a production credential |
 | Secret in tool payload | exact schemas plus recursive secret-key redaction before persistence/render | redaction is key-based, not semantic DLP |
 | Event tampering | append-only triggers, contiguous sequence, predecessor + SHA-256 chain | host/DB owner can replace the entire database |
 | Proxy spoofing | deployment is behind Cloudflare/Traefik; nginx forwards host/proto and bounded client metadata | direct exposure of host port must be prevented by firewall |

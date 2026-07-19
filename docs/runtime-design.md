@@ -55,18 +55,19 @@ versions and evidence append-only and reject illegal lifecycle transitions.
 
 An Action version declares one statically coded executor, strict input/output
 schemas, effect level, configuration, optional Agent pin, and a fingerprint.
-The eight logical kinds are `ai`, `template`, `transform`, `delay`, `condition`,
-`assert`, `approval`, and `data_store`.
+The nine logical kinds are `ai`, `template`, `transform`, `delay`, `condition`,
+`router`, `assert`, `approval`, and `data_store`.
 
 An Agent version pins one Prompt and bounded Skills. A Skill may grant exact
 callable Action version IDs. Effective authority is intersected with the
 runtime's static callable kinds; database content cannot register Python code,
 and AI or approval Actions cannot become nested model tools.
 
-A Flow version pins the complete graph: input schema, start node, node resource
-versions, canvas positions, mappings, retry/backoff/error settings, routes, and
-transitive fingerprints. Validation rejects cycles, unreachable nodes,
-ambiguous outcomes, reads from non-predecessor Steps, and unbounded graph size.
+A Flow version pins the complete graph: input/output schemas, public outcomes,
+start node, Action/Agent/Flow resource versions, canvas positions, mappings,
+retry/backoff/error settings, routes, and transitive fingerprints. Validation
+rejects cycles, unreachable nodes, ambiguous outcomes, reads from
+non-predecessor Steps, transitive subflow cycles, and unbounded graph size.
 
 ## 4. Publication and triggers
 

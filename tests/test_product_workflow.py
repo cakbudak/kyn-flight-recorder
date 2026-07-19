@@ -5,7 +5,7 @@ import time
 import unittest
 from pathlib import Path
 
-from backend.contracts import Conflict, NotFound, verify_event_chain
+from backend.contracts import Conflict, ContractViolation, NotFound, verify_event_chain
 from backend.service import ControlPlane
 from backend.store import Store
 
@@ -106,12 +106,19 @@ class ProductWorkflowContractTest(unittest.TestCase):
             self.workspace_id,
             flow["id"],
             expected_revision=1,
+            name="Canvas flow successor",
+            description="The same stable Flow identity with revised metadata and layout.",
             input_schema=OBJECT,
             start_node_id="normalize",
             nodes=[{**node, "position": {"x": 520, "y": 220}}],
             routes=[],
         )
         self.assertEqual(successor["revision"], 2)
+        self.assertEqual(successor["name"], "Canvas flow successor")
+        self.assertEqual(
+            successor["description"],
+            "The same stable Flow identity with revised metadata and layout.",
+        )
         self.assertEqual(successor["current_version"], 2)
         self.assertEqual(successor["version"]["parent_version_id"], flow["version"]["id"])
         self.assertEqual(successor["version"]["nodes"][0]["position"]["x"], 520)
@@ -310,6 +317,14 @@ class ProductWorkflowContractTest(unittest.TestCase):
 
     def test_model_schedule_prepares_a_pinned_run_without_server_credentials(self) -> None:
         flow = self.plane.snapshot(self.workspace_id)["studio"]["flows"][0]
+        with self.assertRaisesRegex(ContractViolation, "between five minutes"):
+            self.plane.create_studio_trigger(
+                self.workspace_id,
+                flow["id"],
+                name="Overactive schedule",
+                trigger_type="schedule",
+                config={"interval_minutes": 4, "input": {"brief": "too frequent"}},
+            )
         trigger = self.plane.create_studio_trigger(
             self.workspace_id,
             flow["id"],

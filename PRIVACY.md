@@ -17,6 +17,11 @@ browser-owned credential.
 | OpenAI request | OpenAI API transit with `store: false` | agent inference | governed by the API account and OpenAI API policy |
 | HTTP metadata | process/hosting access logs | operation and abuse response | operator/infrastructure policy |
 
+OpenAI recommends keeping standard API keys out of browser code. This public lab's
+session-only BYOK mode is an explicit visitor-controlled exception: use a restricted,
+temporary project key, never a production credential, and clear it before sharing or
+leaving the tab. Browser or host compromise can expose session storage.
+
 Workspace expiry denies further API access; it is not represented as deletion of immutable
 evidence. The Build Week operator may rotate or remove the entire demo SQLite database under
 its retention policy. Do not submit personal, confidential, or regulated data to this public

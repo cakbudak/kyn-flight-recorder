@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import threading
 import unittest
@@ -53,7 +54,10 @@ class DemoServerTests(unittest.TestCase):
             )
 
     def test_security_headers_cover_html_and_json(self) -> None:
-        for path in ("/app/", "/app/app.mjs", "/app/state.mjs", "/healthz"):
+        index = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+        assets = re.findall(r'(?:src|href)="(/app/assets/[^"]+)"', index)
+        self.assertGreaterEqual(len(assets), 2)
+        for path in ("/app/", *assets, "/healthz"):
             with self.subTest(path=path), self.open(path) as response:
                 for name, expected in SECURITY_HEADERS.items():
                     self.assertEqual(response.headers[name], expected)

@@ -10,7 +10,8 @@ automation runtime. A visitor can:
 
 1. define typed, versioned Actions;
 2. define versioned Prompts, Skills, and Agents;
-3. compose pinned Action/Agent nodes on a visual acyclic Flow canvas;
+3. compose pinned Action, Agent, and reusable Flow nodes on a visual acyclic
+   canvas with arbitrary named outcomes;
 4. attach manual, secret-webhook, and interval triggers;
 5. execute deterministic and OpenAI-backed Runs through a bounded worker;
 6. inspect authoritative Steps, events, model calls, receipts, approvals, and
@@ -26,8 +27,8 @@ The seeded launch Flow is one editable use case. It is not a prescribed journey.
 
 This repository is not the whole Kyn.ist production stack. It is an independently
 implemented public cut using one Python HTTP process, the official OpenAI Python
-SDK, a flat SQLite database, bounded built-in Action executors, and a
-dependency-free browser client.
+SDK, a flat SQLite database, bounded built-in Action executors, and compiled
+self-hosted React workbench assets.
 
 It excludes Ainou, CE, Appiyon and Kynllm internals, Parts/Entities,
 Bricks/Packs/Frames, the production graph/queue/connectors, arbitrary MCP, shell,
@@ -37,9 +38,10 @@ filesystem, arbitrary network access, and production-write authority.
 
 ### Action
 
-An Action version declares kind, strict input schema, strict output schema,
-configuration, effect level, optional Agent pin, and fingerprint. Direct graph
-nodes and model-requested Actions use one invocation path.
+An Action version declares kind, strict input schema, strict output schema, one
+to twelve named outcomes, configuration, effect level, optional Agent pin, and
+fingerprint. Direct graph nodes and model-requested Actions use one invocation
+path.
 
 ### Prompt
 
@@ -58,10 +60,11 @@ Skill versions. Its effective Action set is derived from those pins.
 
 ### Flow
 
-An Automation Flow version pins input schema, one start node, Action/Agent nodes,
-canvas positions, explicit input mappings, retry/backoff/error settings, outcome
-routes, and all transitive resource fingerprints. Graphs are bounded, reachable,
-and acyclic.
+An Automation Flow version pins input/output schemas, public outcomes, one start
+node, Action/Agent/Flow nodes, canvas positions, explicit input mappings,
+retry/backoff/error settings, outcome routes, and all transitive resource
+fingerprints. Graphs are bounded, reachable, and acyclic. A Flow node creates a
+linked child Run instead of flattening its evidence into the parent.
 
 ## Run contract
 
@@ -76,6 +79,8 @@ and acyclic.
 - `completed`, `blocked`, `failed`, and `cancelled` are absorbing.
 - Rerun creates a linked Run with the same pinned Flow version unless a distinct
   successor is explicitly selected by a maintenance operation.
+- Subflow execution creates a linked child Run with a parent Step and shared
+  correlation ID; a terminal child outcome resumes or fails the waiting parent.
 - Events are ordered and hash-linked per Run.
 
 ## OpenAI credential contract
@@ -98,6 +103,7 @@ and acyclic.
 | `transform` | declarative input/literal mapping into a strict output | none |
 | `delay` | bounded 0–5000 ms pause and pass-through | none |
 | `condition` | one typed comparison and explicit branch outcome | none |
+| `router` | up to ten ordered comparisons with named branch and fallback outcomes | none |
 | `assert` | block on one failed declared comparison | none |
 | `approval` | pause and await immutable Human decision | human |
 | `data_store` | append one idempotent workspace-local effect | local SQLite |
