@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-19T18:44:42.996Z",
+  "generated_at": "2026-07-19T19:07:39.441Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_6e67dcd3b4ab47a0b8d4df34dc97fe90",
+        "prompt": "prmv_439070e4e4334ed4ac77de3eab1f58e0",
         "skills": [
-          "sklv_fae8a5fec1294598905d610f99bf0d71"
+          "sklv_2ca1f8fbd0f14e209a37d26471416d52"
         ],
         "actions": [
-          "actv_08dc5cd593f34679af1226f820d47e69"
+          "actv_bf5f75495f3d4f0888003e5d93d1916e"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_08dc5cd593f34679af1226f820d47e69"
+          "version_id": "actv_bf5f75495f3d4f0888003e5d93d1916e"
         }
       }
     },
@@ -189,7 +189,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_7d55d69514234e5dad90e4fd83368f26",
+        "id": "arun_09f442e7de5548b4be483246cdd75536",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -227,15 +227,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_9e3fb62cc6c249919c9c0b6f9dc293b4"
+        "version_id": "aflowv_1375b57c09bc4247aa6321e8b5cf991f"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_a493aeb85a9f4d88b09ab87938e7756d",
-        "child": "arun_d2d18e4504f04b4f8cda134ef8db1759",
+        "parent": "arun_dae17b6b2be94db49e6d7af3874ffc73",
+        "child": "arun_d937c4fec2fe45d98d4a80ac952840a7",
         "outcome": "standard"
       }
     },
@@ -243,8 +243,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_b4259d0025f34ae3b54bc506ca6842ea",
-        "run": "arun_52ac3e562ad740f3bb323e19939fc433",
+        "trigger": "atrg_65d2db5cf4b14f2eaa7bcf71e3771f83",
+        "run": "arun_7003db151d214237a34ea469b4848442",
         "outcome": "priority"
       }
     },
@@ -259,7 +259,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_eb0ba5f53f7343b7932a2c788476d2fc",
+        "run": "arun_c9736c20e2b949ac9529b7ad14ad96d4",
         "calls": 1,
         "steps": [
           "completed",
