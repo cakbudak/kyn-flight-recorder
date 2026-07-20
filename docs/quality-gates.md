@@ -42,7 +42,7 @@ reports are superseded and are not accepted as evidence for this product surface
 265 Python runtime/database/HTTP/security/UI tests:       PASS
   9 pure browser-state tests:                            PASS
  42 Chromium full-stack Studio checks:                   PASS
- 36 public HTTPS + real GPT-5.6 checks (prior release):   PASS
+ 42 public HTTPS + real GPT-5.6 checks:                   PASS
   7 maximum-graph Chromium load checks:                  PASS
   0 npm audit vulnerabilities:                           PASS
 ```
@@ -50,9 +50,9 @@ reports are superseded and are not accepted as evidence for this product surface
 The maximum-graph gate measures the product's declared 64-node limit, rather
 than a reduced sample. Twenty deterministic Runs produced 64 completed Steps
 and 197 valid hash-linked events each. On the current release host, Run p95 was
-375.215 ms against a 2,000 ms limit and loaded-workspace snapshot p95 was
-160.304 ms against a 400 ms limit. Chromium rendered 64 nodes and 63 edges in
-194.581 ms and completed Fit View in 118.416 ms, with zero document overflow,
+404.844 ms against a 2,000 ms limit and loaded-workspace snapshot p95 was
+246.661 ms against a 400 ms limit. Chromium rendered 64 nodes and 63 edges in
+225.362 ms and completed Fit View in 116.530 ms, with zero document overflow,
 failed requests, or page errors.
 
 The public real-model proof executed the official Python SDK with a per-operation
@@ -65,6 +65,16 @@ SDK run proved function-call output round-tripping with `store:false`, strict
 final Structured Output, and the same tool definitions on both turns. That run
 also exposed and permanently covered the provider response-only `status` replay
 field returned by GPT-5.6.
+
+The expanded live stop-seam proof first exposed two distinct operational
+failures and then passed after both were covered by RED/GREEN contracts. A known
+Goal-Judge provider failure had escaped the terminal seam and been flattened to
+`worker_failure`; it now retains `provider_failure` and its failed model-attempt
+evidence. Separately, the HTTP model-call forecast counted graph nodes but not a
+Flow-level Goal-Judge, so it discarded the browser-owned client before a
+judge-only Flow ran. The forecast now charges the terminal Judge once, including
+when that Judge is reached through a pinned subflow. The public refuse/admit pair
+uses one real Judge call per Run and passes on the identical Flow version.
 
 ## Reproduction
 

@@ -459,8 +459,8 @@ Run the maximum supported 64-node release-host and Chromium load gates:
 The committed load proof executes twenty complete 64-node Runs (197
 hash-linked events each), snapshots the accumulated workspace thirty times,
 renders the same 64-node/63-edge graph in Chromium, and exercises Fit View. On
-the release host, complete deterministic Runs measured 375.215 ms p95 and
-snapshots 160.304 ms p95—each below its declared threshold (2000 ms and 400 ms)
+the release host, complete deterministic Runs measured 404.844 ms p95 and
+snapshots 246.661 ms p95—each below its declared threshold (2000 ms and 400 ms)
 and without model calls, overflow, failed requests, or page errors.
 
 Each Run projection recomputes its full event chain from event material—197
@@ -484,7 +484,7 @@ samples across every workbench in both themes, and a legible pannable 390 px
 graph; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 
-The same journey passes **36/36** against the deployed public origin at
+The same journey passes **42/42** against the deployed public origin at
 `https://buildweek.kyn.ist` with real model calls, real provider latency, and no
 scripted responses; see
 [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)

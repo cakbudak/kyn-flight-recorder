@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-20T20:28:27.719Z",
+  "generated_at": "2026-07-20T20:35:31.618Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -11,9 +11,9 @@
     ]
   },
   "summary": {
-    "checks": 30,
-    "passed": 29,
-    "failed": 1
+    "checks": 42,
+    "passed": 42,
+    "failed": 0
   },
   "checks": [
     {
@@ -61,7 +61,7 @@
         "sourceHandles": 12,
         "width": 962,
         "first_node_handle_tops": [
-          496,
+          495,
           514
         ]
       }
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_8834dc5249b74390ae60f9fd2ca347e5",
+        "prompt": "prmv_64e672ab995549dba43e60c022644fea",
         "skills": [
-          "sklv_85b9221a8e7747d7b2f456dbca0dcd8d"
+          "sklv_e830a3391db945daa2795a96b8ef7956"
         ],
         "actions": [
-          "actv_fe654f92cab84a4c8ba75ae0b78e38e2"
+          "actv_db2546d9e61e4c24946c809dc31befed"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_fe654f92cab84a4c8ba75ae0b78e38e2"
+          "version_id": "actv_db2546d9e61e4c24946c809dc31befed"
         }
       }
     },
@@ -199,7 +199,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_5c48bfd51b774823a15ec67156c99ca4",
+        "id": "arun_db07a541bd284c46b2331908d6c95292",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -237,15 +237,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_582c4dc5e23c41b888ef90142ede869a"
+        "version_id": "aflowv_ad1205c6d87445f299c3fc1f59db70f9"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_382fd0f1ec3140faba14fa80959d032a",
-        "child": "arun_6f7299cc547d40fdbb94693bdfbff6d5",
+        "parent": "arun_878907dec54b460ca74f78b04ac776c1",
+        "child": "arun_29875a0c60774aa0b0dde85f398da5a0",
         "outcome": "standard"
       }
     },
@@ -253,8 +253,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_f3b8f67875394176b9c73b7b8f5bb2fe",
-        "run": "arun_b660c24ed5854f9bba546e6fe17cb8d8",
+        "trigger": "atrg_b51b49dea6f4411598d823743a29c446",
+        "run": "arun_477fbfb3f9b543808a83f378dd2094b6",
         "outcome": "priority"
       }
     },
@@ -269,7 +269,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_78be838324a94d8280b210f76d0c6f43",
+        "run": "arun_6eefd92d2a0c42369c556de8e5958d80",
         "calls": 1,
         "steps": [
           "completed",
@@ -301,17 +301,17 @@
       "status": "pass",
       "detail": {
         "controlled": {
-          "id": "cmp_06d635a3c2dc46819cd2c968b0986966",
+          "id": "cmp_5048e35a611047caa1869e4ca7485aeb",
           "usable": true,
           "pinned_versions": [
-            "aflowv_f8353eef5ea74490a82108d5e32ded47"
+            "aflowv_2f752417f7304dfdbcfba5f2d3ce8b7f"
           ],
           "enforced": 4,
           "uncontrolled": 5,
           "rows": 2
         },
         "aliased": {
-          "id": "cmp_ffd1a88dcfa6450e98cc1472452afa60",
+          "id": "cmp_b81f4f15e49e48259a50b85a2d2f3a86",
           "usable": false,
           "problems": [
             "response_model_mismatch"
@@ -353,7 +353,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_34e690444a2dd",
+        "citation_opened": "arun_764d61198c89e",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -377,7 +377,7 @@
       "name": "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
       "status": "pass",
       "detail": {
-        "judge": "agtv_6530098eb38f47f2a964073f550ced9f",
+        "judge": "agtv_6b1b2ddccd3e4acebf8f5d9b2079861c",
         "criteria": [
           {
             "evidence_kind": "effect",
@@ -408,18 +408,114 @@
     },
     {
       "name": "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
-      "status": "fail",
+      "status": "pass",
       "detail": {
-        "run": "arun_4e9ee0ace1514f7b8ef76e1256a4a893",
+        "run": "arun_bdb9b06250f0455aa11b0cacfb141825",
         "status": "failed",
-        "error_code": "provider_failure",
+        "error_code": "completion_unevidenced",
         "status_history": [
           "running",
           "failed"
         ],
+        "unevidenced": [
+          "record-in-ledger",
+          "ledger-write-succeeded"
+        ],
         "effects": 0,
         "model_calls": 1
       }
+    },
+    {
+      "name": "the Runs console renders the stop-seam refusal and names every declared promise that carried no accepted evidence",
+      "status": "pass",
+      "detail": {
+        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_8f5d9b2079861c\n\nThe readiness gate is evidenced as completed with a recorded false routing decision. No evidence is supplied from the declared publish-to-ledger site; instead, the record was held for revision and explicitly published nowhere.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nThere is no effect evidence showing a ledger write at publish-to-ledger. The supplied hold-for-revision evidence says the record was \"published nowhere.\"\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo receipt from the declared publish-to-ledger site is supplied. The successful receipt is from hold-for-revision and does not establish a successful ledger write.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nThe completed step at readiness-gate records actual readiness 0.31, matched false, and route_outcome false.\n\nSURVIVING ANCHORS · 1\n\nastep_bbf8909de0bcc9",
+        "tone": 1,
+        "criteria": 3,
+        "unevidenced": 2,
+        "characters": 2160
+      }
+    },
+    {
+      "name": "the identical pinned Flow version admits when the Run actually reached the declared work, so the refusal was about this Run's data and not the definition",
+      "status": "pass",
+      "detail": {
+        "refused": "arun_bdb9b06250f0455aa11b0cacfb141825",
+        "admitted": "arun_c4b1cae9c211421d903836cd8bf5140f",
+        "shared_flow_version": "aflowv_de5beaaa805c44e7b30a8435e314de9b",
+        "effects": 1,
+        "model_calls": 1,
+        "adjudications_added_by_this_beat": 2
+      }
+    },
+    {
+      "name": "live documentation explains authoring, authority, stop truth, ratification, comparison controls, maintenance, BYOK, and public limits",
+      "status": "pass",
+      "detail": {
+        "characters": 13177,
+        "missing": []
+      }
+    },
+    {
+      "name": "every rendered button has an accessible name",
+      "status": "pass",
+      "detail": {
+        "total": 13,
+        "unnamed": 0
+      }
+    },
+    {
+      "name": "visible text clears WCAG AA contrast across every workbench in both themes",
+      "status": "pass",
+      "detail": {
+        "samples": 3048,
+        "minimum": 4.7,
+        "failures": []
+      }
+    },
+    {
+      "name": "reduced-motion preference collapses interaction transitions",
+      "status": "pass",
+      "detail": "1e-06s"
+    },
+    {
+      "name": "390px reload preserves a legible pannable graph without page overflow",
+      "status": "pass",
+      "detail": {
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "nodes": 5,
+        "mainTop": 107,
+        "renderedNodeWidth": 196,
+        "minimapWidth": 112
+      }
+    },
+    {
+      "name": "server sends restrictive security and no-store headers",
+      "status": "pass",
+      "detail": null
+    },
+    {
+      "name": "browser makes no cross-origin runtime request",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no failed request",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "browser journey has no console or page error",
+      "status": "pass",
+      "detail": []
+    },
+    {
+      "name": "the only refused HTTP response in the journey is the one asserted brake 409",
+      "status": "pass",
+      "detail": [
+        "Failed to load resource: the server responded with a status of 409 ()"
+      ]
     }
   ],
   "diagnostics": {
