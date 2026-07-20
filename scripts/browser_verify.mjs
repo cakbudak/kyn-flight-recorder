@@ -665,6 +665,10 @@ async function main() {
     const advisedRun = (await runSelectedFlow(advisedFlow.id)).studio.runs.find((run) => run.flow_id === advisedFlow.id);
     await navigate(page, "Overview");
     await page.locator(".principles-section").waitFor({ state: "visible" });
+    // `visible` only means present and unhidden. Bring it into the viewport so
+    // the captured artifact actually shows the panel it is named after.
+    await page.locator(".principles-section").scrollIntoViewIfNeeded();
+    await waitIdle(page);
     const principlesPanel = {
       text: await page.locator(".principles-section").innerText(),
       entries: await page.locator(".principle-list > li").count(),
