@@ -1,22 +1,22 @@
 {
-  "generated_at": "2026-07-19T21:37:33Z",
+  "generated_at": "2026-07-20T07:06:52Z",
   "host": {
     "platform": "Linux-6.12.74+deb13+1-amd64-x86_64-with-glibc2.41",
     "python": "3.13.5"
   },
   "measurements": {
     "complete_64_node_run": {
-      "maximum_ms": 331.701,
-      "median_ms": 256.638,
-      "minimum_ms": 190.352,
-      "p95_ms": 316.623
+      "maximum_ms": 336.081,
+      "median_ms": 271.75,
+      "minimum_ms": 187.601,
+      "p95_ms": 334.601
     },
-    "flow_publication_ms": 73.045,
+    "flow_publication_ms": 82.387,
     "workspace_snapshot_after_load": {
-      "maximum_ms": 168.153,
-      "median_ms": 134.04,
-      "minimum_ms": 118.909,
-      "p95_ms": 164.751
+      "maximum_ms": 204.867,
+      "median_ms": 138.22,
+      "minimum_ms": 125.285,
+      "p95_ms": 173.622
     }
   },
   "summary": {
@@ -29,7 +29,7 @@
     "snapshot_p95_below_ms": 250.0
   },
   "workload": {
-    "database_bytes": 5480448,
+    "database_bytes": 5566464,
     "events_in_last_run": 197,
     "measured_runs": 20,
     "measured_snapshots": 30,

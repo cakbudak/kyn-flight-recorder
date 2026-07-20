@@ -43,9 +43,16 @@ simulation.
 - On any supported blocked Run, use the integrated **maintenance loop**:
   code-owned causal evidence → constrained Agent explanation → bounded repair →
   human revision fence → immutable Action/Flow successors → linked proof Run.
-- Watch the runtime **ratify its own dead ends**. A failure recurring across
-  three independent Runs becomes `canonical` and is refused before a fourth Run
-  is created—deterministically, with citations, and with no model in the loop.
+- Watch the runtime **ratify its own dead ends**. A structural failure recurring
+  across three independent Runs becomes `canonical` and is refused before a
+  fourth Run is created—deterministically, with citations, and with no model in
+  the loop.
+- See the same evidence **distilled into a stated principle** when three
+  *different* Flows fail the same declared way. A principle only ever advises:
+  it appears while you are authoring, publishing still succeeds, and the brake
+  remains the only thing that refuses anything. Warn early, refuse late.
+- Work in **light or dark**. The theme follows your system by default and the
+  choice is yours for the tab.
 
 The seeded `Agent-reviewed launch` Flow is one editable example:
 
@@ -192,6 +199,27 @@ candidate of that version.
 No model participates in any part of this. It is a count over append-only rows,
 so an Agent cannot argue its way past it.
 
+#### Distilled principles
+
+A dead end refuses one exact pinned path. A **principle** is the generalization:
+when three *different* Flows fail the same declared way, the runtime states the
+rule it has learned.
+
+The quorum is distinct Flows, not distinct Runs. Repetition inside one Flow is
+already the brake's job, and letting one Flow mint a workspace-wide rule would
+let a single loud failure speak for everyone.
+
+A principle **never refuses anything**. It surfaces while you are authoring—
+publishing a matching Flow still succeeds, and the Flow still runs—because being
+wrong there costs a reader two seconds instead of blocking real work. Warn early,
+refuse late.
+
+Its honest ceiling is stated in the product itself and derived from the shipped
+vocabulary rather than asserted: the mechanism groups any declared predicate over
+any executor kind, but `POLICY_MARKERS` currently recognises exactly one
+predicate, so that is the whole of what this system can say. A failure carrying
+no recognised predicate produces no signature and never distils, by construction.
+
 Publishing a repaired successor Flow version produces a new `flow_version_id`
 and therefore a new fingerprint. Fixing the problem always clears the brake; only
 repeating it unchanged is refused. The brake is a memory, not a trap.
@@ -335,8 +363,8 @@ Run the maximum supported 64-node release-host and Chromium load gates:
 The committed load proof executes twenty complete 64-node Runs (197
 hash-linked events each), snapshots the accumulated workspace thirty times,
 renders the same 64-node/63-edge graph in Chromium, and exercises Fit View. On
-the release host, complete deterministic Runs measured 316.623 ms p95 and
-snapshots 164.751 ms p95—each below its declared threshold (2000 ms and 250 ms)
+the release host, complete deterministic Runs measured 334.601 ms p95 and
+snapshots 173.622 ms p95—each below its declared threshold (2000 ms and 250 ms)
 and without model calls, overflow, failed requests, or page errors.
 
 Both figures rose from the previous release (241.096 ms and 111.806 ms). Every
