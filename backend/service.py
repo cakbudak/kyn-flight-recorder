@@ -1529,6 +1529,11 @@ class ControlPlane:
     def studio_snapshot(self, workspace_id: str) -> dict[str, Any]:
         snapshot = self.studio.snapshot(workspace_id)
         snapshot["comparisons"] = self.list_comparisons(workspace_id, limit=10)
+        # The comparison surface has to offer exactly the models the override
+        # membership check will accept. Projecting the set the server enforces
+        # keeps the two from drifting: a hardcoded browser list would silently
+        # start offering a model the runtime refuses, or hiding one it allows.
+        snapshot["supported_models"] = sorted(SUPPORTED_MODELS)
         return snapshot
 
     def check_brake(self, workspace_id: str, flow_id: str) -> dict[str, Any]:

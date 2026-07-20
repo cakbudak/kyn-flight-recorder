@@ -527,6 +527,120 @@ async function main() {
     );
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "06-run-evidence.png"));
 
+    progress("sweeping one pinned Flow version across brains, then across a brain the provider silently renames");
+    // Two sweeps on the same pinned version. The first is what a controlled
+    // comparison looks like; the second asks for a model the seam answers under
+    // a different name, which is the one live provider behaviour that destroys a
+    // comparison while leaving every other field looking healthy. The surface
+    // has to make the second unmistakable, and the check is that it does.
+    const runComparison = async (models) => {
+      await navigate(page, "Comparisons");
+      await clickAndWait(page, page.getByRole("button", { name: "New comparison" }));
+      const dialog = page.locator(".modal");
+      await fieldControl(dialog, "Model-backed Flow", "select").selectOption(seededFlow.id);
+      await fieldControl(dialog, "Comparison input", "textarea").fill(JSON.stringify({ brief: APPROVAL_DEMO_BRIEF }, null, 2));
+      for (const model of ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+        const box = dialog.getByRole("checkbox", { name: model, exact: true });
+        if ((await box.isChecked()) !== models.includes(model)) await box.click();
+      }
+      const forecast = (await dialog.locator(".comparison-forecast").innerText()).trim();
+      await clickAndWait(page, dialog.getByRole("button", { name: `Spend ${models.length} Runs and compare` }));
+      const latest = await waitForSnapshot(
+        page,
+        (value) => (value.studio.comparisons ?? []).some((item) => item.models.join(",") === models.join(",")),
+        `comparison of ${models.join(" vs ")}`
+      );
+      return { forecast, comparison: latest.studio.comparisons.find((item) => item.models.join(",") === models.join(",")) };
+    };
+
+    const controlled = await runComparison(["gpt-5.6", "gpt-5.6-luna"]);
+    const scoreboard = page.locator(".scoreboard");
+    await scoreboard.waitFor({ state: "visible" });
+    const controlledPanel = {
+      text: await scoreboard.innerText(),
+      verdicts: await page.locator(".comparison-verdict.is-usable").count(),
+      alerts: await page.locator(".comparison-verdict[role='alert']").count(),
+      enforced: await page.locator(".control-column.is-enforced li").count(),
+      uncontrolled: await page.locator(".control-column.is-uncontrolled li").count(),
+      rows: await page.locator(".sibling-table tbody tr").count(),
+      compromisedRows: await page.locator(".sibling-table tbody tr.is-compromised").count()
+    };
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "13-comparison-controlled.png"));
+
+    const aliased = await runComparison(["gpt-5.6", "gpt-5.6-terra"]);
+    await page.locator(".comparison-verdict.is-unusable").waitFor({ state: "visible" });
+    const aliasedPanel = {
+      text: await page.locator(".scoreboard").innerText(),
+      alerts: await page.locator(".comparison-verdict[role='alert']").count(),
+      usableVerdicts: await page.locator(".comparison-verdict.is-usable").count(),
+      problems: await page.locator(".integrity-list > li").count(),
+      compromisedRows: await page.locator(".sibling-table tbody tr.is-compromised").count(),
+      listBadge: (await page.locator(".comparison-list-item.is-active .badge").innerText()).trim()
+    };
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "14-comparison-unusable.png"));
+
+    const siblingRuns = (await workspaceSnapshot(page)).studio.runs.filter((run) => run.comparison_id);
+    record(
+      "a cross-model sweep renders its proof of control before any measurement, and a sweep whose provider silently renamed a model is marked unusable rather than presentable",
+      // The control itself: every sibling of both sweeps pinned one immutable
+      // Flow version, so the only recorded delta was the model.
+      controlled.comparison.usable === true &&
+        new Set(controlled.comparison.siblings.map((sibling) => sibling.flow_version_id)).size === 1 &&
+        controlled.comparison.flow_version_id === seededFlow.version.id &&
+        new Set(controlled.comparison.siblings.map((sibling) => sibling.input_fingerprint)).size === 1 &&
+        siblingRuns.length === 4 && siblingRuns.every((run) => run.relation_kind === "comparison" && run.model_override) &&
+        siblingRuns.every((run) => verifyChain(run)) &&
+        // Proof of control is rendered, both columns of it, with every
+        // uncontrolled variable carrying its stated reason.
+        controlledPanel.text.includes(seededFlow.version.id) &&
+        controlledPanel.text.includes(controlled.comparison.input_fingerprint) &&
+        controlledPanel.enforced === controlled.comparison.control.enforced_and_verified.length &&
+        controlledPanel.uncontrolled === controlled.comparison.control.not_controllable_here.length &&
+        controlled.comparison.control.not_controllable_here.every((entry) =>
+          controlledPanel.text.includes(entry.variable) && controlledPanel.text.includes(entry.reason)
+        ) &&
+        // A sweep is never "the score", and the surface says so structurally.
+        controlledPanel.text.includes("cross_model_sweep") &&
+        controlledPanel.text.includes("usable_as_baseline · false") &&
+        controlledPanel.text.includes("not a ranking") &&
+        controlledPanel.verdicts === 1 && controlledPanel.alerts === 0 &&
+        controlledPanel.rows === 2 && controlledPanel.compromisedRows === 0 &&
+        // The forecast is stated before the credit is spent.
+        controlled.forecast.includes("2 models × 1 repetition = 2 sibling Runs") &&
+        // The aliased sweep: refused as a result, and impossible to read as one.
+        aliased.comparison.usable === false &&
+        aliased.comparison.integrity_problems.some((problem) =>
+          problem.code === "response_model_mismatch" &&
+          problem.requested === "gpt-5.6-terra" &&
+          problem.answered === "gpt-5.6-terra-sol"
+        ) &&
+        aliasedPanel.alerts === 1 && aliasedPanel.usableVerdicts === 0 &&
+        aliasedPanel.problems === aliased.comparison.integrity_problems.length &&
+        aliasedPanel.compromisedRows === 1 &&
+        aliasedPanel.listBadge === "Unusable" &&
+        aliasedPanel.text.includes("not a result and must not be presented as one") &&
+        aliasedPanel.text.includes("response_model_mismatch") &&
+        aliasedPanel.text.includes("gpt-5.6-terra-sol"),
+      {
+        controlled: {
+          id: controlled.comparison.id,
+          usable: controlled.comparison.usable,
+          pinned_versions: [...new Set(controlled.comparison.siblings.map((sibling) => sibling.flow_version_id))],
+          enforced: controlledPanel.enforced,
+          uncontrolled: controlledPanel.uncontrolled,
+          rows: controlledPanel.rows
+        },
+        aliased: {
+          id: aliased.comparison.id,
+          usable: aliased.comparison.usable,
+          problems: aliased.comparison.integrity_problems.map((problem) => problem.code),
+          alerts: aliasedPanel.alerts,
+          compromised_rows: aliasedPanel.compromisedRows
+        },
+        sibling_runs: siblingRuns.length
+      }
+    );
+
     progress("creating a controlled failure and proving forward-only maintenance");
     await navigate(page, "Actions");
     await page.getByRole("button", { name: "New Action" }).click();

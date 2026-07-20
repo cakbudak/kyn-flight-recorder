@@ -64,7 +64,7 @@ export default function FlowStudio(props) {
   return <ReactFlowProvider><FlowStudioInner {...props} /></ReactFlowProvider>;
 }
 
-function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun }) {
+function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startComparison }) {
   const graph = useThemeTokens(GRAPH_TOKENS);
   const flows = snapshot.studio.flows;
   const [selectedFlowId, setSelectedFlowId] = useState(flows[0]?.id ?? null);
@@ -332,6 +332,19 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun }) {
           <Button tone="quiet" icon="layout" onClick={autoLayout} disabled={!draft.nodes.length}>Auto layout</Button>
           <Button tone="default" icon="plus" onClick={createNew}>New Flow</Button>
           <Button tone="default" icon="play" onClick={() => setShowRun(true)} disabled={draft.isNew || dirty}>Run</Button>
+          {/* Comparing needs a published, model-backed version to pin: a
+              deterministic Flow has no brain to vary and the runtime refuses
+              it, so the surface refuses it first rather than inviting the
+              refusal. */}
+          <Button
+            tone="default"
+            icon="compare"
+            onClick={() => startComparison(selectedFlowId)}
+            disabled={draft.isNew || dirty || !selectedFlow?.version?.requires_model}
+            title={selectedFlow?.version?.requires_model ? "Compare models on this pinned version" : "Only a model-backed Flow can be compared"}
+          >
+            Compare models
+          </Button>
           <Button tone="primary" icon="save" onClick={save} disabled={busy || !dirty || !draft.nodes.length}>{draft.isNew ? "Publish Flow" : "Publish successor"}</Button>
         </div>
       </header>

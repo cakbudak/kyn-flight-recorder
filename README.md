@@ -329,6 +329,9 @@ POST /api/v1/studio/runs/:id/diagnoses
 POST /api/v1/studio/diagnoses/:id/repairs
 POST /api/v1/studio/repairs/:id/apply
 POST /api/v1/studio/repairs/:id/proof
+POST /api/v1/studio/flows/:id/comparisons
+GET  /api/v1/studio/comparisons
+GET  /api/v1/studio/comparisons/:id
 
 POST /api/v1/prompts
 POST /api/v1/prompts/:id/versions

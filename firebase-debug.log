@@ -1,2 +1,0 @@
-[debug] [2026-07-19T20:35:24.546Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
-[debug] [2026-07-19T20:35:24.659Z] Running auto auth

@@ -7,6 +7,7 @@ import FlowStudio from "./components/FlowStudio.jsx";
 import ResourceWorkbench from "./components/ResourceWorkbench.jsx";
 import RunsWorkbench, { BrakeRefusal } from "./components/RunsWorkbench.jsx";
 import Overview from "./components/Overview.jsx";
+import Comparisons from "./components/Comparisons.jsx";
 import Documentation from "./components/Documentation.jsx";
 import Settings from "./components/Settings.jsx";
 
@@ -18,6 +19,7 @@ const NAVIGATION = [
   { id: "prompts", label: "Prompts", icon: "prompt", count: (snapshot) => snapshot.prompts.length },
   { id: "skills", label: "Skills", icon: "skill", count: (snapshot) => snapshot.skills.length },
   { id: "runs", label: "Runs", icon: "run", count: (snapshot) => snapshot.studio.runs.length },
+  { id: "comparisons", label: "Comparisons", icon: "compare", count: (snapshot) => (snapshot.studio.comparisons ?? []).length },
   { id: "docs", label: "Documentation", icon: "docs" }
 ];
 
@@ -34,6 +36,7 @@ export default function App() {
   });
   const [keyRevision, setKeyRevision] = useState(0);
   const [focusRunId, setFocusRunId] = useState(null);
+  const [comparisonFlowId, setComparisonFlowId] = useState(null);
 
   const setView = useCallback((next) => {
     setViewState(next);
@@ -101,6 +104,14 @@ export default function App() {
     setView("runs");
   }, [setView]);
 
+  // Comparing is a Flow Studio verb but a Comparisons surface. Carrying the
+  // Flow across means the operator never has to re-pick what they were
+  // already looking at.
+  const startComparison = useCallback((flowId) => {
+    setComparisonFlowId(flowId);
+    setView("comparisons");
+  }, [setView]);
+
   const onKeyChanged = useCallback(() => setKeyRevision((value) => value + 1), []);
   const keyConfigured = useMemo(() => Boolean(browserKey()), [keyRevision]);
 
@@ -119,9 +130,16 @@ export default function App() {
     );
   }
 
-  const shared = { snapshot, refresh, mutate, busy, setView, focusRun };
+  const shared = { snapshot, refresh, mutate, busy, setView, focusRun, startComparison };
   let content;
   if (view === "studio") content = <FlowStudio {...shared} />;
+  else if (view === "comparisons") content = (
+    <Comparisons
+      {...shared}
+      comparisonFlowId={comparisonFlowId}
+      onComparisonRequestHandled={() => setComparisonFlowId(null)}
+    />
+  );
   else if (view === "actions") content = <ResourceWorkbench {...shared} kind="actions" />;
   else if (view === "agents") content = <ResourceWorkbench {...shared} kind="agents" />;
   else if (view === "prompts") content = <ResourceWorkbench {...shared} kind="prompts" />;
