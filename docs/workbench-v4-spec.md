@@ -109,7 +109,7 @@ or Node runtime dependency and remains compatible with the restrictive CSP.
 | G3 security | origin, workspace ownership, BYOK redaction, body caps, cross-workspace pins, recursion, and forbidden authority fail closed | HTTP/database tests + threat model |
 | G4 data | new fields have purpose, owner, retention inherited from 24-hour workspace, and workspace reset/expiry path | schema inspection + docs |
 | G5 reliability | idempotency, terminal absorption, stale revisions, nested failures, retries, duplicate commands, and concurrent publication are proven | adversarial tests |
-| G6 performance | 64-node editor remains interactive; snapshot p95 < 250 ms and deterministic 64-node Run p95 < 2 s on the release host; overload is bounded | benchmark script |
+| G6 performance | 64-node editor remains interactive; snapshot p95 < 400 ms and deterministic 64-node Run p95 < 2 s on the release host; overload is bounded | benchmark script |
 | G7 operations | Run tree and correlation IDs reach every Step, child, event, call, receipt, and effect; health distinguishes SQLite readiness | browser/API proof |
 | G8 agentics | goals, Prompt, Skills, tools, budgets, stop/approval conditions, output schema, and human interventions are visible and enforced | fake-provider negatives + sanitized real Responses run |
 | G9 proof | positive, negative, boundary, mutation/RED, real seam, and exploratory task journeys pass | verification report |

@@ -9,7 +9,9 @@ import {
   isActiveRun,
   latestStepForNode,
   maintenancePhase,
-  selectedStudioRun
+  selectedStudioRun,
+  slugDraft,
+  slugify
 } from "../src/lib.js";
 
 function run(overrides = {}) {
@@ -24,6 +26,13 @@ function run(overrides = {}) {
     ...overrides
   };
 }
+
+test("slug editing preserves a separator until the identifier is finalized", () => {
+  assert.equal(slugDraft("risk-"), "risk-");
+  assert.equal(slugDraft("risk-review"), "risk-review");
+  assert.equal(slugDraft("Risk  review!"), "risk-review-");
+  assert.equal(slugify(slugDraft("Risk  review!")), "risk-review");
+});
 
 test("run liveness is derived from the authoritative terminal set", () => {
   assert.deepEqual(TERMINAL_RUN_STATUSES, ["completed", "blocked", "failed", "cancelled"]);

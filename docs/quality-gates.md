@@ -1,6 +1,6 @@
 # Quality gates
 
-Date: 2026-07-19
+Date: 2026-07-20
 
 The active gate set belongs to **Kyn.ist Agent Studio**. Earlier prototype
 reports are superseded and are not accepted as evidence for this product surface.
@@ -18,13 +18,19 @@ reports are superseded and are not accepted as evidence for this product surface
 | approve | Run pauses before effect; attributable human decision resumes the same pinned graph | PASS |
 | rerun | terminal parent remains immutable; linked child pins the same Flow version and owns its evidence | PASS |
 | trigger | webhook and schedule bindings pin immutable Flow versions and create real Runs | PASS |
+| stop seam | authorable promises pin kind/site/Judge; unsupported completion refuses and supported completion admits on the identical Flow version | PASS |
+| judge authority | Judge output is retained as a claim; fabricated, foreign-Run, wrong-kind, wrong-site, and wrong-state anchors cannot admit | PASS |
+| ratification | three independent structural failures refuse the unchanged Flow version before a fourth Run is created | PASS |
+| principles | only three distinct Flows distil an advisory; advice never blocks | PASS |
+| comparison | expected siblings are manifested pre-I/O; model alias, missing evidence, or broken ledger makes the result unusable | PASS |
 | repair | failed Run proves owned diagnosis → bounded successor → human dual-revision fence → linked changed outcome | PASS |
 | provider failure | failed OpenAI attempt is append-only evidence with safe code/parameter/request ID, never raw provider text | PASS |
 | database | flat explicit product tables, immutable version/evidence triggers, legal transition and revision fences | PASS |
 | authority | Skill grants exact Action-version IDs; model prose cannot widen authority or create effects | PASS |
 | isolation | opaque HttpOnly workspace cookie, same-origin mutations, cross-workspace 404, bounded bodies and usage | PASS |
 | credential | browser-tab `sessionStorage` only; server has no operator-key fallback and never persists the key | PASS |
-| browser | desktop + 390 px, reduced motion, named controls, no overflow, failed request, or console error | PASS |
+| browser | desktop + legible pannable 390 px graph, keyboard-contained dialogs, reduced motion, named controls, no overflow, failed request, or console error | PASS |
+| contrast | 3,048 visible text samples across all ten workbenches in light/dark; minimum 4.70:1 | PASS |
 | maximum graph | 64 nodes/63 routes: 20 complete Runs, 30 loaded snapshots, 64-node Chromium render and Fit View remain below release thresholds | PASS |
 | real model | real GPT-5.6 analysis pauses, approves, and commits exactly one bounded SQLite effect | PASS |
 | public HTTPS | full real-model Studio journey through the deployed origin | PASS |
@@ -33,20 +39,20 @@ reports are superseded and are not accepted as evidence for this product surface
 ## Current verification
 
 ```text
-70 Python runtime/database/HTTP/security/UI contract tests: PASS
- 7 pure browser-state tests:                              PASS
-30 Chromium full-stack Studio checks:                    PASS
-30 public HTTPS + real GPT-5.6 Chromium checks:          PASS
- 7 maximum-graph Chromium load checks:                   PASS
- 0 npm audit vulnerabilities:                            PASS
+262 Python runtime/database/HTTP/security/UI tests:       PASS
+  9 pure browser-state tests:                            PASS
+ 42 Chromium full-stack Studio checks:                   PASS
+ 36 public HTTPS + real GPT-5.6 checks (prior release):   PASS
+  7 maximum-graph Chromium load checks:                  PASS
+  0 npm audit vulnerabilities:                           PASS
 ```
 
 The maximum-graph gate measures the product's declared 64-node limit, rather
 than a reduced sample. Twenty deterministic Runs produced 64 completed Steps
-and 197 valid hash-linked events each. On the release host, Run p95 was
-241.096 ms against a 2,000 ms limit and loaded-workspace snapshot p95 was
-111.806 ms against a 250 ms limit. Chromium rendered 64 nodes and 63 edges in
-198.185 ms and completed Fit View in 131.81 ms, with zero document overflow,
+and 197 valid hash-linked events each. On the current release host, Run p95 was
+375.215 ms against a 2,000 ms limit and loaded-workspace snapshot p95 was
+160.304 ms against a 400 ms limit. Chromium rendered 64 nodes and 63 edges in
+194.581 ms and completed Fit View in 118.416 ms, with zero document overflow,
 failed requests, or page errors.
 
 The public real-model proof executed the official Python SDK with a per-operation

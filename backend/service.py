@@ -27,6 +27,7 @@ from .model_comparison import build_comparison
 from .runtime import AgentRuntime, ResponseTransport
 from .store import Store
 from .studio_runtime import (
+    JUDGE_PROMPT_VARIABLES,
     StudioRuntime,
     action_mints_effect,
     validate_acceptance_contract,
@@ -1026,6 +1027,7 @@ class ControlPlane:
                 # What this pinned Action can mint, for the acceptance guard:
                 # whether it can ever write, and which Agent version it casts.
                 "mints_effect": action_mints_effect(action["kind"], action["config"]),
+                "mints_receipt": True,
                 "agent_version_id": action["agent_version_id"],
             }
         if node["type"] == "agent":
@@ -1089,11 +1091,19 @@ class ControlPlane:
         )
         if judge is not None:
             try:
-                self.studio.get_agent_runtime(workspace_id, judge)
+                judge_agent = self.studio.get_agent_runtime(workspace_id, judge)
             except NotFound as error:
                 raise ContractViolation(
                     "Flow judge Agent version does not belong to the workspace"
                 ) from error
+            unsupported_variables = sorted(
+                set(judge_agent["prompt"]["variables"]) - JUDGE_PROMPT_VARIABLES
+            )
+            if unsupported_variables:
+                raise ContractViolation(
+                    "Flow judge Agent Prompt declares unsupported variables: "
+                    + ", ".join(unsupported_variables)
+                )
         # Walked only when a judge is declared, so a Flow that declares no
         # contract pays nothing for a guarantee it never asked for.
         subflow_cast = (
@@ -1452,25 +1462,59 @@ class ControlPlane:
         comparison_id = new_id("cmp")
         correlation_id = new_id("corr")
         runtime = self._studio_runtime(client)
-        runs_by_model: list[tuple[str, list[dict[str, Any]]]] = []
+        # Prepare the complete sibling set before the first provider call. A
+        # process death while rows are being prepared leaves no manifest and is
+        # therefore derivably unusable; a death after the manifest leaves the
+        # exact missing Run(s) visible instead of shrinking the experiment.
+        prepared: list[tuple[str, int, dict[str, Any]]] = []
         for model in distinct:
-            executed: list[dict[str, Any]] = []
             for round_index in range(1, rounds + 1):
-                executed.append(
-                    self._execute_comparison_sibling(
-                        runtime,
-                        workspace_id,
-                        flow_id,
-                        input_data=input_data,
-                        flow_version=int(flow_version["version"]),
-                        model=model,
-                        pinned_model=pinned_model,
-                        comparison_id=comparison_id,
-                        correlation_id=correlation_id,
-                        round_index=round_index,
+                prepared.append(
+                    (
+                        model,
+                        round_index,
+                        self._prepare_comparison_sibling(
+                            runtime,
+                            workspace_id,
+                            flow_id,
+                            input_data=input_data,
+                            flow_version=int(flow_version["version"]),
+                            model=model,
+                            pinned_model=pinned_model,
+                            comparison_id=comparison_id,
+                            correlation_id=correlation_id,
+                            round_index=round_index,
+                        ),
                     )
                 )
-            runs_by_model.append((model, executed))
+        first_run = prepared[0][2]
+        self.studio.append_event(
+            workspace_id,
+            first_run["id"],
+            event_type="comparison.manifest_pinned",
+            actor_type="runtime",
+            actor_id=None,
+            payload={
+                "comparison_id": comparison_id,
+                "flow_id": flow_id,
+                "flow_version_id": flow_version["id"],
+                "flow_fingerprint": flow_version["fingerprint"],
+                "input_fingerprint": fingerprint(first_run["input"]),
+                "pinned_model": pinned_model,
+                "models": distinct,
+                "repetitions": rounds,
+                "siblings": [
+                    {
+                        "run_id": run["id"],
+                        "model": model,
+                        "repetition": round_index,
+                    }
+                    for model, round_index, run in prepared
+                ],
+            },
+        )
+        for _model, _round_index, run in prepared:
+            self._continue_comparison_sibling(runtime, workspace_id, run)
         return self._derive_comparison(workspace_id, comparison_id)
 
     @staticmethod
@@ -1509,7 +1553,7 @@ class ControlPlane:
         per_run = self.studio_flow_model_call_forecast(workspace_id, flow_id)
         return per_run * len(models) * repetitions
 
-    def _execute_comparison_sibling(
+    def _prepare_comparison_sibling(
         self,
         runtime: StudioRuntime,
         workspace_id: str,
@@ -1523,14 +1567,13 @@ class ControlPlane:
         correlation_id: str,
         round_index: int,
     ) -> dict[str, Any]:
-        """Drive one sibling through the same fences a normal Run passes through.
+        """Pin one sibling through the same fences a normal Run passes through.
 
-        The comparison command is not a privileged execution path: it still pins
-        the version, still registers in the active-Run set, and still takes a
-        bounded worker slot. Only the model differs.
+        Preparation performs no external I/O. The worker path is entered only
+        after every sibling exists and their expected set is ledger-pinned.
         """
 
-        run = runtime.prepare(
+        return runtime.prepare(
             workspace_id,
             flow_id,
             input_data=input_data,
@@ -1542,6 +1585,15 @@ class ControlPlane:
             comparison_id=comparison_id,
             pinned_model=pinned_model,
         )
+
+    def _continue_comparison_sibling(
+        self,
+        runtime: StudioRuntime,
+        workspace_id: str,
+        run: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Execute one already manifested sibling in the ordinary worker fence."""
+
         with self._active_studio_runs_lock:
             if run["id"] in self._active_studio_runs:
                 return self.studio.get_run(workspace_id, run["id"])
@@ -1584,6 +1636,12 @@ class ControlPlane:
         runs = [
             self.studio.get_run(workspace_id, run_id) for run_id in group["run_ids"]
         ]
+        manifest_events = [
+            event["payload"]
+            for run in runs
+            for event in run["events"]
+            if event["type"] == "comparison.manifest_pinned"
+        ]
         ordered: dict[str, list[dict[str, Any]]] = {}
         for run in runs:
             ordered.setdefault(str(run["model_override"]), []).append(run)
@@ -1599,6 +1657,7 @@ class ControlPlane:
             input_fingerprint=fingerprint(first["input"]),
             repetitions=max(len(items) for items in ordered.values()),
             runs_by_model=list(ordered.items()),
+            manifests=manifest_events,
         )
 
     def _comparison_pinned_model(

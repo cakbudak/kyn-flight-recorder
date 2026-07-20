@@ -172,6 +172,20 @@ class SeededDeclarationTest(SeededContractCase):
 
         self.assertTrue(self.flow(CONTRACTED_SLUG)["version"]["requires_model"])
 
+    def test_the_judge_only_flow_exposes_its_pinned_brain_to_model_sweeps(self) -> None:
+        """The stop-seam call is a real model call even though no node makes it."""
+
+        version = self.flow(CONTRACTED_SLUG)["version"]
+        judge = self.plane.studio.get_agent_runtime(
+            self.workspace_id, version["judge_agent_version_id"]
+        )
+        self.assertEqual(
+            self.plane.studio.flow_version_pinned_models(
+                self.workspace_id, version["id"]
+            ),
+            [judge["model"]],
+        )
+
 
 class SeededRefuseThenAdmitTest(SeededContractCase):
     def test_an_input_that_skips_the_declared_site_never_reaches_completed(
@@ -250,6 +264,56 @@ class SeededRefuseThenAdmitTest(SeededContractCase):
             ),
             2,
         )
+
+    def test_the_judge_receives_its_pinned_contract_and_the_evidence_material(
+        self,
+    ) -> None:
+        """A Goal-Judge must be more than a model id over structural metadata.
+
+        The pinned Agent instructions and Prompt are part of the versioned
+        intelligence contract, and the evidence body is what lets the judge
+        decide whether a free-form acceptance statement is semantically true.
+        IDs, kinds, sites, and states alone can only repeat the resolver's
+        structural checks.
+        """
+
+        admitted = self.start(0.92, "seeded-judge-contract")
+        self.assertEqual(admitted["status"], "completed")
+        request = next(
+            item
+            for item in self.client.requests
+            if (item.get("metadata") or {}).get("operation") == "adjudication"
+        )
+        judge = self.plane.studio.get_agent_runtime(
+            self.workspace_id,
+            self.flow(CONTRACTED_SLUG)["version"]["judge_agent_version_id"],
+        )
+
+        self.assertIn(judge["instructions"], request["instructions"])
+        self.assertIn(judge["prompt"]["template"], request["instructions"])
+
+        question = json.loads(request["input"][0]["content"])
+        effect = question["run_evidence"]["effects"][0]
+        receipt = next(
+            item
+            for item in question["run_evidence"]["receipts"]
+            if item["site"] == "publish-to-ledger"
+        )
+        self.assertEqual(effect["content"]["collection"], "published-evidence")
+        self.assertEqual(effect["content"]["payload"]["record"], RECORD)
+        self.assertEqual(receipt["content"]["input"]["record"], RECORD)
+        self.assertEqual(
+            receipt["content"]["output"]["collection"], "published-evidence"
+        )
+        event = self.completion_event(admitted)
+        claim = event["payload"]["judge_claim"]
+        self.assertEqual(claim["agent_version_id"], judge["id"])
+        self.assertGreaterEqual(len(claim["assessment"]), 20)
+        self.assertEqual(
+            {item["criterion_id"] for item in claim["criteria"]},
+            {item["id"] for item in self.flow(CONTRACTED_SLUG)["version"]["acceptance_criteria"]},
+        )
+        self.assertTrue(all(item["reason"] for item in claim["criteria"]))
 
 
 class SeedAdditivityTest(unittest.TestCase):

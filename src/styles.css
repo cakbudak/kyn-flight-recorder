@@ -601,6 +601,28 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .agent-pins p { display: grid; grid-template-columns: 92px 1fr; gap: var(--space-2); margin: 0; font-size: 12px; }
 .agent-pins strong { color: var(--muted); }
 .agent-pins span { color: var(--text-soft); }
+.completion-contract-editor { gap: var(--space-3); }
+.stop-seam-note { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--tone-ai-border); border-radius: var(--radius-sm); color: var(--tone-ai-text); background: var(--tone-ai-bg); }
+.stop-seam-note > p { display: grid; gap: 3px; margin: 0; }
+.stop-seam-note strong { color: var(--text); font-size: 12px; }
+.stop-seam-note span { color: var(--text-soft); font-size: 12px; line-height: 1.5; }
+.criterion-editor-list { display: grid; gap: var(--space-3); }
+.criterion-editor { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-1); }
+.criterion-editor.is-invalid { border-color: var(--tone-danger-border); }
+.criterion-editor > header { display: grid; grid-template-columns: 24px minmax(0,1fr) 32px; align-items: center; gap: var(--space-2); }
+.criterion-editor > header > span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: var(--tone-ai-text); background: var(--tone-ai-bg); font-size: 11px; font-weight: 800; }
+.criterion-editor > header strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.criterion-editor > header .icon-button { width: 32px; height: 32px; }
+.evidence-sites { display: grid; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.evidence-sites legend { padding: 0; color: var(--text-soft); font-size: 12px; font-weight: 700; }
+.evidence-sites legend b { margin-left: 2px; color: var(--tone-danger-text); }
+.evidence-sites > p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.evidence-sites > label { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: var(--space-2); padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-0); cursor: pointer; }
+.evidence-sites > label:has(input:checked) { border-color: var(--tone-ai-border); background: var(--tone-ai-bg); }
+.evidence-sites > label span { display: grid; min-width: 0; }
+.evidence-sites > label strong, .evidence-sites > label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evidence-sites > label strong { color: var(--text); font-size: 12px; }
+.evidence-sites > label small { color: var(--muted); font-family: monospace; font-size: 11px; }
 .danger-zone { display: grid; justify-items: start; gap: 5px; padding: 15px 14px 22px; }
 .danger-zone p { margin: 0; color: var(--muted); font-size: 12px; }
 .outcome-editor { display: grid; gap: 6px; }
@@ -810,6 +832,11 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .completion-callout > header p:not(.panel-kicker) { max-width: 84ch; margin: var(--space-1) 0 0; color: var(--text-soft); font-size: 13px; line-height: 1.6; }
 .completion-callout > header p strong { color: var(--text); }
 .completion-callout > header p code { color: var(--text); font-size: 12px; }
+.judge-claim { display: grid; gap: var(--space-2); margin: var(--space-4) var(--space-4) 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--tone-ai-border); border-radius: var(--radius-sm); background: var(--tone-ai-bg); }
+.judge-claim > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.judge-claim > header code { color: var(--text-soft); font-size: 12px; }
+.judge-claim p { max-width: 86ch; margin: 0; color: var(--text); font-size: 13px; line-height: 1.55; }
+.judge-claim small { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .completion-lead { max-width: 86ch; margin: 0; padding: var(--space-4) var(--space-4) 0; color: var(--text-soft); font-size: 13px; line-height: 1.6; }
 .criterion-list { display: grid; gap: var(--space-3); margin: 0; padding: var(--space-4); list-style: none; }
 .criterion-list > li { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-0); }
@@ -818,6 +845,9 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .criterion-list > li > header strong { max-width: 82ch; font-size: 13px; }
 .criterion-list > li > header > code { padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: 3px; color: var(--text-soft); font-size: 12px; }
 .criterion-list .definition-list dd { white-space: normal; }
+.criterion-judge-claim { display: grid; gap: 4px; padding: var(--space-3); border-left: 3px solid var(--tone-ai-border); background: var(--tone-ai-bg); }
+.criterion-judge-claim span { color: var(--tone-ai-text); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.criterion-judge-claim p { margin: 0; color: var(--text-soft); font-size: 12px; line-height: 1.55; }
 .criterion-empty { margin: 0; color: var(--muted); font-size: 12px; }
 /* anchors are not citations: a citation points into the knowledge graph, an
    anchor points at one run-owned record. Kept visually apart from the citation
@@ -1340,6 +1370,11 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .comparison-forecast p em { color: var(--text); font-style: normal; font-weight: 700; }
 .comparison-forecast-caveat { border-top: 1px solid var(--tone-warning-border); padding-top: var(--space-2); }
 
+@media (max-width: 1500px) {
+  .toolbar-actions .button:not(.button-primary) span { display: none; }
+  .toolbar-actions .button:not(.button-primary) { width: 35px; padding: 0; }
+}
+
 @media (max-width: 1250px) {
   :root { --sidebar: 68px; }
   .brand > span:last-child, .nav-item span, .nav-item b, .public-boundary p, .nav-section { display: none; }
@@ -1410,6 +1445,7 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
   .palette-list { display: flex; gap: 5px; overflow-x: auto; }
   .palette-card { flex: 0 0 205px; margin-bottom: 0; }
   .canvas-shell { height: 500px; border-bottom: 1px solid var(--line); }
+  .canvas-shell .react-flow__minimap { width: 112px !important; height: 84px !important; }
   .node-inspector { display: block; border-left: 0; }
   .inspector-scroll { overflow: visible; }
   .registry-workbench, .runs-workbench, .comparisons-workbench { display: block; height: auto; min-height: 0; }

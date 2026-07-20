@@ -1,10 +1,12 @@
 """Derive a controlled cross-model comparison from its sibling Runs.
 
-Nothing here is stored. A comparison is exactly the set of Runs that share a
-`comparison_id`, and every number a scoreboard shows is recomputed from the
-evidence those Runs already recorded — the same discipline `ratification_state`,
-the distilled principles, and the principle ceiling already follow. A derived
-scoreboard cannot drift from the Runs it describes, because it *is* the Runs.
+There is no mutable comparison row. A comparison is the immutable expected
+sibling manifest pinned into one Run's hash ledger plus the Runs that share its
+`comparison_id`; every number a scoreboard shows is recomputed from that
+evidence. The manifest is written before provider I/O, so a crash cannot shrink
+the requested experiment into a smaller one that looks complete. A derived
+scoreboard cannot drift from the Runs it describes, because it is rebuilt from
+the manifest and those Runs on every read.
 
 Two things this module refuses to do:
 
@@ -127,6 +129,16 @@ def _run_integrity(
     """
 
     problems: list[dict[str, Any]] = []
+    if run.get("ledger_verified") is not True:
+        problems.append(
+            {
+                "code": "ledger_unverified",
+                "detail": (
+                    "the Run's append-only event chain did not verify, so its "
+                    "measurements cannot support a controlled comparison"
+                ),
+            }
+        )
     calls = [call for call in (run.get("model_calls") or [])]
     if not calls:
         problems.append(
@@ -393,6 +405,7 @@ def build_comparison(
     input_fingerprint: str,
     repetitions: int,
     runs_by_model: Sequence[tuple[str, Sequence[Mapping[str, Any]]]],
+    manifests: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     siblings = [model_measurement(model, runs) for model, runs in runs_by_model]
 
@@ -434,6 +447,146 @@ def build_comparison(
         for sibling in siblings
         for problem in sibling["integrity"]["problems"]
     ]
+    manifest: Mapping[str, Any] | None = None
+    manifest_verified = False
+    if not manifests:
+        integrity_problems.append(
+            {
+                "code": "comparison_manifest_missing",
+                "detail": (
+                    "the sibling Runs do not carry an immutable declaration of the "
+                    "models and repetitions the comparison was meant to execute"
+                ),
+            }
+        )
+    elif len(manifests) != 1:
+        integrity_problems.append(
+            {
+                "code": "comparison_manifest_ambiguous",
+                "detail": "a comparison must carry exactly one pinned manifest",
+            }
+        )
+    elif not isinstance(manifests[0], Mapping):
+        integrity_problems.append(
+            {
+                "code": "comparison_manifest_invalid",
+                "detail": "the pinned comparison manifest is not an object",
+            }
+        )
+    else:
+        manifest = manifests[0]
+        expected_models = manifest.get("models")
+        expected_repetitions = manifest.get("repetitions")
+        expected_siblings = manifest.get("siblings")
+        valid_shape = (
+            manifest.get("comparison_id") == comparison_id
+            and manifest.get("flow_id") == flow_id
+            and manifest.get("flow_version_id") == flow_version_id
+            and manifest.get("flow_fingerprint") == flow_fingerprint
+            and manifest.get("input_fingerprint") == input_fingerprint
+            and manifest.get("pinned_model") == pinned_model
+            and isinstance(expected_models, list)
+            and len(expected_models) >= 2
+            and all(isinstance(model, str) and model for model in expected_models)
+            and len(set(expected_models)) == len(expected_models)
+            and isinstance(expected_repetitions, int)
+            and not isinstance(expected_repetitions, bool)
+            and 1 <= expected_repetitions <= 5
+            and isinstance(expected_siblings, list)
+        )
+        if not valid_shape:
+            integrity_problems.append(
+                {
+                    "code": "comparison_manifest_invalid",
+                    "detail": (
+                        "the pinned comparison manifest does not match this "
+                        "comparison's immutable Flow, input, or bounded sweep shape"
+                    ),
+                }
+            )
+        else:
+            expected_rows: dict[str, tuple[str, int]] = {}
+            rows_valid = len(expected_siblings) == (
+                len(expected_models) * expected_repetitions
+            )
+            for item in expected_siblings:
+                if not isinstance(item, Mapping):
+                    rows_valid = False
+                    continue
+                run_id = item.get("run_id")
+                model = item.get("model")
+                repetition = item.get("repetition")
+                if (
+                    not isinstance(run_id, str)
+                    or not run_id
+                    or run_id in expected_rows
+                    or model not in expected_models
+                    or not isinstance(repetition, int)
+                    or isinstance(repetition, bool)
+                    or repetition < 1
+                    or repetition > expected_repetitions
+                ):
+                    rows_valid = False
+                    continue
+                expected_rows[run_id] = (str(model), repetition)
+            coverage = {
+                model: sorted(
+                    repetition
+                    for expected_model, repetition in expected_rows.values()
+                    if expected_model == model
+                )
+                for model in expected_models
+            }
+            if any(
+                values != list(range(1, expected_repetitions + 1))
+                for values in coverage.values()
+            ):
+                rows_valid = False
+            if not rows_valid:
+                integrity_problems.append(
+                    {
+                        "code": "comparison_manifest_invalid",
+                        "detail": (
+                            "the manifest does not name exactly one Run for every "
+                            "declared model and repetition"
+                        ),
+                    }
+                )
+            else:
+                actual_rows = {
+                    str(run.get("id")): model
+                    for model, runs in runs_by_model
+                    for run in runs
+                }
+                expected_ids = set(expected_rows)
+                actual_ids = set(actual_rows)
+                if expected_ids != actual_ids:
+                    integrity_problems.append(
+                        {
+                            "code": "comparison_sibling_set_incomplete",
+                            "missing_run_ids": sorted(expected_ids - actual_ids),
+                            "unexpected_run_ids": sorted(actual_ids - expected_ids),
+                            "detail": (
+                                "the observed sibling set differs from the immutable "
+                                "set declared before provider execution"
+                            ),
+                        }
+                    )
+                elif any(
+                    actual_rows[run_id] != expected_rows[run_id][0]
+                    for run_id in expected_ids
+                ):
+                    integrity_problems.append(
+                        {
+                            "code": "comparison_sibling_model_mismatch",
+                            "detail": (
+                                "at least one manifested Run is grouped under a "
+                                "different model than the manifest declared"
+                            ),
+                        }
+                    )
+                else:
+                    manifest_verified = True
     if not version_controlled:
         integrity_problems.append(
             {
@@ -470,6 +623,18 @@ def build_comparison(
         "input_fingerprint": input_fingerprint,
         "repetitions": repetitions,
         "models": [sibling["model"] for sibling in siblings],
+        "manifest": {
+            "pinned": manifest is not None,
+            "verified": manifest_verified,
+            "fingerprint": fingerprint(manifest) if manifest is not None else None,
+            "expected_models": list(manifest.get("models") or []) if manifest else [],
+            "expected_repetitions": manifest.get("repetitions") if manifest else None,
+            "expected_run_ids": [
+                item.get("run_id")
+                for item in (manifest.get("siblings") or [])
+                if isinstance(item, Mapping)
+            ] if manifest else [],
+        },
         "siblings": siblings,
         # The claim under test is that the scaffold dominates the brain: the
         # pinned graph decides routing and refusal, and swapping the model does
@@ -526,6 +691,15 @@ def build_comparison(
                     "value": input_fingerprint,
                     "verified": input_controlled,
                     "method": "one validated input object, hashed and reused verbatim",
+                },
+                {
+                    "control": "comparison_manifest",
+                    "value": fingerprint(manifest) if manifest is not None else None,
+                    "verified": manifest_verified,
+                    "method": (
+                        "the complete expected model, repetition and Run-id set is "
+                        "appended to a hash-chained Run ledger before provider I/O"
+                    ),
                 },
                 {
                     "control": "response_model",

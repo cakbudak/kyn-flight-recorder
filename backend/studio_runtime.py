@@ -25,6 +25,7 @@ from .contracts import (
     extract_output_text,
     fingerprint,
     function_calls,
+    redact,
     render_prompt,
     require_string,
     safe_response_summary,
@@ -57,6 +58,18 @@ PROVIDER_DETAIL_FIELDS = frozenset(
 # refuses on the first canonical match, so this bound keeps one event small
 # without ever hiding the match that actually caused the refusal.
 MAX_CITED_DEAD_ENDS = 3
+# The provider boundary accepts 256 KiB for the complete request. Keep the
+# evidence question and the fully rendered request below that boundary here,
+# before a completed graph reaches external I/O at the stop seam. A large Run
+# therefore fails closed with a contract error rather than depending on a
+# provider-specific rejection.
+MAX_ADJUDICATION_QUESTION_BYTES = 96 * 1024
+MAX_ADJUDICATION_REQUEST_BYTES = 240 * 1024
+# `candidate_json` / `evidence_json` keep existing forensic Agents usable as
+# independent judges; the two explicit names are preferred for new judge Prompts.
+JUDGE_PROMPT_VARIABLES = frozenset(
+    {"acceptance_criteria", "run_evidence", "candidate_json", "evidence_json"}
+)
 
 
 @dataclass(frozen=True)
@@ -66,6 +79,22 @@ class ActionResult:
     paused: bool = False
     approval_message: str | None = None
     child_run_id: str | None = None
+
+
+@dataclass(frozen=True)
+class GoalJudgement:
+    """The model's bounded claim, kept distinct from the runtime's decision.
+
+    A judgement can nominate anchors and explain why. It cannot admit a Run:
+    `adjudicate` independently narrows those nominations against code-owned
+    records, and only that deterministic result reaches the terminal seam.
+    """
+
+    agent_version_id: str
+    assessment: str
+    claimed: Mapping[str, tuple[str, ...]]
+    reasons: Mapping[str, str]
+    marked_unevidenced: Mapping[str, bool]
 
 
 def _safe_provider_detail(error: ProviderFailure) -> dict[str, Any]:
@@ -339,15 +368,16 @@ def validate_acceptance_contract(
             # caller defect; treating it as an empty contract fails closed.
             contract = node_contracts.get(node_id) or {}
             # A Flow may not declare a contract its own pinned graph cannot
-            # possibly satisfy. `receipt` and `step` are minted for every node by
-            # the runtime itself, so they are always satisfiable and are not
-            # checked here. The other two name a capability: only a writing
-            # Action mints an effect, and only a human-approval Action mints an
-            # approval decision. A subflow node satisfies neither — its work is
+            # possibly satisfy. A `step` is minted for every node by the runtime
+            # itself. Receipts belong only to Action nodes; the other two name
+            # still narrower capabilities: only a writing Action mints an effect,
+            # and only a human-approval Action mints an approval decision. A
+            # subflow node satisfies none of those three — its work is
             # minted against the child Run, so it can never be anchored to this
             # one.
             satisfiable = {
                 "effect": bool(contract.get("mints_effect")),
+                "receipt": bool(contract.get("mints_receipt")),
                 "approval": contract.get("executor_kind") == APPROVAL_ACTION_KIND,
             }.get(evidence_kind, True)
             if not satisfiable:
@@ -989,7 +1019,11 @@ class StudioRuntime:
     )
 
     def _record_adjudication(
-        self, workspace_id: str, run_id: str, adjudication: Any
+        self,
+        workspace_id: str,
+        run_id: str,
+        adjudication: Any,
+        judgement: GoalJudgement,
     ) -> None:
         """Put the adjudication in the ledger whichever way it went.
 
@@ -1010,6 +1044,24 @@ class StudioRuntime:
             payload={
                 "admitted": adjudication.admitted,
                 "unevidenced": list(adjudication.unevidenced),
+                # Explicitly a claim, never the decision. Keeping the model's
+                # narrative is what makes a refusal explainable without letting
+                # prose become authority over the terminal transition.
+                "judge_claim": {
+                    "agent_version_id": judgement.agent_version_id,
+                    "assessment": judgement.assessment,
+                    "criteria": [
+                        {
+                            "criterion_id": criterion_id,
+                            "marked_unevidenced": judgement.marked_unevidenced[
+                                criterion_id
+                            ],
+                            "claimed_anchors": list(judgement.claimed[criterion_id]),
+                            "reason": judgement.reasons[criterion_id],
+                        }
+                        for criterion_id in judgement.claimed
+                    ],
+                },
                 "criteria": [
                     {
                         "criterion_id": resolution.criterion_id,
@@ -1075,7 +1127,7 @@ class StudioRuntime:
             )
             for item in declared
         )
-        claimed = self._call_goal_judge(
+        judgement = self._call_goal_judge(
             workspace_id,
             run_id,
             run,
@@ -1083,6 +1135,7 @@ class StudioRuntime:
             criteria=criteria,
             candidates=candidates,
         )
+        claimed = judgement.claimed
         offered = {
             record["id"]
             for records in candidates.values()
@@ -1120,7 +1173,7 @@ class StudioRuntime:
             anchor_ids=[anchor for anchors in claimed.values() for anchor in anchors],
         )
         bundle = self._evidence_bundle(run_id, resolved["records"])
-        return adjudicate(criteria, claimed, bundle)
+        return adjudicate(criteria, claimed, bundle), judgement
 
     @staticmethod
     def _evidence_bundle(
@@ -1154,7 +1207,7 @@ class StudioRuntime:
         *,
         criteria: Sequence[AcceptanceCriterion],
         candidates: Mapping[str, Sequence[Mapping[str, Any]]],
-    ) -> dict[str, tuple[str, ...]]:
+    ) -> GoalJudgement:
         """Ask the pinned judge which criteria are *unevidenced*, adversarially."""
 
         agent = self.repository.get_agent_runtime(
@@ -1180,28 +1233,64 @@ class StudioRuntime:
                         "kind": record["kind"],
                         "site": record["node_id"],
                         "state": record["state"],
+                        "content": redact(record.get("content")),
                     }
                     for record in records
                 ]
                 for name, records in candidates.items()
             },
         }
+        serialized_question = canonical_json(question)
+        if len(serialized_question.encode("utf-8")) > MAX_ADJUDICATION_QUESTION_BYTES:
+            raise ContractViolation(
+                "Run evidence exceeds the bounded Goal-Judge context"
+            )
+        prompt_variables = tuple(agent["prompt"]["variables"])
+        unsupported_variables = sorted(set(prompt_variables) - JUDGE_PROMPT_VARIABLES)
+        if unsupported_variables:
+            raise ContractViolation(
+                "Goal-Judge Prompt declares unsupported variables: "
+                + ", ".join(unsupported_variables)
+            )
+        prompt_sources = {
+            "acceptance_criteria": question["acceptance_criteria"],
+            "run_evidence": question["run_evidence"],
+            "candidate_json": question["acceptance_criteria"],
+            "evidence_json": question["run_evidence"],
+        }
+        prompt_values = {
+            variable: canonical_json(prompt_sources[variable])
+            for variable in prompt_variables
+        }
+        pinned_prompt = render_prompt(
+            agent["prompt"]["template"],
+            declared_variables=prompt_variables,
+            values=prompt_values,
+            maximum_output=MAX_ADJUDICATION_QUESTION_BYTES,
+        )
+        seam_instructions = (
+            "You are operating at the Kyn.ist stop seam. The Run claims it is "
+            "finished; that claim is evidence, not proof. For each acceptance "
+            "criterion decide whether the supplied Run evidence actually shows "
+            "the declared work was performed at a declared site. Ask which "
+            "criteria are UNEVIDENCED and what was claimed but not performed. "
+            "Anchor every criterion you consider satisfied to supplied evidence "
+            "IDs; never invent an ID, never cite evidence from another Run, and "
+            "prefer marking a criterion unevidenced over anchoring it to evidence "
+            "that does not show the declared work. Refusing costs a rerun; wrongly "
+            "admitting lets unfinished work be recorded as finished. Your text and "
+            "anchor nominations are claims only; deterministic runtime resolution "
+            "makes the admission decision."
+        )
         payload = {
             "model": self._effective_model(workspace_id, run_id, agent),
             "instructions": (
-                "You are the pinned Kyn.ist Goal-Judge at the stop seam. The Run "
-                "claims it is finished; that claim is evidence, not proof. For "
-                "each acceptance criterion decide whether the supplied Run "
-                "evidence actually shows the declared work was performed at a "
-                "declared site. Ask which criteria are UNEVIDENCED and what was "
-                "claimed but not performed. Anchor every criterion you consider "
-                "satisfied to supplied evidence IDs; never invent an ID, never "
-                "cite evidence from another Run, and prefer marking a criterion "
-                "unevidenced over anchoring it to evidence that does not show "
-                "the declared work. Refusing costs a rerun; wrongly admitting "
-                "lets unfinished work be recorded as finished."
+                f"{self._agent_instructions(agent)}\n\n"
+                f"Pinned Prompt {agent['prompt']['id']} "
+                f"({agent['prompt']['fingerprint']}):\n{pinned_prompt}\n\n"
+                f"Runtime-owned stop contract:\n{seam_instructions}"
             ),
-            "input": [{"role": "user", "content": canonical_json(question)}],
+            "input": [{"role": "user", "content": serialized_question}],
             "tool_choice": "none",
             "parallel_tool_calls": False,
             "max_output_tokens": min(self.max_output_tokens, 1_400),
@@ -1223,6 +1312,8 @@ class StudioRuntime:
                 "operation": "adjudication",
             },
         }
+        if len(canonical_json(payload).encode("utf-8")) > MAX_ADJUDICATION_REQUEST_BYTES:
+            raise ContractViolation("Goal-Judge request exceeds its bounded context")
         response = self._call_and_record(
             workspace_id, run_id, step_id, agent, payload
         )
@@ -1234,13 +1325,33 @@ class StudioRuntime:
             parsed, dict(self.ADJUDICATION_SCHEMA), "Goal-Judge output"
         )
         claimed: dict[str, tuple[str, ...]] = {}
+        reasons: dict[str, str] = {}
+        marked_unevidenced: dict[str, bool] = {}
         for item in validated["criteria"]:
             # A criterion the judge marked unevidenced contributes no anchors
             # even if it supplied some, so a judge cannot hedge its way to an
             # admission by refusing in prose while anchoring in data.
             anchors = () if item["unevidenced"] else tuple(item["anchors"])
-            claimed[str(item["criterion_id"])] = anchors
-        return claimed
+            criterion_id = str(item["criterion_id"])
+            if criterion_id in claimed:
+                raise ContractViolation(
+                    "Goal-Judge output must address each criterion exactly once"
+                )
+            claimed[criterion_id] = anchors
+            reasons[criterion_id] = str(item["reason"])
+            marked_unevidenced[criterion_id] = bool(item["unevidenced"])
+        declared_ids = {criterion.id for criterion in criteria}
+        if set(claimed) != declared_ids:
+            raise ContractViolation(
+                "Goal-Judge output must address every declared criterion exactly once"
+            )
+        return GoalJudgement(
+            agent_version_id=str(agent["id"]),
+            assessment=str(validated["assessment"]),
+            claimed=MappingProxyType(claimed),
+            reasons=MappingProxyType(reasons),
+            marked_unevidenced=MappingProxyType(marked_unevidenced),
+        )
 
     def _complete_run(
         self,
@@ -1254,7 +1365,7 @@ class StudioRuntime:
         try:
             if flow_version["output_schema"] is not None:
                 validate_json_schema(output, flow_version["output_schema"], "Flow output")
-            adjudication = self._adjudicate_completion(
+            completion = self._adjudicate_completion(
                 workspace_id, run_id, flow_version
             )
         except ContractViolation as error:
@@ -1264,8 +1375,11 @@ class StudioRuntime:
                 error.code,
                 _public_error_message(error),
             )
-        if adjudication is not None:
-            self._record_adjudication(workspace_id, run_id, adjudication)
+        if completion is not None:
+            adjudication, judgement = completion
+            self._record_adjudication(
+                workspace_id, run_id, adjudication, judgement
+            )
             if not adjudication.admitted:
                 return self._fail_run(
                     workspace_id,

@@ -19,7 +19,14 @@ A visitor can create and operate a real automation system:
    bounded interval.
 7. **Runs** expose live node state, attempts, receipts, model calls, approvals,
    effects, hash-linked events, and linked reruns.
-8. **Maintenance** turns a supported failure into owned evidence, a bounded
+8. **Completion contracts** bind observable promises to exact evidence kinds
+   and graph sites, then let an independent pinned Judge nominate anchors that
+   code resolves against Run-owned records.
+9. **Ratification and principles** derive refusal or advisory state from
+   independent failure evidence rather than mutable counters or model prose.
+10. **Comparisons** pin the complete sibling manifest before provider I/O and
+    derive controlled invariance from the manifested Runs.
+11. **Maintenance** turns a supported failure into owned evidence, a bounded
    successor proposal, a human decision, and a linked proof Run.
 
 The seeded `Agent-reviewed launch` graph is an editable use case, not a tour.
@@ -58,6 +65,9 @@ A Flow version contains:
 - bounded attempts, backoff, retryable codes, and error policy per node;
 - one to twelve declared public Flow outcomes and per-node routes selected by
   the exact outcome IDs owned by each capability; and
+- zero to eight acceptance promises, each pinning a `step`, `receipt`,
+  `approval`, or `effect` to one or more capable graph sites, plus an independent
+  immutable Goal-Judge Agent version when any promise is declared; and
 - a complete transitive resource-pin and fingerprint set.
 
 Publication rejects cycles, unreachable nodes, duplicate outcomes, impossible
@@ -100,6 +110,35 @@ Every node attempt produces a Step. Retries remain separate attempts and are
 bounded by the pinned node settings. `completed`, `blocked`, `failed`, and
 `cancelled` are absorbing database states. A rerun is a linked new Run; it never
 reopens or upgrades its parent.
+
+## Goal/stop seam
+
+“Finished” is a claim at this boundary, not a state transition. The independent
+pinned Goal-Judge receives its Agent/Prompt/Skill contract and a bounded,
+redacted view of actual Step, receipt, approval, and effect material. It returns
+one structured assessment, reason, and anchor nomination per declared promise.
+That output is recorded as a non-authoritative model claim.
+
+The serialized evidence question is bounded to 96 KiB before provider I/O. A
+larger Run fails closed at the stop seam instead of depending on a provider's
+context or request-size behavior.
+
+The runtime then narrows every nomination against immutable records: same Run,
+declared evidence kind, declared graph site, and admitted state. It may remove an
+anchor; it may never invent or infer one. If any promise has no surviving anchor,
+the Run records `completion_unevidenced`, retains all work it actually performed,
+and never becomes `completed`. No criteria means no Judge call and no behavior
+change.
+
+## Controlled model comparison
+
+The comparison command validates the entire forecast, prepares every sibling
+Run, and appends one hash-linked manifest naming the expected model × repetition
+× Run-ID set before the first provider request. Derived scoreboards verify the
+manifest, each ledger, identical Flow and input fingerprints, and the model name
+actually returned by the provider. Missing or rewritten evidence makes the
+record unusable. The result states scaffold invariance and measured noise; it is
+never promoted to a model ranking or baseline.
 
 ## OpenAI boundary
 

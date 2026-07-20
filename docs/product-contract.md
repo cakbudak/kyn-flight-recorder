@@ -17,9 +17,13 @@ automation runtime. A visitor can:
 6. inspect authoritative Steps, events, model calls, receipts, approvals, and
    effects;
 7. pause and resume at an immutable Human approval;
-8. rerun terminal work as a linked child; and
-9. maintain any supported blocked Run through evidence → diagnosis → bounded
-   repair → approval → successor → linked proof.
+8. rerun terminal work as a linked child;
+9. declare evidence-bound completion criteria with an independent Goal-Judge;
+10. ratify repeated structural dead ends and distil cross-Flow advisories;
+11. compare one pinned scaffold across models from a pre-I/O sibling manifest;
+    and
+12. maintain any supported blocked Run through evidence → diagnosis → bounded
+    repair → approval → successor → linked proof.
 
 The seeded launch Flow is one editable use case. It is not a prescribed journey.
 
@@ -62,9 +66,10 @@ Skill versions. Its effective Action set is derived from those pins.
 
 An Automation Flow version pins input/output schemas, public outcomes, one start
 node, Action/Agent/Flow nodes, canvas positions, explicit input mappings,
-retry/backoff/error settings, outcome routes, and all transitive resource
-fingerprints. Graphs are bounded, reachable, and acyclic. A Flow node creates a
-linked child Run instead of flattening its evidence into the parent.
+retry/backoff/error settings, outcome routes, optional acceptance criteria, one
+independent Goal-Judge Agent version, and all transitive resource fingerprints.
+Graphs are bounded, reachable, and acyclic. A Flow node creates a linked child
+Run instead of flattening its evidence into the parent.
 
 ## Run contract
 
@@ -81,6 +86,10 @@ linked child Run instead of flattening its evidence into the parent.
   successor is explicitly selected by a maintenance operation.
 - Subflow execution creates a linked child Run with a parent Step and shared
   correlation ID; a terminal child outcome resumes or fails the waiting parent.
+- A declared completion contract is checked at the terminal seam. The Judge's
+  semantic assessment is retained as a non-authoritative claim; only anchors
+  resolved against Run-owned records of the declared kind, site, and state may
+  carry a criterion. One unevidenced promise prevents `completed`.
 - Events are ordered and hash-linked per Run.
 
 ## OpenAI credential contract
@@ -122,6 +131,11 @@ linked child Run instead of flattening its evidence into the parent.
 - Idempotency keys cannot duplicate a Run command, receipt, or sandbox effect.
 - Workspace IDs never bypass opaque-cookie ownership checks.
 - Secret-like payload fields are rejected or redacted before evidence persistence.
+- A Goal-Judge cannot be an Agent version cast by the Flow it judges, including
+  transitively through subflows.
+- A model comparison pins its complete expected sibling set before provider I/O;
+  missing manifests, missing siblings, model aliases, or unverified ledgers make
+  it unusable.
 
 ## Integrated maintenance contract
 
@@ -150,6 +164,9 @@ The model cannot invent evidence, apply its proposal, or rewrite the failed Run.
 | trigger | webhook and interval bindings pin a definition and create real Runs |
 | maintain | Run diagnosis is evidence-owned and repair is bounded/fenced |
 | rerun | Child is linked, parent remains unchanged, idempotency prevents duplicates |
+| stop seam | Browser authors promises/Judge; unsupported evidence refuses completion |
+| ratify | Three independent structural failures refuse the unchanged Flow version before Run creation |
+| compare | Pre-I/O manifest, identical Flow/input, returned-model and ledger checks hold |
 | safety | BYOK, same-origin, isolation, bounds, no arbitrary tools or secret persistence |
 | database | Flat tables, immutability triggers, legal transitions, no private ontology |
 | browser | Desktop/mobile/reduced-motion/accessibility/error/network assertions pass |

@@ -307,6 +307,8 @@ function DeadEndCallout({ run, onSelectRun }) {
 function CompletionAdjudication({ run, adjudication }) {
   const criteria = adjudication.criteria ?? [];
   const unevidenced = adjudication.unevidenced ?? [];
+  const judgeClaim = adjudication.judge_claim ?? null;
+  const claimsByCriterion = new Map((judgeClaim?.criteria ?? []).map((claim) => [claim.criterion_id, claim]));
   const discarded = criteria.reduce((total, criterion) => total + (criterion.discarded?.length ?? 0), 0);
   const tone = adjudication.admitted ? "success" : "danger";
   return <section className={`completion-callout tone-${tone}`} aria-labelledby="completion-adjudication-title">
@@ -321,12 +323,17 @@ function CompletionAdjudication({ run, adjudication }) {
       </div>
       <Badge tone={tone} dot>{adjudication.admitted ? "Admitted" : "Refused"}</Badge>
     </header>
+    {judgeClaim ? <aside className="judge-claim">
+      <header><Badge tone="ai" dot>Model claim · non-authoritative</Badge><code>{shortId(judgeClaim.agent_version_id, 14)}</code></header>
+      <p>{judgeClaim.assessment}</p>
+      <small>The model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.</small>
+    </aside> : null}
     {discarded ? <p className="completion-lead">Every anchor below was cited by the judge itself. An anchor is a claim and never authority: only the ones that survived resolution against this Run's own records carry a criterion, and the runtime discarded {discarded === 1 ? "the one" : `${discarded} of them`} for the named reason.</p> : null}
-    <ol className="criterion-list">{criteria.map((criterion) => <Criterion key={criterion.criterion_id} criterion={criterion} />)}</ol>
+    <ol className="criterion-list">{criteria.map((criterion) => <Criterion key={criterion.criterion_id} criterion={criterion} judgeClaim={claimsByCriterion.get(criterion.criterion_id)} />)}</ol>
   </section>;
 }
 
-function Criterion({ criterion }) {
+function Criterion({ criterion, judgeClaim }) {
   const surviving = criterion.surviving ?? [];
   const discarded = criterion.discarded ?? [];
   return <li className={criterion.holds ? "is-held" : "is-unevidenced"}>
@@ -337,6 +344,7 @@ function Criterion({ criterion }) {
       ["Anchors that survived", String(surviving.length)],
       ["Anchors discarded", String(discarded.length)]
     ]} />
+    {judgeClaim ? <div className="criterion-judge-claim"><span>Judge reasoning · claim only</span><p>{judgeClaim.reason}</p></div> : null}
     {surviving.length
       ? <AnchorRoster label={`Surviving anchors · ${surviving.length}`} ids={surviving} />
       : <p className="criterion-empty">No anchor survived resolution, so this criterion carries nothing.</p>}

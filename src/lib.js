@@ -219,6 +219,15 @@ export function slugify(value) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
 }
 
+// Editing a slug is not the same operation as finalizing one. In particular,
+// trimming a trailing hyphen on every keypress turns `risk-review` into
+// `riskreview`: the separator disappears before the next letter arrives. Keep
+// a syntactically safe partial value while the field owns focus; callers use
+// `slugify` on blur or submission to close the identifier.
+export function slugDraft(value) {
+  return value.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-{2,}/g, "-").replace(/^-+/g, "").slice(0, 64);
+}
+
 export function exampleForSchema(schema, name = "value") {
   if (!schema || typeof schema !== "object") return null;
   if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];

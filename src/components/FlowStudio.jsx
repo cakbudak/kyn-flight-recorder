@@ -28,6 +28,7 @@ import {
   nodeOutcomes,
   parseJson,
   resourceForNode,
+  slugDraft,
   slugify,
   titleCase,
   uniqueNodeId,
@@ -51,6 +52,16 @@ const EDGE_DEFAULTS = {
   markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
   style: { strokeWidth: 1.8 }
 };
+const MAX_ACCEPTANCE_CRITERIA = 8;
+const JUDGE_PROMPT_VARIABLES = new Set([
+  "acceptance_criteria", "run_evidence", "candidate_json", "evidence_json"
+]);
+const EVIDENCE_KINDS = [
+  { id: "step", label: "Completed Step", hint: "The node completed rather than merely starting." },
+  { id: "receipt", label: "Successful Action receipt", hint: "A pinned Action invocation succeeded." },
+  { id: "effect", label: "Committed effect", hint: "A writing Action minted an idempotent effect." },
+  { id: "approval", label: "Human approval", hint: "A human explicitly approved at this node." }
+];
 
 // Graph chrome is set in JSX rather than CSS, so it reads the same tokens
 // the stylesheet uses instead of carrying a second colour list.
@@ -83,6 +94,16 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
   const [canvasNodes, setCanvasNodes, onNodesChangeBase] = useNodesState([]);
   const [canvasEdges, setCanvasEdges, onEdgesChangeBase] = useEdgesState([]);
 
+  const fitGraph = useCallback((padding, duration) => fitView({
+    padding,
+    duration,
+    // A phone cannot make a multi-node graph readable and show every node at
+    // once. Prefer legible nodes with deliberate pan/zoom over a deceptive
+    // thumbnail that technically fits but cannot be inspected or connected.
+    minZoom: window.matchMedia("(max-width: 760px)").matches ? 0.72 : 0.18,
+    maxZoom: 1.8
+  }), [fitView]);
+
   useEffect(() => {
     if (selectedFlowId === null) return;
     if (flows.some((flow) => flow.id === selectedFlowId)) return;
@@ -98,9 +119,9 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
   }, [snapshot, draft.nodes, draft.routes, draft.start_node_id, setCanvasEdges, setCanvasNodes]);
 
   useEffect(() => {
-    const timer = setTimeout(() => fitView({ padding: 0.2, duration: 220 }), 180);
+    const timer = setTimeout(() => fitGraph(0.2, 220), 180);
     return () => clearTimeout(timer);
-  }, [fitView, inspectorOpen, paletteOpen]);
+  }, [fitGraph, inspectorOpen, paletteOpen]);
 
   const replaceDraft = useCallback((next, { record = true } = {}) => {
     setDraft((current) => {
@@ -161,8 +182,8 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
     setDirty(false);
     setAdvisory(null);
     history.current = { past: [], future: [] };
-    requestAnimationFrame(() => fitView({ padding: 0.22, duration: 280 }));
-  }, [fitView, flows]);
+    requestAnimationFrame(() => fitGraph(0.22, 280));
+  }, [fitGraph, flows]);
 
   const createNew = useCallback(() => {
     setSelectedFlowId(null);
@@ -249,7 +270,11 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
         ...current,
         nodes: current.nodes.filter((node) => !removed.includes(node.id)),
         routes: current.routes.filter((route) => !removed.includes(route.from) && !removed.includes(route.to)),
-        start_node_id: removed.includes(current.start_node_id) ? current.nodes.find((node) => !removed.includes(node.id))?.id ?? "" : current.start_node_id
+        start_node_id: removed.includes(current.start_node_id) ? current.nodes.find((node) => !removed.includes(node.id))?.id ?? "" : current.start_node_id,
+        acceptance_criteria: current.acceptance_criteria.map((criterion) => ({
+          ...criterion,
+          node_ids: criterion.node_ids.filter((nodeId) => !removed.includes(nodeId))
+        }))
       }));
       setSelectedNodeId(null);
     }
@@ -272,19 +297,35 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
 
   const autoLayout = useCallback(() => {
     replaceDraft((current) => ({ ...current, nodes: layoutGraph(current.nodes, current.routes) }));
-    requestAnimationFrame(() => fitView({ padding: 0.2, duration: 320 }));
-  }, [fitView, replaceDraft]);
+    requestAnimationFrame(() => fitGraph(0.2, 320));
+  }, [fitGraph, replaceDraft]);
 
   const save = useCallback(async () => {
     try {
       if (!draft.nodes.length) throw new Error("Add at least one Action, Agent, or Flow node before publishing.");
       if (!draft.start_node_id) throw new Error("Choose a start node before publishing.");
+      if (draft.acceptance_criteria.some((criterion) => !criterion.id || !criterion.statement.trim())) throw new Error("Every completion criterion needs an ID and an observable promise.");
+      if (new Set(draft.acceptance_criteria.map((criterion) => criterion.id)).size !== draft.acceptance_criteria.length) throw new Error("Completion criterion IDs must be unique.");
+      if (draft.acceptance_criteria.some((criterion) => !criterion.node_ids.length)) throw new Error("Every completion criterion needs at least one evidence site.");
+      if (draft.acceptance_criteria.length && !draft.judge_agent_version_id) throw new Error("Choose an independent Goal-Judge before publishing a completion contract.");
+      if (draft.acceptance_criteria.some((criterion) => new Set(criterion.node_ids).size !== criterion.node_ids.length)) throw new Error("A completion criterion cannot name the same evidence site twice.");
+      if (draft.acceptance_criteria.some((criterion) => criterion.node_ids.some((nodeId) => {
+        const node = draft.nodes.find((candidate) => candidate.id === nodeId);
+        return !node || !nodeCanMintEvidence(snapshot, node, criterion.evidence_kind);
+      }))) throw new Error("Every completion evidence site must still be capable of minting its declared kind.");
+      if (draft.acceptance_criteria.length) {
+        const selectedJudge = judgeVersionOptions(snapshot, castAgentVersions(snapshot, draft.nodes))
+          .find((judge) => judge.id === draft.judge_agent_version_id);
+        if (!selectedJudge?.compatible || !selectedJudge.independent) throw new Error("Choose a compatible Goal-Judge that is independent of every Agent cast by this Flow.");
+      }
       const body = {
         name: draft.name,
         description: draft.description,
         input_schema: parseJson(draft.input_schema_text, "Flow input schema"),
         output_schema: parseJson(draft.output_schema_text, "Flow output schema"),
         outcomes: draft.outcomes,
+        acceptance_criteria: draft.acceptance_criteria,
+        judge_agent_version_id: draft.acceptance_criteria.length ? draft.judge_agent_version_id || null : null,
         start_node_id: draft.start_node_id,
         nodes: draft.nodes,
         routes: draft.routes
@@ -308,7 +349,7 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
     } catch (error) {
       await mutate(() => Promise.reject(error), { refreshAfter: false, success: "" });
     }
-  }, [draft, mutate]);
+  }, [draft, mutate, snapshot]);
 
   const selectedNode = draft.nodes.find((node) => node.id === selectedNodeId) ?? null;
 
@@ -377,7 +418,10 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
               connectionLineStyle={{ stroke: graph["accent-text"], strokeWidth: 2 }}
               deleteKeyCode={["Backspace", "Delete"]}
               fitView
-              fitViewOptions={{ padding: 0.22 }}
+              fitViewOptions={{
+                padding: 0.22,
+                minZoom: window.matchMedia("(max-width: 760px)").matches ? 0.72 : 0.18
+              }}
               minZoom={0.18}
               maxZoom={1.8}
               snapToGrid
@@ -479,6 +523,8 @@ function flowDraft(flow) {
       input_schema_text: JSON.stringify({ type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false }, null, 2),
       output_schema_text: JSON.stringify(EMPTY_SCHEMA, null, 2),
       outcomes: clone(SUCCESS_ERROR),
+      acceptance_criteria: [],
+      judge_agent_version_id: null,
       start_node_id: "",
       nodes: [],
       routes: []
@@ -508,6 +554,8 @@ function flowDraft(flow) {
     input_schema_text: JSON.stringify(flow.version.input_schema, null, 2),
     output_schema_text: JSON.stringify(flow.version.output_schema ?? EMPTY_SCHEMA, null, 2),
     outcomes: clone(flow.version.outcomes ?? SUCCESS_ERROR),
+    acceptance_criteria: clone(flow.version.acceptance_criteria ?? []),
+    judge_agent_version_id: flow.version.judge_agent_version_id ?? null,
     start_node_id: flow.version.start_node_id,
     nodes: normalizedNodes,
     routes: clone(flow.version.routes)
@@ -681,7 +729,7 @@ function FlowInspector({ draft, snapshot, replaceDraft }) {
         <section className="inspector-section">
           <h3>Identity</h3>
           <Field label="Name"><input value={draft.name} onChange={(event) => replaceDraft((current) => ({ ...current, name: event.target.value, slug: current.isNew ? slugify(event.target.value) : current.slug }))} /></Field>
-          <Field label="Slug" hint={draft.isNew ? "Stable API identifier" : "Slug is immutable after v1."}><input value={draft.slug} disabled={!draft.isNew} onChange={(event) => replaceDraft((current) => ({ ...current, slug: slugify(event.target.value) }))} /></Field>
+          <Field label="Slug" hint={draft.isNew ? "Stable API identifier" : "Slug is immutable after v1."}><input value={draft.slug} disabled={!draft.isNew} onChange={(event) => replaceDraft((current) => ({ ...current, slug: slugDraft(event.target.value) }))} onBlur={(event) => replaceDraft((current) => ({ ...current, slug: slugify(event.target.value) }))} /></Field>
           <Field label="Purpose"><textarea rows="3" value={draft.description} onChange={(event) => replaceDraft((current) => ({ ...current, description: event.target.value }))} /></Field>
         </section>
         <section className="inspector-section">
@@ -689,6 +737,7 @@ function FlowInspector({ draft, snapshot, replaceDraft }) {
           <p className="section-help">A terminal node outcome can become the outcome of this Flow when its ID matches.</p>
           <OutcomeEditor outcomes={draft.outcomes} onChange={(outcomes) => replaceDraft((current) => ({ ...current, outcomes }))} />
         </section>
+        <CompletionContractEditor draft={draft} snapshot={snapshot} replaceDraft={replaceDraft} />
         <section className="inspector-section schema-section">
           <h3>Typed boundary</h3>
           <JsonField label="Flow input schema" value={draft.input_schema_text} onChange={(value) => replaceDraft((current) => ({ ...current, input_schema_text: value }))} rows={9} hint="Every Run input is validated before it is queued." />
@@ -698,6 +747,169 @@ function FlowInspector({ draft, snapshot, replaceDraft }) {
       </div>
     </>
   );
+}
+
+function CompletionContractEditor({ draft, snapshot, replaceDraft }) {
+  const castAgents = useMemo(() => castAgentVersions(snapshot, draft.nodes), [draft.nodes, snapshot]);
+  const judges = useMemo(() => judgeVersionOptions(snapshot, castAgents), [castAgents, snapshot]);
+  const selectableJudges = judges.filter((judge) => judge.compatible && judge.independent);
+  const selectedJudge = judges.find((judge) => judge.id === draft.judge_agent_version_id);
+
+  const updateCriterion = (criterionIndex, updater) => replaceDraft((current) => ({
+    ...current,
+    acceptance_criteria: current.acceptance_criteria.map((criterion, index) =>
+      index === criterionIndex ? updater(criterion, current) : criterion
+    )
+  }));
+
+  const addCriterion = () => replaceDraft((current) => {
+    if (current.acceptance_criteria.length >= MAX_ACCEPTANCE_CRITERIA) return current;
+    const id = uniqueCriterionId(current.acceptance_criteria);
+    const firstNode = current.nodes[0]?.id;
+    return {
+      ...current,
+      judge_agent_version_id: current.judge_agent_version_id ?? selectableJudges[0]?.id ?? null,
+      acceptance_criteria: [...current.acceptance_criteria, {
+        id,
+        statement: "The declared work completed at an explicitly named site.",
+        evidence_kind: "step",
+        node_ids: firstNode ? [firstNode] : []
+      }]
+    };
+  });
+
+  const removeCriterion = (criterionIndex) => replaceDraft((current) => {
+    const criteria = current.acceptance_criteria.filter((_, index) => index !== criterionIndex);
+    return {
+      ...current,
+      acceptance_criteria: criteria,
+      judge_agent_version_id: criteria.length ? current.judge_agent_version_id : null
+    };
+  });
+
+  return <section className="inspector-section completion-contract-editor">
+    <h3>Completion contract <Badge tone={draft.acceptance_criteria.length ? "ai" : "neutral"}>{draft.acceptance_criteria.length}/{MAX_ACCEPTANCE_CRITERIA}</Badge></h3>
+    <div className="stop-seam-note">
+      <Icon name="lock" size={16} />
+      <p><strong>“Finished” is a claim, not a terminal state.</strong><span>A pinned Goal-Judge must nominate runtime evidence for every promise. Code independently resolves the anchors before this Flow may become completed.</span></p>
+    </div>
+    {draft.acceptance_criteria.length ? <Field
+      label="Independent Goal-Judge"
+      required
+      hint="The exact Agent, Prompt, Skills, and model version are pinned. Agents cast by this graph cannot judge it."
+    >
+      <select value={draft.judge_agent_version_id ?? ""} onChange={(event) => replaceDraft((current) => ({ ...current, judge_agent_version_id: event.target.value || null }))}>
+        <option value="">Choose a Judge Agent version…</option>
+        {judges.map((judge) => <option key={judge.id} value={judge.id} disabled={!judge.compatible || !judge.independent}>
+          {judge.name} · v{judge.version} · {judge.model}{!judge.compatible ? " · incompatible Prompt" : !judge.independent ? " · cast by this Flow" : ""}
+        </option>)}
+      </select>
+    </Field> : null}
+    {draft.acceptance_criteria.length && draft.judge_agent_version_id && (!selectedJudge?.compatible || !selectedJudge?.independent)
+      ? <p className="field-error">The selected Judge is no longer eligible: its Prompt is incompatible or this graph now casts the same Agent version.</p>
+      : null}
+    <div className="criterion-editor-list">
+      {draft.acceptance_criteria.map((criterion, index) => {
+        const eligibleNodes = draft.nodes.filter((node) => nodeCanMintEvidence(snapshot, node, criterion.evidence_kind));
+        const missingSites = !criterion.node_ids.length;
+        const duplicateId = draft.acceptance_criteria.some((candidate, candidateIndex) => candidateIndex !== index && candidate.id === criterion.id);
+        return <article className={`criterion-editor ${missingSites || duplicateId ? "is-invalid" : ""}`} key={`criterion-editor-${index}`}>
+          <header><span>{index + 1}</span><strong>{criterion.statement || "Untitled completion promise"}</strong><IconButton icon="trash" label={`Remove criterion ${criterion.id}`} onClick={() => removeCriterion(index)} /></header>
+          <Field label="Criterion ID" required hint="Stable identifier written into every adjudication event.">
+            <input value={criterion.id} aria-invalid={duplicateId || !criterion.id} onChange={(event) => updateCriterion(index, (current) => ({ ...current, id: slugDraft(event.target.value) }))} onBlur={(event) => updateCriterion(index, (current) => ({ ...current, id: slugify(event.target.value) }))} />
+          </Field>
+          {duplicateId ? <p className="field-error">Criterion IDs must be unique.</p> : null}
+          <Field label="Promise" required hint="State the observable work this Flow must actually have performed.">
+            <textarea rows="3" value={criterion.statement} onChange={(event) => updateCriterion(index, (current) => ({ ...current, statement: event.target.value }))} />
+          </Field>
+          <Field label="Admissible evidence" required hint={EVIDENCE_KINDS.find((kind) => kind.id === criterion.evidence_kind)?.hint}>
+            <select value={criterion.evidence_kind} onChange={(event) => updateCriterion(index, (current, whole) => {
+              const evidenceKind = event.target.value;
+              const eligible = whole.nodes.filter((node) => nodeCanMintEvidence(snapshot, node, evidenceKind));
+              const retained = current.node_ids.filter((nodeId) => eligible.some((node) => node.id === nodeId));
+              return { ...current, evidence_kind: evidenceKind, node_ids: retained.length ? retained : eligible[0] ? [eligible[0].id] : [] };
+            })}>
+              {EVIDENCE_KINDS.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}
+            </select>
+          </Field>
+          <fieldset className="evidence-sites">
+            <legend>Evidence sites <b aria-hidden="true">*</b></legend>
+            <p>Any selected site may carry this promise; every selected site must be capable of minting the chosen evidence.</p>
+            {eligibleNodes.map((node) => <label key={node.id}>
+              <input type="checkbox" checked={criterion.node_ids.includes(node.id)} onChange={(event) => updateCriterion(index, (current) => ({
+                ...current,
+                node_ids: event.target.checked
+                  ? [...current.node_ids, node.id]
+                  : current.node_ids.filter((nodeId) => nodeId !== node.id)
+              }))} />
+              <span><strong>{graphNodeLabel(snapshot, node)}</strong><small>{node.id}</small></span>
+            </label>)}
+            {!eligibleNodes.length ? <p className="field-error">No node in this draft can mint {criterion.evidence_kind} evidence.</p> : null}
+            {missingSites && eligibleNodes.length ? <p className="field-error">Choose at least one evidence site.</p> : null}
+          </fieldset>
+        </article>;
+      })}
+    </div>
+    <Button tone="quiet" icon="plus" onClick={addCriterion} disabled={!draft.nodes.length || draft.acceptance_criteria.length >= MAX_ACCEPTANCE_CRITERIA}>Add completion criterion</Button>
+    {!draft.acceptance_criteria.length ? <p className="section-help">Optional. Without criteria the Flow completes normally and performs zero Goal-Judge calls.</p> : null}
+    {draft.acceptance_criteria.length && !selectableJudges.length ? <p className="field-error">Create an independent Agent whose Prompt uses only acceptance/evidence variables before publishing this contract.</p> : null}
+  </section>;
+}
+
+function uniqueCriterionId(criteria) {
+  const used = new Set(criteria.map((criterion) => criterion.id));
+  let index = criteria.length + 1;
+  while (used.has(`completion-${index}`)) index += 1;
+  return `completion-${index}`;
+}
+
+function judgeVersionOptions(snapshot, castAgents) {
+  const prompts = new Map(snapshot.prompts.flatMap((prompt) => prompt.versions).map((version) => [version.id, version]));
+  return snapshot.agents.flatMap((agent) => agent.versions.map((version) => {
+    const prompt = prompts.get(version.prompt_version_id);
+    const compatible = Boolean(prompt) && (prompt.variables ?? []).every((variable) => JUDGE_PROMPT_VARIABLES.has(variable));
+    return {
+      id: version.id,
+      name: agent.name,
+      slug: agent.slug,
+      version: version.version,
+      model: version.model,
+      compatible,
+      independent: !castAgents.has(version.id)
+    };
+  })).sort((left, right) => {
+    const leftDedicated = left.slug === "completion-goal-judge" ? 0 : 1;
+    const rightDedicated = right.slug === "completion-goal-judge" ? 0 : 1;
+    return leftDedicated - rightDedicated || left.name.localeCompare(right.name) || right.version - left.version;
+  });
+}
+
+function castAgentVersions(snapshot, nodes) {
+  const cast = new Set();
+  const visitedFlows = new Set();
+  const visit = (node) => {
+    const version = versionForNode(snapshot, node);
+    if (!version) return;
+    if (node.type === "agent") cast.add(node.version_id);
+    if (node.type === "action" && version.agent_version_id) cast.add(version.agent_version_id);
+    if (node.type === "flow" && !visitedFlows.has(version.id)) {
+      visitedFlows.add(version.id);
+      if (version.judge_agent_version_id) cast.add(version.judge_agent_version_id);
+      (version.nodes ?? []).forEach(visit);
+    }
+  };
+  nodes.forEach(visit);
+  return cast;
+}
+
+function nodeCanMintEvidence(snapshot, node, evidenceKind) {
+  if (evidenceKind === "step") return true;
+  if (node.type !== "action") return false;
+  const version = versionForNode(snapshot, node);
+  if (!version) return false;
+  if (evidenceKind === "receipt") return true;
+  if (evidenceKind === "approval") return version.kind === "approval";
+  return ["data_store", "sandbox"].includes(version.kind) && version.config?.write_enabled !== false;
 }
 
 function NodeInspector({ node, draft, snapshot, replaceDraft, onRename, onClose, onRemove }) {
@@ -878,7 +1090,11 @@ function renameNode(oldId, nextId, replaceDraft) {
         id: node.id === oldId ? nextId : node.id,
         input_mapping: Object.fromEntries(Object.entries(node.input_mapping).map(([key, mapping]) => [key, mapping.source === "step" && mapping.node_id === oldId ? { ...mapping, node_id: nextId } : mapping]))
       })),
-      routes: current.routes.map((route) => ({ ...route, from: route.from === oldId ? nextId : route.from, to: route.to === oldId ? nextId : route.to }))
+      routes: current.routes.map((route) => ({ ...route, from: route.from === oldId ? nextId : route.from, to: route.to === oldId ? nextId : route.to })),
+      acceptance_criteria: current.acceptance_criteria.map((criterion) => ({
+        ...criterion,
+        node_ids: criterion.node_ids.map((nodeId) => nodeId === oldId ? nextId : nodeId)
+      }))
     };
   });
 }
@@ -886,7 +1102,16 @@ function renameNode(oldId, nextId, replaceDraft) {
 function removeNode(nodeId, replaceDraft, setSelectedNodeId) {
   replaceDraft((current) => {
     const nodes = current.nodes.filter((node) => node.id !== nodeId);
-    return { ...current, nodes, routes: current.routes.filter((route) => route.from !== nodeId && route.to !== nodeId), start_node_id: current.start_node_id === nodeId ? nodes[0]?.id ?? "" : current.start_node_id };
+    return {
+      ...current,
+      nodes,
+      routes: current.routes.filter((route) => route.from !== nodeId && route.to !== nodeId),
+      start_node_id: current.start_node_id === nodeId ? nodes[0]?.id ?? "" : current.start_node_id,
+      acceptance_criteria: current.acceptance_criteria.map((criterion) => ({
+        ...criterion,
+        node_ids: criterion.node_ids.filter((site) => site !== nodeId)
+      }))
+    };
   });
   setSelectedNodeId(null);
 }

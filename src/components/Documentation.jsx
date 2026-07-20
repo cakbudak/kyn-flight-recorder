@@ -9,6 +9,9 @@ const SECTIONS = [
   ["agent-stack", "Agents and AI"],
   ["subflows", "Reusable Flows"],
   ["runs", "Run operations"],
+  ["completion", "Completion truth"],
+  ["ratification", "Learning from failure"],
+  ["comparisons", "Switch the brain"],
   ["maintenance", "Maintenance loop"],
   ["credentials", "Credentials"],
   ["contracts", "Runtime limits"],
@@ -93,24 +96,49 @@ export default function Documentation({ setView }) {
             <Callout tone="ai" title="Human gates are state, not UI">An approval Action moves the Step and Run into <code>waiting_approval</code>. The decision stores actor and reason, then either resumes the same pinned graph or terminates it as rejected. Refreshing or closing the page does not bypass the gate.</Callout>
           </DocSection>
 
-          <DocSection id="maintenance" number="07" kicker="Forward recovery" title="Diagnose, approve a successor, then prove it">
+          <DocSection id="completion" number="07" kicker="Goal / stop seam" title="“Finished” is a claim. Evidence decides whether it becomes true.">
+            <p>In the Flow inspector, define up to eight observable acceptance promises. Each promise selects one admitted evidence kind—completed Step, successful Action receipt, Human approval, or committed effect—and one or more graph sites capable of minting it. The Flow version also pins an independent Goal-Judge Agent, including its exact model, Prompt, and Skills.</p>
+            <div className="doc-contract-row"><article><strong>Declare</strong><p>Name the work that must actually have happened, not a sentiment or score.</p></article><article><strong>Nominate</strong><p>The Judge reads bounded redacted Run material and nominates evidence IDs per promise.</p></article><article><strong>Resolve</strong><p>Code checks same Run, declared kind, declared site, and admitted state for every ID.</p></article><article><strong>Stop</strong><p>One promise without a surviving anchor records <code>completion_unevidenced</code>; the Run never becomes completed.</p></article></div>
+            <Callout tone="ai" title="The Judge is visible and non-authoritative">Its assessment and per-promise reasons remain in the hash-linked ledger as a model claim. They explain the verdict; they cannot mint evidence, borrow another Run's record, turn a failed receipt into success, or cast the Agent that performed the judged work.</Callout>
+            <Code title="Pinned acceptance promise">{`{
+  "id": "record-in-ledger",
+  "statement": "The submitted record was written.",
+  "evidence_kind": "effect",
+  "node_ids": ["publish-to-ledger"]
+}`}</Code>
+          </DocSection>
+
+          <DocSection id="ratification" number="08" kicker="Evidence flywheel" title="The runtime remembers what did not work">
+            <p>A structural failure mints append-only dead-end evidence for the exact pinned Flow version, node, fault class, and normalized detail. State is derived by counting distinct citing Runs—never by incrementing a mutable counter and never by asking a model.</p>
+            <div className="doc-sequence"><span>1 Run · proposed</span><i>→</i><span>2 Runs · confirmed</span><i>→</i><span>3 Runs · canonical</span><i>→</i><span>next Run refused pre-creation</span></div>
+            <p>The refusal cites the Runs that proved the dead end. It creates no Run row, Step, event, or effect. Publishing a repaired successor changes the immutable Flow fingerprint and clears the brake: only the unchanged path is refused.</p>
+            <Callout tone="warning" title="Warn early, refuse late">Three different Flows failing the same declared predicate distil a workspace principle. A principle advises during authoring but never blocks publication or execution. Only the exact canonical dead end has veto power.</Callout>
+          </DocSection>
+
+          <DocSection id="comparisons" number="09" kicker="Model-agnostic runtime" title="Switch the brain without moving the scaffold">
+            <p>A controlled sweep prepares every sibling Run and hash-ledgers the complete expected model × repetition × Run-ID manifest <strong>before provider I/O</strong>. Every sibling receives the same input fingerprint and pins one byte-identical Flow version, including every transitive Action, Agent, Prompt, Skill, route, schema, and Goal-Judge.</p>
+            <div className="doc-two-column"><div><h3>Verified controls</h3><ul><li>Pre-I/O sibling manifest and Run IDs</li><li>Flow version and fingerprint</li><li>Recomputed input fingerprint</li><li>Requested model equals provider-returned model</li><li>Every sibling event ledger verifies</li></ul></div><div><h3>Never overclaimed</h3><ul><li>Sampling controls this surface cannot set</li><li>A ranking or universal model-quality claim</li><li>A baseline from a deliberately model-varying run</li><li>Token or latency differences below measured noise</li><li>Invariance when a model disagrees with itself</li></ul></div></div>
+            <Callout tone="success" title="A refusal is a result">If the provider silently aliases a requested model, a sibling is missing, or any manifest/ledger check fails, the comparison is marked unusable above every number. A smaller experiment can never masquerade as the complete one requested.</Callout>
+          </DocSection>
+
+          <DocSection id="maintenance" number="10" kicker="Forward recovery" title="Diagnose, approve a successor, then prove it">
             <p>The maintenance loop is an included platform capability, not the only demo. A blocked or failed Run remains terminal. Recovery proceeds through explicit new artifacts and linked work:</p>
             <div className="maintenance-doc-flow"><article><span>01</span><strong>Diagnose</strong><p>Code owns the causal candidate. A diagnostician may explain it only from cited event IDs belonging to the Run.</p></article><i>→</i><article><span>02</span><strong>Propose</strong><p>A repair policy constructs an allowlisted patch, expected revisions, and a tamper-evident proposal hash.</p></article><i>→</i><article><span>03</span><strong>Approve</strong><p>A human confirms the exact hash, actor, reason, acknowledgement, Action version, and Flow revision fences.</p></article><i>→</i><article><span>04</span><strong>Prove</strong><p>The runtime publishes successors and executes a linked proof Run. Parent history and effects remain unchanged.</p></article></div>
           </DocSection>
 
-          <DocSection id="credentials" number="08" kicker="BYOK security" title="Your OpenAI key lives only in this browser tab">
+          <DocSection id="credentials" number="11" kicker="BYOK security" title="Your OpenAI key lives only in this browser tab">
             <p>Settings stores the key in <code>sessionStorage</code>. It is sent only in the <code>X-OpenAI-API-Key</code> header of same-origin operations that may need a model. The server constructs an official SDK client for that bounded operation. The key is never written to SQLite, an event, a receipt, a log, a response, or the repository, and disappears when the tab session ends or you clear it.</p>
             <Callout tone="warning" title="Use a restricted, temporary key—not a production credential">OpenAI recommends keeping standard API keys out of browser code. This anonymous Build Week lab uses visitor-requested session BYOK, so anyone with access to the tab can invoke its bounded model surface. Clear the key before sharing or leaving the tab. <a href="https://developers.openai.com/api/reference/overview#authentication" target="_blank" rel="noreferrer">OpenAI authentication guidance</a>.</Callout>
           </DocSection>
 
-          <DocSection id="contracts" number="09" kicker="Bounded by design" title="Runtime and graph limits">
-            <div className="limit-grid"><Limit value="64" label="nodes per Flow" /><Limit value="192" label="routes per Flow" /><Limit value="12" label="outcomes per node" /><Limit value="4" label="nested Flow levels" /><Limit value="200" label="expanded nodes" /><Limit value="3" label="attempts per node" /><Limit value="4" label="AI tool calls" /><Limit value="256 KiB" label="API body" /></div>
+          <DocSection id="contracts" number="12" kicker="Bounded by design" title="Runtime and graph limits">
+            <div className="limit-grid"><Limit value="64" label="nodes per Flow" /><Limit value="192" label="routes per Flow" /><Limit value="12" label="outcomes per node" /><Limit value="8" label="acceptance promises" /><Limit value="96 KiB" label="Judge evidence" /><Limit value="4" label="nested Flow levels" /><Limit value="200" label="expanded nodes" /><Limit value="3" label="attempts per node" /><Limit value="4" label="AI tool calls" /><Limit value="6" label="models per sweep" /><Limit value="5" label="repetitions per model" /><Limit value="256 KiB" label="API body" /></div>
             <p>Flows are directed acyclic graphs. Every node must be reachable from the start. Step mappings may read only reachable predecessors. Coordinates are bounded. Provider I/O happens outside SQLite write transactions. Terminal Run states are absorbing. Mutations use optimistic revision or version fences.</p>
           </DocSection>
 
-          <DocSection id="boundary" number="10" kicker="What this release is" title="A standalone projection—not Kyn’s private architecture">
+          <DocSection id="boundary" number="13" kicker="What this release is" title="A standalone projection—not Kyn’s private architecture">
             <p>This repository deliberately excludes Ainou, CE, Appiyon’s Parts/Entities, Bricks/Packs/Frames, internal graph storage, private Agents, and Mekyn. Its SQLite schema is a simple product-facing set of tables for definitions, immutable versions, Runs, evidence, approvals, and effects. It does not reproduce the ontology or implementation behind the larger Kyn system.</p>
-            <div className="boundary-compare"><div><Badge tone="success">Included and real</Badge><ul><li>Versioned Actions, Prompts, Skills, Agents, Flows</li><li>Official OpenAI SDK transport and browser BYOK</li><li>Full visual graph editor and reusable Flow nodes</li><li>Durable execution, evidence, approval, repair and proof</li><li>Bounded webhook and schedule activation</li></ul></div><div><Badge tone="neutral">Deliberately excluded</Badge><ul><li>Ainou and private multi-layer orchestration</li><li>Parts/Entities and Bricks/Packs/Frames</li><li>CE training and token-model internals</li><li>Production connectors or arbitrary code/network authority</li><li>Claims that the sandbox is a production integration</li></ul></div></div>
+            <div className="boundary-compare"><div><Badge tone="success">Included and real</Badge><ul><li>Versioned Actions, Prompts, Skills, Agents, Flows</li><li>Official OpenAI SDK transport and browser BYOK</li><li>Full visual graph editor and reusable Flow nodes</li><li>Evidence-bound Goal-Judge completion contracts</li><li>Dead-end ratification, principles, and controlled model sweeps</li><li>Durable execution, approval, repair, and linked proof</li><li>Bounded webhook and schedule activation</li></ul></div><div><Badge tone="neutral">Deliberately excluded</Badge><ul><li>Ainou and private multi-layer orchestration</li><li>Parts/Entities and Bricks/Packs/Frames</li><li>CE training and token-model internals</li><li>Production connectors or arbitrary code/network authority</li><li>Claims that the sandbox is a production integration</li></ul></div></div>
           </DocSection>
         </main>
       </div>

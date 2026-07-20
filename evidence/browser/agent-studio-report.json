@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-07-20T12:15:26.040Z",
+  "generated_at": "2026-07-20T20:12:17.778Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:46551",
+    "base_url": "http://127.0.0.1:45095",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
     ]
   },
   "summary": {
-    "checks": 36,
-    "passed": 36,
+    "checks": 42,
+    "passed": 42,
     "failed": 0
   },
   "checks": [
@@ -45,9 +45,9 @@
       "name": "fresh workspace seeds editable Actions, Agents, Prompts, Skills, and a nontrivial Flow",
       "status": "pass",
       "detail": {
-        "actions": 9,
-        "agents": 4,
-        "prompts": 4,
+        "actions": 12,
+        "agents": 5,
+        "prompts": 5,
         "skills": 4,
         "seeded_nodes": 5
       }
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_debca36fa4534f0bb94572997bb56e93",
+        "prompt": "prmv_06fdd1c2da154950b14fb36290ad49b0",
         "skills": [
-          "sklv_8974dadc18444cc9822321819209fd00"
+          "sklv_50c8386a6eea47d38679021361415f6b"
         ],
         "actions": [
-          "actv_148358d2594242c7839f6ed72078d4dd"
+          "actv_4a2dde6b94944c2f8b9fea1aa046dd57"
         ]
       }
     },
@@ -181,15 +181,25 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_148358d2594242c7839f6ed72078d4dd"
+          "version_id": "actv_4a2dde6b94944c2f8b9fea1aa046dd57"
         }
+      }
+    },
+    {
+      "name": "dialogs receive focus, trap keyboard traversal, close with Escape, and restore the opener",
+      "status": "pass",
+      "detail": {
+        "focusedOnClose": true,
+        "wrappedBackward": true,
+        "wrappedForward": true,
+        "restoredToLauncher": true
       }
     },
     {
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_842f48ea262443f1a754cd37f9d91b4d",
+        "id": "arun_2ed57ccdec734e6cb0443d621daa3f09",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -227,15 +237,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_7e8ecebcf7e446c4a010bea4a972dddc"
+        "version_id": "aflowv_d81601e2d3974fc28d8ae57613e838ce"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_46acb78322cc4aa2af5300c6595f35a6",
-        "child": "arun_8a0a7b7d5c014f71bd073f27b41df80d",
+        "parent": "arun_85a3b746fff24959bc70d3b1ff88b1f0",
+        "child": "arun_fb2907a408ba48808913b9928331011b",
         "outcome": "standard"
       }
     },
@@ -243,8 +253,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_cae7e78bfac74ead9c55a8de805c31ff",
-        "run": "arun_d399e084eacb4bcea3a08b248191dd44",
+        "trigger": "atrg_e046386dcb50486c8b812b16cf15c0af",
+        "run": "arun_a5190e4ae95342c19bb4cb09bc8868d8",
         "outcome": "priority"
       }
     },
@@ -259,7 +269,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_dc40641c299840a6b2689f97485baa86",
+        "run": "arun_4cb42daef22643708eaaef7fe6765175",
         "calls": 1,
         "steps": [
           "completed",
@@ -291,17 +301,17 @@
       "status": "pass",
       "detail": {
         "controlled": {
-          "id": "cmp_121b920fc4254f549de059615123ee7f",
+          "id": "cmp_398b655ecc154dc680b65e4ee39bc3ce",
           "usable": true,
           "pinned_versions": [
-            "aflowv_2309123379a64b36aa84f80140a3135e"
+            "aflowv_2499b2b6247742efaf0638e44ec19916"
           ],
-          "enforced": 3,
+          "enforced": 4,
           "uncontrolled": 5,
           "rows": 2
         },
         "aliased": {
-          "id": "cmp_6b1eac3032204d4ab8b7b8ba467739da",
+          "id": "cmp_caa07a3e3a30432487034785f0582ec5",
           "usable": false,
           "problems": [
             "response_model_mismatch"
@@ -343,7 +353,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_06c49af75570f",
+        "citation_opened": "arun_abe19e6dd4f1a",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -364,10 +374,85 @@
       }
     },
     {
-      "name": "live documentation explains outputs, AI pins, subflows, Run truth, maintenance, BYOK, and public limits",
+      "name": "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
       "status": "pass",
       "detail": {
-        "characters": 9612,
+        "judge": "agtv_e355e625d5dc430e9cbd16dd9c4b69c7",
+        "criteria": [
+          {
+            "evidence_kind": "effect",
+            "id": "record-in-ledger",
+            "node_ids": [
+              "publish-to-ledger"
+            ],
+            "statement": "The submitted record was written to the workspace evidence ledger."
+          },
+          {
+            "evidence_kind": "receipt",
+            "id": "ledger-write-succeeded",
+            "node_ids": [
+              "publish-to-ledger"
+            ],
+            "statement": "The ledger write reported success rather than a mere attempt."
+          },
+          {
+            "evidence_kind": "step",
+            "id": "readiness-evaluated",
+            "node_ids": [
+              "readiness-gate"
+            ],
+            "statement": "The deterministic readiness gate completed and recorded its routing decision."
+          }
+        ]
+      }
+    },
+    {
+      "name": "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
+      "status": "pass",
+      "detail": {
+        "run": "arun_9abfd64010d94baaa63e75fab49e8e12",
+        "status": "failed",
+        "error_code": "completion_unevidenced",
+        "status_history": [
+          "running",
+          "failed"
+        ],
+        "unevidenced": [
+          "record-in-ledger",
+          "ledger-write-succeeded"
+        ],
+        "effects": 0,
+        "model_calls": 1
+      }
+    },
+    {
+      "name": "the Runs console renders the stop-seam refusal and names every declared promise that carried no accepted evidence",
+      "status": "pass",
+      "detail": {
+        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_bd16dd9c4b69c7\n\nEach declared acceptance criterion was read against this Run's own evidence at the sites the criterion pinned.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\n1 run-owned step record(s) were minted at a declared site.\n\nSURVIVING ANCHORS · 1\n\nastep_a6f4e6e6dc4ca3",
+        "tone": 1,
+        "criteria": 3,
+        "unevidenced": 2,
+        "characters": 1935
+      }
+    },
+    {
+      "name": "the identical pinned Flow version admits when the Run actually reached the declared work, so the refusal was about this Run's data and not the definition",
+      "status": "pass",
+      "detail": {
+        "refused": "arun_9abfd64010d94baaa63e75fab49e8e12",
+        "admitted": "arun_e6434560a72545c1b78d99c200024f9b",
+        "shared_flow_version": "aflowv_75c8e47b87e44fdcacd3d34c227c9f17",
+        "effects": 1,
+        "model_calls": 1,
+        "adjudications_added_by_this_beat": 2
+      }
+    },
+    {
+      "name": "live documentation explains authoring, authority, stop truth, ratification, comparison controls, maintenance, BYOK, and public limits",
+      "status": "pass",
+      "detail": {
+        "characters": 13177,
         "missing": []
       }
     },
@@ -375,7 +460,17 @@
       "name": "every rendered button has an accessible name",
       "status": "pass",
       "detail": {
+        "total": 13,
         "unnamed": 0
+      }
+    },
+    {
+      "name": "visible text clears WCAG AA contrast across every workbench in both themes",
+      "status": "pass",
+      "detail": {
+        "samples": 3048,
+        "minimum": 4.7,
+        "failures": []
       }
     },
     {
@@ -384,13 +479,15 @@
       "detail": "1e-06s"
     },
     {
-      "name": "390px reload preserves the workspace and graph without page overflow",
+      "name": "390px reload preserves a legible pannable graph without page overflow",
       "status": "pass",
       "detail": {
         "clientWidth": 390,
         "scrollWidth": 390,
         "nodes": 5,
-        "mainTop": 107
+        "mainTop": 107,
+        "renderedNodeWidth": 196,
+        "minimapWidth": 112
       }
     },
     {
@@ -423,26 +520,26 @@
   ],
   "diagnostics": {
     "server_output": [
-      "20/Jul/2026 14:15:23 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:23 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:23 127.0.0.1 \"POST /api/v1/studio/repairs/arep_008ffd9936fa45c9802e31d652222ea9/apply HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:23 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:24 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:24 127.0.0.1 \"POST /api/v1/studio/repairs/arep_008ffd9936fa45c9802e31d652222ea9/proof HTTP/1.1\" 201 -",
-      "20/Jul/2026 14:15:24 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:24 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:24 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:24 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/assets/studio-BweucsED.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/assets/studio-DlYqVgyo.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 14:15:25 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      "20/Jul/2026 22:12:15 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:15 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:15 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:15 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:15 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:15 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-BPJKOQG6.css HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-B7M9LC7v.js HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:16 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 22:12:17 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
     ],
     "page_errors": [],
     "failed_requests": [],

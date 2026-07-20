@@ -169,6 +169,85 @@ async function clickCanvasPane(page) {
   await pane.click({ position: { x: Math.max(8, box.width - 24), y: 24 } });
 }
 
+async function auditTextContrast(page) {
+  return page.evaluate(() => {
+    const parseColor = (value) => {
+      const rgb = value.match(/^rgba?\(([^)]+)\)$/i);
+      if (rgb) {
+        const values = rgb[1].replaceAll(",", " ").replace("/", " ").split(/\s+/).filter(Boolean).map(Number);
+        if (values.length >= 3 && values.slice(0, 3).every(Number.isFinite)) {
+          return { r: values[0], g: values[1], b: values[2], a: Number.isFinite(values[3]) ? values[3] : 1 };
+        }
+      }
+      const srgb = value.match(/^color\(srgb\s+([^)]+)\)$/i);
+      if (srgb) {
+        const parts = srgb[1].replace("/", " ").split(/\s+/).filter(Boolean).map(Number);
+        if (parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)) {
+          return { r: parts[0] * 255, g: parts[1] * 255, b: parts[2] * 255, a: Number.isFinite(parts[3]) ? parts[3] : 1 };
+        }
+      }
+      return null;
+    };
+    const over = (foreground, background) => {
+      const alpha = foreground.a + background.a * (1 - foreground.a);
+      if (!alpha) return { r: 255, g: 255, b: 255, a: 0 };
+      return {
+        r: (foreground.r * foreground.a + background.r * background.a * (1 - foreground.a)) / alpha,
+        g: (foreground.g * foreground.a + background.g * background.a * (1 - foreground.a)) / alpha,
+        b: (foreground.b * foreground.a + background.b * background.a * (1 - foreground.a)) / alpha,
+        a: alpha
+      };
+    };
+    const backdrop = (element) => {
+      const ancestry = [];
+      for (let cursor = element; cursor instanceof Element; cursor = cursor.parentElement) ancestry.push(cursor);
+      let color = { r: 255, g: 255, b: 255, a: 1 };
+      for (const ancestor of ancestry.reverse()) {
+        const layer = parseColor(getComputedStyle(ancestor).backgroundColor);
+        if (layer) color = over(layer, color);
+      }
+      return color;
+    };
+    const channel = (value) => {
+      const normalized = value / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = (color) => 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+    const ratio = (left, right) => {
+      const a = luminance(left);
+      const b = luminance(right);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const failures = [];
+    let tested = 0;
+    let minimum = Infinity;
+    for (const element of document.body.querySelectorAll("*:not(script):not(style):not(svg):not(path)")) {
+      if ([...element.childNodes].every((node) => node.nodeType !== Node.TEXT_NODE || !node.textContent.trim())) continue;
+      if (element.closest('[aria-hidden="true"]') || element.matches(":disabled") || element.getAttribute("aria-disabled") === "true") continue;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (!rect.width || !rect.height || style.display === "none" || style.visibility !== "visible" || Number(style.opacity) === 0) continue;
+      const foreground = parseColor(style.color);
+      if (!foreground) continue;
+      const background = backdrop(element);
+      const measured = ratio(over(foreground, background), background);
+      const size = Number.parseFloat(style.fontSize);
+      const weight = Number.parseInt(style.fontWeight, 10) || (style.fontWeight === "bold" ? 700 : 400);
+      const threshold = size >= 24 || (size >= 18.66 && weight >= 700) ? 3 : 4.5;
+      tested += 1;
+      minimum = Math.min(minimum, measured);
+      if (measured + 0.005 < threshold) failures.push({
+        tag: element.tagName.toLowerCase(),
+        className: String(element.className).slice(0, 90),
+        text: element.textContent.trim().replace(/\s+/g, " ").slice(0, 100),
+        ratio: Number(measured.toFixed(2)),
+        threshold
+      });
+    }
+    return { tested, minimum: Number(minimum.toFixed(2)), failures: failures.slice(0, 20), failureCount: failures.length };
+  });
+}
+
 async function ensureInspector(page) {
   const showInspector = page.getByRole("button", { name: "Show inspector" });
   if (await showInspector.count()) {
@@ -419,7 +498,26 @@ async function main() {
       { ports: routerPorts, outcomes: decisionFlow.version.outcomes.map((item) => item.id), node: decisionFlow.version.nodes[0] }
     );
 
-    await page.getByRole("button", { name: "Run", exact: true }).click();
+    const runLauncher = page.getByRole("button", { name: "Run", exact: true });
+    await runLauncher.click();
+    const startRunDialog = page.getByRole("dialog", { name: `Run ${decisionFlow.name}` });
+    await startRunDialog.waitFor({ state: "visible" });
+    const closeDialog = startRunDialog.getByRole("button", { name: "Close dialog" });
+    const pinAndStart = startRunDialog.getByRole("button", { name: "Pin and start Run" });
+    const focusedOnClose = await closeDialog.evaluate((element) => document.activeElement === element);
+    await page.keyboard.press("Shift+Tab");
+    const wrappedBackward = await pinAndStart.evaluate((element) => document.activeElement === element);
+    await page.keyboard.press("Tab");
+    const wrappedForward = await closeDialog.evaluate((element) => document.activeElement === element);
+    await page.keyboard.press("Escape");
+    await startRunDialog.waitFor({ state: "hidden" });
+    const restoredToLauncher = await runLauncher.evaluate((element) => document.activeElement === element);
+    record(
+      "dialogs receive focus, trap keyboard traversal, close with Escape, and restore the opener",
+      focusedOnClose && wrappedBackward && wrappedForward && restoredToLauncher,
+      { focusedOnClose, wrappedBackward, wrappedForward, restoredToLauncher }
+    );
+    await runLauncher.click();
     await fieldControl(page.locator(".modal"), "Run input", "textarea").fill(JSON.stringify({ value: "priority" }, null, 2));
     await page.getByRole("button", { name: "Pin and start Run" }).click();
     await awaitSurface(page, ".runs-page", "starting the Run");
@@ -905,8 +1003,37 @@ async function main() {
     // node, so the adjudication is the entire spend and this beat costs the
     // journey two calls.
     snapshot = await workspaceSnapshot(page);
-    const contractedFlow = snapshot.studio.flows.find((item) => item.slug === "contracted-evidence-publication");
+    let contractedFlow = snapshot.studio.flows.find((item) => item.slug === "contracted-evidence-publication");
+    await navigate(page, "Flow Studio");
+    await page.locator("#flow-select").selectOption(contractedFlow.id);
+    await ensureInspector(page);
+    await clickCanvasPane(page);
+    const completionEditor = page.locator(".completion-contract-editor");
+    const existingCriteria = await completionEditor.locator(".criterion-editor").count();
+    const pinnedJudge = await completionEditor.getByLabel("Independent Goal-Judge").inputValue();
+    await completionEditor.getByRole("button", { name: "Add completion criterion" }).click();
+    const authoredCriterion = completionEditor.locator(".criterion-editor").last();
+    const criterionIdInput = fieldControl(authoredCriterion, "Criterion ID", "input");
+    await criterionIdInput.fill("");
+    await criterionIdInput.focus();
+    await page.keyboard.type("readiness-evaluated");
+    await fieldControl(authoredCriterion, "Promise", "textarea").fill("The deterministic readiness gate completed and recorded its routing decision.");
+    if (options.artifacts) {
+      await completionEditor.scrollIntoViewIfNeeded();
+      await capture(page, resolve(ROOT, options.artifacts, "14-completion-contract-authoring.png"));
+    }
+    await clickAndWait(page, page.getByRole("button", { name: "Publish successor" }));
+    snapshot = await waitForSnapshot(page, (value) => value.studio.flows.some((item) => item.id === contractedFlow.id && item.current_version === 2), "authored completion contract successor");
+    contractedFlow = snapshot.studio.flows.find((item) => item.id === contractedFlow.id);
     const declaredCriteria = contractedFlow.version.acceptance_criteria;
+    record(
+      "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
+      existingCriteria === 2 &&
+        pinnedJudge === contractedFlow.version.judge_agent_version_id &&
+        declaredCriteria.length === 3 &&
+        declaredCriteria.some((criterion) => criterion.id === "readiness-evaluated" && criterion.evidence_kind === "step" && criterion.node_ids.includes("readiness-gate")),
+      { judge: contractedFlow.version.judge_agent_version_id, criteria: declaredCriteria }
+    );
     const contractedRecord = "Build Week launch note submitted for the public evidence ledger.";
     const seenContractedRuns = new Set();
     const statusHistory = (run) => run.events.filter((event) => event.type === "run.status_changed").map((event) => event.payload.to);
@@ -939,7 +1066,7 @@ async function main() {
     const refusedEvents = completionEvents(refusedRun);
     record(
       "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
-      declaredCriteria.length === 2 &&
+      declaredCriteria.length === 3 &&
         contractedFlow.version.judge_agent_version_id !== null &&
         refusedRun.status === "failed" &&
         refusedRun.error_code === "completion_unevidenced" &&
@@ -950,7 +1077,9 @@ async function main() {
         refusedRun.output === null &&
         refusedEvents.length === 1 && refusedEvents[0].type === "completion.refused" &&
         refusedEvents[0].payload.admitted === false &&
-        declaredCriteria.every((criterion) => refusedEvents[0].payload.unevidenced.includes(criterion.id)) &&
+        declaredCriteria.filter((criterion) => criterion.id !== "readiness-evaluated").every((criterion) => refusedEvents[0].payload.unevidenced.includes(criterion.id)) &&
+        !refusedEvents[0].payload.unevidenced.includes("readiness-evaluated") &&
+        refusedEvents[0].payload.judge_claim?.assessment &&
         // The work it did do is untouched, and the work it never did is absent.
         refusedRun.effects.length === 0 &&
         refusedRun.steps.map((step) => step.node_id).join(",") === "readiness-gate,hold-for-revision" &&
@@ -985,8 +1114,9 @@ async function main() {
       "the Runs console renders the stop-seam refusal and names every declared promise that carried no accepted evidence",
       refusalPanel.tone === 1 &&
         refusalPanel.criteria === declaredCriteria.length &&
-        refusalPanel.unevidenced === declaredCriteria.length &&
+        refusalPanel.unevidenced === 2 &&
         refusalPanel.text.includes("Completion refused") &&
+        refusalPanel.text.includes("Model claim · non-authoritative") &&
         refusalPanel.text.includes("completion_unevidenced") &&
         declaredCriteria.every((criterion) => refusalPanel.text.includes(criterion.id) && refusalPanel.text.includes(criterion.statement)) &&
         refusalPanel.text.includes("publish-to-ledger"),
@@ -1031,17 +1161,45 @@ async function main() {
     progress("checking documentation, accessibility, motion, and responsive layout");
     await navigate(page, "Documentation");
     const documentationText = await page.locator(".docs-page").innerText();
-    const requiredDocumentation = ["twelve outputs", "ai is visible", "first-class node", "observe and control work as runs", "forward recovery", "browser tab", "public boundary"];
+    const requiredDocumentation = [
+      "twelve outputs", "ai is visible", "first-class node",
+      "observe and control work as runs", "evidence decides whether it becomes true",
+      "non-authoritative", "canonical", "before provider i/o", "forward recovery",
+      "browser tab", "public boundary"
+    ];
     const normalizedDocumentation = documentationText.toLowerCase();
     const missingDocumentation = requiredDocumentation.filter((phrase) => !normalizedDocumentation.includes(phrase));
     record(
-      "live documentation explains outputs, AI pins, subflows, Run truth, maintenance, BYOK, and public limits",
+      "live documentation explains authoring, authority, stop truth, ratification, comparison controls, maintenance, BYOK, and public limits",
       missingDocumentation.length === 0,
       { characters: documentationText.length, missing: missingDocumentation }
     );
 
-    const unnamedButtons = await page.locator("button").evaluateAll((items) => items.filter((button) => !(button.textContent?.trim() || button.getAttribute("aria-label") || button.getAttribute("title"))).length);
-    record("every rendered button has an accessible name", unnamedButtons === 0, { unnamed: unnamedButtons });
+    const buttonNames = await page.locator("button").evaluateAll((items) => ({
+      total: items.length,
+      unnamed: items.filter((button) => !(button.textContent?.trim() || button.getAttribute("aria-label") || button.getAttribute("title"))).length
+    }));
+    record("every rendered button has an accessible name", buttonNames.unnamed === 0, buttonNames);
+
+    const contrastResults = [];
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+      for (const view of ["Overview", "Flow Studio", "Actions", "Agents", "Prompts", "Skills", "Runs", "Comparisons", "Documentation", "Settings"]) {
+        await navigate(page, view);
+        contrastResults.push({ theme, view, ...await auditTextContrast(page) });
+      }
+    }
+    const contrastFailures = contrastResults.filter((result) => result.failureCount);
+    record(
+      "visible text clears WCAG AA contrast across every workbench in both themes",
+      contrastFailures.length === 0,
+      {
+        samples: contrastResults.reduce((total, result) => total + result.tested, 0),
+        minimum: Math.min(...contrastResults.map((result) => result.minimum)),
+        failures: contrastFailures
+      }
+    );
+    await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
 
     await navigate(page, "Flow Studio");
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -1051,13 +1209,19 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload({ waitUntil: "networkidle" });
     await page.locator(".app-shell").waitFor({ state: "visible" });
-    const mobile = await page.evaluate(() => ({
+    const mobile = await page.evaluate(() => {
+      const node = document.querySelector(".react-flow__node")?.getBoundingClientRect();
+      const minimap = document.querySelector(".react-flow__minimap")?.getBoundingClientRect();
+      return {
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
       nodes: document.querySelectorAll(".react-flow__node").length,
-      mainTop: Math.round(document.querySelector("#main-content").getBoundingClientRect().top)
-    }));
-    record("390px reload preserves the workspace and graph without page overflow", mobile.clientWidth === 390 && mobile.scrollWidth === 390 && mobile.nodes >= 1, mobile);
+      mainTop: Math.round(document.querySelector("#main-content").getBoundingClientRect().top),
+      renderedNodeWidth: node ? Math.round(node.width) : 0,
+      minimapWidth: minimap ? Math.round(minimap.width) : 0
+      };
+    });
+    record("390px reload preserves a legible pannable graph without page overflow", mobile.clientWidth === 390 && mobile.scrollWidth === 390 && mobile.nodes >= 1 && mobile.renderedNodeWidth >= 180 && mobile.minimapWidth <= 120, mobile);
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "08-mobile-workbench.png"));
 
     const securityResponse = await fetch(`${baseUrl}/app/`);

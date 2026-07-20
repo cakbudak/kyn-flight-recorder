@@ -29,6 +29,11 @@ simulation.
   published Flow versions, connect exact outcome ports, map
   input/literal/predecessor data, set retry and error policy, then publish an
   immutable successor version.
+- Define what **“finished” actually means** for a Flow. Up to eight acceptance
+  promises pin admissible evidence kinds and exact graph sites, plus an
+  independent versioned Goal-Judge. The model may nominate anchors and explain
+  its claim; only deterministic resolution against Run-owned Steps, receipts,
+  approvals, and effects may admit completion.
 - Attach real **webhook and interval triggers**. A trigger always pins the Flow
   version current when it is created. Model-backed trigger Runs wait safely for
   the visitor's browser-owned key instead of persisting a credential.
@@ -52,10 +57,12 @@ simulation.
   it appears while you are authoring, publishing still succeeds, and the brake
   remains the only thing that refuses anything. Warn early, refuse late.
 - Run a **controlled cross-model sweep**. One immutable pinned Flow version, one
-  input, several models — and every sibling Run pins a byte-identical
-  `flow_version_id`, so the only recorded delta is the model. The question it
-  answers is whether the scaffolding behaves the same on every brain, not which
-  brain is best.
+  input, several models. Before provider I/O, the complete expected model ×
+  repetition × Run set is committed as a hash-linked manifest; every sibling
+  then pins a byte-identical `flow_version_id`. An incomplete, rewritten, or
+  silently aliased sweep is unusable rather than presentable. The question is
+  whether the scaffolding behaves the same on every brain, not which brain is
+  best.
 - Work in **light or dark**. The theme follows your system by default and the
   choice is yours for the tab.
 
@@ -91,6 +98,14 @@ own mixed graph from scratch.
    run it. From that blocked Run, execute Diagnose → Propose → Approve → Proof.
    The parent stays blocked with zero effects; its linked child runs Flow v2 and
    commits exactly one effect.
+10. Open `Contracted evidence publication` in **Flow Studio**. Add an acceptance
+    promise, choose its evidence kind and eligible graph site, and publish the
+    successor. Run the same pinned version once through the branch that skips
+    the declared write and once through the branch that reaches it: the first is
+    refused at the stop seam, the second is admitted with resolved anchors.
+11. Open **Comparisons**. The control panel shows the pre-I/O sibling manifest,
+    immutable Flow/input fingerprints, the model actually returned by the
+    provider, and every variable this surface does not claim to control.
 
 ## Browser-owned OpenAI credential
 
@@ -138,6 +153,24 @@ An AI Action pins an Agent. The Agent pins one Prompt and a set of Skills. Skill
 can grant only exact Action versions whose kinds are safe for model invocation.
 The runtime intersects those grants with its static public execution surface and
 uses strict OpenAI function schemas. A model response is data, never authority.
+
+### Completion plane
+
+A Flow version may pin up to eight acceptance criteria. Each criterion states an
+observable promise, one closed evidence kind (`step`, `receipt`, `approval`, or
+`effect`), and one or more graph sites capable of minting it. Publication
+refuses impossible contracts and refuses a Goal-Judge Agent that the judged
+graph itself casts, including through nested subflows.
+
+At the terminal seam, the pinned Judge receives its immutable Agent, Prompt, and
+Skill instructions plus a redacted view of the Run's actual evidence, bounded to
+96 KiB before provider I/O.
+Its assessment, reasons, and anchor nominations are recorded explicitly as a
+**non-authoritative model claim**. Code then resolves every nominated ID against
+the Run's own records, declared kind, declared site, and successful state. If
+any promise carries no surviving anchor, the Run records
+`completion_unevidenced` and never enters `completed`. A Flow with no declared
+criteria takes the ordinary completion path and makes zero Judge calls.
 
 ### Maintenance plane
 
@@ -240,9 +273,13 @@ Anyone can run a prompt against several models and show a table. Nothing in that
 proves the comparison was fair.
 
 A comparison here runs one immutable pinned Flow version across several models.
-Every sibling Run pins a **byte-identical `flow_version_id`**, so every Action,
-Agent, Prompt, Skill, schema and route is provably the same and the only
-recorded delta is the model. The version pinning that already exists is what
+Before the first provider call, the runtime prepares the complete sibling set
+and appends one hash-linked manifest naming every expected model, repetition,
+and Run ID. Every sibling then pins a **byte-identical `flow_version_id`**, so
+every Action, Agent, Prompt, Skill, schema and route is provably the same and
+the only recorded delta is the model. A crash cannot shrink the requested
+experiment into a smaller one that looks complete; a missing or altered sibling
+makes the derived result unusable. The manifest plus version pinning is what
 turns a table into a controlled experiment.
 
 The claim is deliberately not a ranking. The headline is **invariance** — same
@@ -273,7 +310,8 @@ fastest way to make an honest experiment dishonest.
 
 The instrument measures itself before it weighs anything. Repetitions of one
 model hold everything constant, so whatever they disagree by is the harness, not
-the brain: that spread is the noise band, and it costs no extra model calls.
+the brain: that spread is the noise band. The total model-call forecast includes
+every requested repetition and is charged before the comparison begins.
 Differences below it report as `within_noise`, never as findings. And where a
 model disagrees with *itself* across its own repetitions, cross-model invariance
 is not stated at all — picking the run that agreed would manufacture the result.
@@ -324,6 +362,8 @@ The mechanisms are real, and each is a projection of a deeper substrate:
 | Skill grants pinning exact Action versions | A capability catalog with per-operation maturity and live-proof ratification gating |
 | One attributable human approval | Risk-classed operations with separation of duties and crypto-shreddable decision reasons |
 | A hash-linked event ledger | The same ledger joined to a causal projection and saved graph lenses over one structure graph |
+| Authorable acceptance contracts with an independent Goal-Judge | Goal/stop conditions joined to task and drift gates over the full intelligence runtime |
+| Pre-I/O cross-model manifests and invariance checks | The model-agnostic “Switch-the-Brain” evaluation axis in KynBench |
 
 The public cut is bounded on purpose. The only general write-capable Action
 appends an idempotent row to an isolated workspace sandbox; there is no shell,
@@ -419,15 +459,14 @@ Run the maximum supported 64-node release-host and Chromium load gates:
 The committed load proof executes twenty complete 64-node Runs (197
 hash-linked events each), snapshots the accumulated workspace thirty times,
 renders the same 64-node/63-edge graph in Chromium, and exercises Fit View. On
-the release host, complete deterministic Runs measured 341.483 ms p95 and
-snapshots 268.795 ms p95—each below its declared threshold (2000 ms and 400 ms)
+the release host, complete deterministic Runs measured 375.215 ms p95 and
+snapshots 160.304 ms p95—each below its declared threshold (2000 ms and 400 ms)
 and without model calls, overflow, failed requests, or page errors.
 
-Both figures rose from the previous release (241.096 ms and 111.806 ms). Every
-Run projection now recomputes its full event chain from event material, which is
-197 SHA-256 hashes on the maximum graph. That is the cost of the ledger verdict
-being authoritative rather than a link check the browser could be fooled into
-trusting, and it is paid well inside the gate. See
+Each Run projection recomputes its full event chain from event material—197
+SHA-256 hashes on the maximum graph—rather than trusting that links merely join.
+The measured release-host result includes that authoritative ledger verdict and
+remains well inside both gates. See
 [`evidence/performance-report.json`](evidence/performance-report.json) and
 [`evidence/editor-performance-report.json`](evidence/editor-performance-report.json).
 
@@ -436,10 +475,13 @@ workspace creation; Action, Prompt, Skill, and Agent authoring; multi-output Flo
 composition; deterministic execution; canvas successor publication; reusable
 subflow execution; webhook activation; asynchronous AI execution;
 approval/resume; live graph evidence; dead-end ratification and brake refusal;
-and integrated maintenance.
+authorable completion contracts with refuse/admit evidence; pre-I/O comparison
+manifests; and integrated maintenance.
 Provider-shaped deterministic responses are used locally; the same journey can be
 run against the deployed OpenAI-backed service. The current local journey passes
-**36/36** checks; see
+**42/42** checks, including keyboard focus containment, 3,048 rendered contrast
+samples across every workbench in both themes, and a legible pannable 390 px
+graph; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 
 The same journey passes **36/36** against the deployed public origin at
@@ -456,10 +498,12 @@ Prove the guards are load-bearing rather than taking the green suite on trust:
 ```
 
 Each ablation takes a product function's own source, deletes exactly one named
-guard, and asserts a documented product-level violation becomes reachable. Seven
-of eight guards are load-bearing. The eighth—the terminal-absorption trigger—is
-reported **redundant**, because the transition-shape trigger already forbids
-everything it forbids. The suite reports that rather than dressing it up.
+guard, and asserts a documented product-level violation becomes reachable. Nine
+of eleven ablations are load-bearing. Two are reported **redundant** because the
+same safety property remains independently enforced: the standalone terminal-
+absorption trigger is covered by the transition-shape trigger, and the Judge's
+early anti-fabrication check is covered again by deterministic anchor resolution.
+The suite reports that rather than dressing either one up.
 
 Ablation is test-local. No path reachable from `serve.py` or the HTTP API can
 disable a guard; a public deployment ships no switch for its own authority gate.

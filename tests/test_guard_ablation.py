@@ -1548,9 +1548,10 @@ class EventHashChainAblation(AblationCase):
                 ),
                 load_bearing=True,
                 note=(
-                    "verify_event_chain has no caller in backend/ or serve.py today: "
-                    "it is the verification-time authority, exercised by tests and by "
-                    "anyone auditing an exported Run."
+                    "StudioStore recomputes this verdict from event material on every "
+                    "Run projection. The browser displays that server-owned verdict, "
+                    "and a controlled comparison now refuses every sibling whose "
+                    "projected ledger does not verify."
                 ),
             )
         )

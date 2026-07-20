@@ -593,6 +593,19 @@ class SelfAdjudicationTest(AcceptanceContractHarness):
         )
         self.assertEqual(flow["version"]["judge_agent_version_id"], self.judge)
 
+    def test_an_agent_node_cannot_promise_an_action_receipt(self) -> None:
+        """Agent Steps are durable, but only Actions mint Action receipts."""
+
+        analyst = self.agents["launch-analyst"]["id"]
+        with self.assertRaises(ContractViolation) as caught:
+            self.publish(
+                "agent-receipt-impossible",
+                [self.agent_node(analyst)],
+                acceptance_criteria=[criterion("agent-receipted", "receipt", "analyst")],
+                judge_agent_version_id=self.judge,
+            )
+        self.assertIn("agent-receipted", str(caught.exception))
+
 
 class SubflowSelfAdjudicationTest(AcceptanceContractHarness):
     """Independence must survive one indirection through a pinned subflow.
@@ -680,6 +693,26 @@ class SubflowSelfAdjudicationTest(AcceptanceContractHarness):
             judge_agent_version_id=self.judge,
         )
         self.assertEqual(flow["version"]["judge_agent_version_id"], self.judge)
+
+    def test_a_subflows_own_goal_judge_is_part_of_its_transitive_cast(self) -> None:
+        """A stop-seam model call is still an Agent cast, despite having no node."""
+
+        analyst = self.agents["launch-analyst"]["id"]
+        child = self.publish(
+            "child-with-goal-judge",
+            [self.agent_node(analyst)],
+            output_schema=TEXT_OUTPUT,
+            acceptance_criteria=[criterion("child-finished", "step", "analyst")],
+            judge_agent_version_id=self.judge,
+        )
+        with self.assertRaises(ContractViolation) as caught:
+            self.publish(
+                "parent-reusing-child-judge",
+                [self.flow_node(child["version"]["id"])],
+                acceptance_criteria=[criterion("child-ran", "step", "child")],
+                judge_agent_version_id=self.judge,
+            )
+        self.assertIn("judge", str(caught.exception).lower())
 
 
 class JudgeCastingRequirementTest(AcceptanceContractHarness):

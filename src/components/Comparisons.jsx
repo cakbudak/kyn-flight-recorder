@@ -106,7 +106,7 @@ export default function Comparisons({
       <PageHeader
         eyebrow="Controlled cross-model sweep"
         title="Model comparison"
-        description="One immutable pinned Flow version, one input, N models. Every sibling Run pins a byte-identical flow_version_id, so the only recorded delta is the model. The question this answers is whether the scaffolding behaves the same on every brain — not which brain is best."
+        description="One immutable pinned Flow version, one input, N models. Before provider I/O, the complete expected model × repetition × Run set is hash-ledgered as a manifest. Every sibling then pins a byte-identical flow_version_id, so the only recorded delta is the model. This asks whether the scaffolding behaves the same on every brain — not which brain is best."
         actions={
           <Button
             tone="primary"
@@ -265,8 +265,9 @@ function Verdict({ comparison }) {
         <p className="panel-kicker">usable · true</p>
         <h3 id="comparison-verdict-title">Every integrity gate held. The recorded delta is the model and nothing else.</h3>
         <p>
-          Each sibling pinned the same immutable Flow version, received the same input by recomputed fingerprint, and
-          was answered by the model it actually requested. What that licenses is a statement about{" "}
+          The expected sibling set was ledger-pinned before provider I/O. Each sibling then pinned the same immutable
+          Flow version, received the same input by recomputed fingerprint, and was answered by the model it actually
+          requested. What that licenses is a statement about{" "}
           <strong>invariance</strong> — never a ranking.
         </p>
       </div>
@@ -298,6 +299,10 @@ function ControlProof({ comparison }) {
         <div>
           <dt>Pinned model replaced by override</dt>
           <dd><code>{comparison.pinned_model}</code></dd>
+        </div>
+        <div>
+          <dt>Pre-I/O sweep manifest</dt>
+          <dd><code>{comparison.manifest?.fingerprint ?? "missing"}</code></dd>
         </div>
       </dl>
       <div className="control-columns">

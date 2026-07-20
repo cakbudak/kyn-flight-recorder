@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef } from "react";
+import React, { forwardRef, useEffect, useId, useRef } from "react";
 import { Icon } from "../icons.jsx";
 import { STATUS_TONE, shortId, titleCase } from "../lib.js";
 import { setTheme, useTheme } from "../theme.js";
@@ -47,21 +47,22 @@ export function ThemeChoice() {
 }
 
 export function Button({ children, icon, tone = "default", className = "", type = "button", ...props }) {
+  const accessibleLabel = typeof children === "string" ? children : undefined;
   return (
-    <button type={type} className={`button button-${tone} ${className}`.trim()} {...props}>
+    <button type={type} className={`button button-${tone} ${className}`.trim()} aria-label={accessibleLabel} {...props}>
       {icon ? <Icon name={icon} size={16} /> : null}
       <span>{children}</span>
     </button>
   );
 }
 
-export function IconButton({ icon, label, className = "", type = "button", ...props }) {
+export const IconButton = forwardRef(function IconButton({ icon, label, className = "", type = "button", ...props }, ref) {
   return (
-    <button type={type} className={`icon-button ${className}`.trim()} aria-label={label} title={label} {...props}>
+    <button ref={ref} type={type} className={`icon-button ${className}`.trim()} aria-label={label} title={label} {...props}>
       <Icon name={icon} size={17} />
     </button>
   );
-}
+});
 
 export function Badge({ children, tone = "neutral", dot = false }) {
   return (
@@ -113,21 +114,54 @@ export function JsonField({ label, value, onChange, rows = 8, hint, readOnly = f
 
 export function Modal({ title, description, onClose, children, width = "680px" }) {
   const closeRef = useRef(null);
+  const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const titleId = useId();
+  const descriptionId = useId();
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
+    const previous = document.activeElement;
     closeRef.current?.focus();
-    const onKey = (event) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = [...dialogRef.current.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )].filter((element) => !element.hidden && element.getClientRects().length);
+      if (!focusable.length) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, []);
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby={description ? "modal-description" : undefined} style={{ "--modal-width": width }}>
+      <section ref={dialogRef} tabIndex="-1" className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} style={{ "--modal-width": width }}>
         <header className="modal-header">
           <div>
-            <h2 id="modal-title">{title}</h2>
-            {description ? <p id="modal-description">{description}</p> : null}
+            <h2 id={titleId}>{title}</h2>
+            {description ? <p id={descriptionId}>{description}</p> : null}
           </div>
           <IconButton ref={closeRef} icon="close" label="Close dialog" onClick={onClose} />
         </header>

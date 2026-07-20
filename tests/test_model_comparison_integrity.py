@@ -180,6 +180,38 @@ class ComparisonIntegrityTest(unittest.TestCase):
         self.assertTrue(
             all(sibling["response_model_verified"] for sibling in comparison["siblings"])
         )
+        self.assertTrue(comparison["manifest"]["pinned"])
+        self.assertTrue(comparison["manifest"]["verified"])
+        self.assertEqual(
+            comparison["manifest"]["expected_models"],
+            ["gpt-5.6", "gpt-5.6-terra"],
+        )
+
+    def test_a_rewritten_manifest_event_voids_the_comparison(self) -> None:
+        client = ScriptedClient(self.store)
+        comparison = self._compare(client, models=["gpt-5.6", "gpt-5.6-terra"])
+
+        with self.store.write() as connection:
+            # Direct database compromise: the product trigger is the first line
+            # of defence, so remove it to prove the independent hash check.
+            connection.execute("DROP TRIGGER trg_automation_events_no_update")
+            row = connection.execute(
+                "SELECT id, payload_json FROM automation_events "
+                "WHERE type = 'comparison.manifest_pinned'"
+            ).fetchone()
+            payload = json.loads(row["payload_json"])
+            payload["tampered_after_execution"] = True
+            connection.execute(
+                "UPDATE automation_events SET payload_json = ? WHERE id = ?",
+                (json.dumps(payload, separators=(",", ":"), sort_keys=True), row["id"]),
+            )
+
+        derived = self.plane.get_comparison(self.workspace_id, comparison["id"])
+        self.assertFalse(derived["usable"])
+        self.assertIn(
+            "ledger_unverified",
+            {problem["code"] for problem in derived["integrity_problems"]},
+        )
 
     # -- claimed controls versus real ones ---------------------------------
 
@@ -190,7 +222,10 @@ class ComparisonIntegrityTest(unittest.TestCase):
 
         self.assertEqual(set(control), {"enforced_and_verified", "not_controllable_here"})
         enforced = {item["control"] for item in control["enforced_and_verified"]}
-        self.assertEqual(enforced, {"flow_version_id", "input", "response_model"})
+        self.assertEqual(
+            enforced,
+            {"flow_version_id", "input", "comparison_manifest", "response_model"},
+        )
         for item in control["enforced_and_verified"]:
             self.assertIn("verified", item)
             self.assertIn("method", item)
@@ -429,6 +464,43 @@ class ComparisonIntegrityTest(unittest.TestCase):
             if run["comparison_id"] == comparison["id"]:
                 self.assertEqual(run["relation_kind"], "comparison")
                 self.assertIsNotNone(run["model_override"])
+
+    def test_a_sibling_set_without_an_immutable_manifest_is_never_usable(self) -> None:
+        """A process can die after one sibling and before the next is prepared.
+
+        Runs alone cannot reveal whether that one row was the complete requested
+        sweep or the first member of a larger one. Without a durable manifest of
+        the expected models and repetitions, restart-time derivation reports a
+        partial experiment as perfectly controlled and invariant.
+        """
+
+        client = ScriptedClient(self.store)
+        plane, workspace_id, flow_id = self._plane(client)
+        comparison_id = "cmp_interrupted_before_the_second_sibling"
+        context = plane.studio.flow_context(workspace_id, flow_id)
+        pinned_model = plane.studio.flow_version_pinned_models(
+            workspace_id, context["version"]["id"]
+        )[0]
+        run = plane.studio_runtime.prepare(
+            workspace_id,
+            flow_id,
+            input_data={"brief": BRIEF},
+            flow_version=int(context["version"]["version"]),
+            relation_kind="comparison",
+            correlation_id="corr_interrupted_comparison",
+            idempotency_key="comparison:interrupted:gpt-5.6:1",
+            model_override="gpt-5.6",
+            comparison_id=comparison_id,
+            pinned_model=pinned_model,
+        )
+        plane.studio_runtime.continue_run(workspace_id, run["id"])
+
+        comparison = plane.get_comparison(workspace_id, comparison_id)
+        self.assertFalse(comparison["usable"])
+        self.assertIn(
+            "comparison_manifest_missing",
+            {problem["code"] for problem in comparison["integrity_problems"]},
+        )
 
 
 class ComparisonHttpSurfaceTest(unittest.TestCase):

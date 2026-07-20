@@ -689,13 +689,16 @@ class StudioStore:
             return set()
         visited.add(version_id)
         row = connection.execute(
-            "SELECT pinned_resources_json FROM automation_flow_versions "
+            "SELECT pinned_resources_json, judge_agent_version_id "
+            "FROM automation_flow_versions "
             "WHERE id = ? AND workspace_id = ?",
             (version_id, workspace_id),
         ).fetchone()
         if row is None:
             raise ContractViolation("Pinned subflow version is missing")
         cast: set[str] = set()
+        if row["judge_agent_version_id"]:
+            cast.add(str(row["judge_agent_version_id"]))
         for pin in _decode(row["pinned_resources_json"]):
             pinned_version = str(pin["version_id"])
             if pin.get("type") == "agent":
@@ -3740,12 +3743,21 @@ class StudioStore:
             return
         seen.add(version_id)
         row = connection.execute(
-            "SELECT nodes_json FROM automation_flow_versions "
+            "SELECT nodes_json, judge_agent_version_id FROM automation_flow_versions "
             "WHERE id = ? AND workspace_id = ?",
             (version_id, workspace_id),
         ).fetchone()
         if row is None:
             raise NotFound("Automation Flow version was not found")
+        judge_agent_version_id = row["judge_agent_version_id"]
+        if judge_agent_version_id:
+            judge = connection.execute(
+                "SELECT model FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                (judge_agent_version_id, workspace_id),
+            ).fetchone()
+            if judge is None:
+                raise NotFound("Goal-Judge Agent version was not found")
+            models.add(str(judge["model"]))
         for node in _decode(row["nodes_json"]):
             node_version_id = str(node["version_id"])
             if node["type"] == "flow":
@@ -3954,9 +3966,8 @@ class StudioStore:
     # -- Stop-seam adjudication evidence -----------------------------------
     #
     # One SELECT per evidence kind, written once and reused for both halves
-    # below. Every kind is reduced to the four facts adjudication reasons
-    # about: the record's id, the Run that owns it, the site it is
-    # attributable to, and the state token its kind predicates on. Two kinds
+    # below. Every kind carries the structural facts deterministic resolution
+    # needs and the bounded record material semantic adjudication needs. Two kinds
     # reach their site transitively — an effect through its step, an approval
     # decision through its request — and those joins live here rather than in
     # the resolver, because the resolver is pure and must not know a schema.
@@ -3964,21 +3975,28 @@ class StudioStore:
         {
             "steps": (
                 "SELECT s.id AS id, s.run_id AS run_id, s.node_id AS node_id, "
-                "s.status AS state FROM automation_run_steps s "
+                "s.status AS state, s.input_json AS input_json, "
+                "s.output_json AS output_json, s.route_outcome AS route_outcome, "
+                "s.error_code AS error_code FROM automation_run_steps s "
                 "JOIN automation_runs r ON r.id = s.run_id",
                 "s.run_id",
                 "s.id",
             ),
             "receipts": (
                 "SELECT c.id AS id, c.run_id AS run_id, c.node_id AS node_id, "
-                "c.outcome AS state FROM automation_action_receipts c "
+                "c.outcome AS state, c.action_version_id AS action_version_id, "
+                "c.attempt AS attempt, c.input_json AS input_json, "
+                "c.output_json AS output_json, c.error_code AS error_code "
+                "FROM automation_action_receipts c "
                 "JOIN automation_runs r ON r.id = c.run_id",
                 "c.run_id",
                 "c.id",
             ),
             "approvals": (
                 "SELECT d.id AS id, q.run_id AS run_id, q.node_id AS node_id, "
-                "d.approved AS state FROM automation_approval_decisions d "
+                "d.approved AS state, q.message AS message, "
+                "q.context_json AS context_json, d.actor AS actor, "
+                "d.reason AS reason FROM automation_approval_decisions d "
                 "JOIN automation_approval_requests q ON q.id = d.request_id "
                 "JOIN automation_runs r ON r.id = q.run_id",
                 "q.run_id",
@@ -3986,7 +4004,9 @@ class StudioStore:
             ),
             "effects": (
                 "SELECT e.id AS id, e.run_id AS run_id, s.node_id AS node_id, "
-                "NULL AS state FROM automation_effects e "
+                "NULL AS state, e.action_version_id AS action_version_id, "
+                "e.collection AS collection, e.payload_json AS payload_json "
+                "FROM automation_effects e "
                 "JOIN automation_run_steps s ON s.id = e.step_id "
                 "JOIN automation_runs r ON r.id = e.run_id",
                 "e.run_id",
@@ -4006,12 +4026,41 @@ class StudioStore:
         """
 
         state = row["state"]
+        if collection == "steps":
+            content = {
+                "input": _decode(row["input_json"]),
+                "output": _decode(row["output_json"]),
+                "route_outcome": row["route_outcome"],
+                "error_code": row["error_code"],
+            }
+        elif collection == "receipts":
+            content = {
+                "action_version_id": row["action_version_id"],
+                "attempt": row["attempt"],
+                "input": _decode(row["input_json"]),
+                "output": _decode(row["output_json"]),
+                "error_code": row["error_code"],
+            }
+        elif collection == "approvals":
+            content = {
+                "message": row["message"],
+                "context": _decode(row["context_json"]),
+                "actor": row["actor"],
+                "reason": row["reason"],
+            }
+        else:
+            content = {
+                "action_version_id": row["action_version_id"],
+                "collection": row["collection"],
+                "payload": _decode(row["payload_json"]),
+            }
         return {
             "id": row["id"],
             "run_id": row["run_id"],
             "node_id": row["node_id"],
             "state": bool(state) if collection == "approvals" else state,
             "kind": _EVIDENCE_KIND_BY_COLLECTION[collection],
+            "content": redact(content),
         }
 
     def adjudication_evidence(

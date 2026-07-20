@@ -9,15 +9,18 @@ Automated/static evidence:
 - skip link and visible `:focus-visible` treatment;
 - every button has an explicit type and accessible name;
 - polite operation/toast announcements and assertive error feedback;
-- dialog opens with focus on the operator field;
+- every dialog opens on its close control, traps forward and reverse Tab
+  traversal, closes on Escape, and restores focus to its opener;
 - native required/min/max constraints on approval fields;
 - no dynamic HTML parsing sink; server data enters through text nodes;
-- palette contrast gate ≥ 4.5:1 for normal text on the brightest regular surface;
+- computed contrast audit across all ten workbenches in light and dark: 3,048
+  visible text samples, minimum 4.70:1, zero WCAG AA failures;
 - no `transition: all`, no zero-scale entrances, transitions ≤300 ms;
 - `prefers-reduced-motion` collapses animation/transition durations;
-- 390 × 844 Chromium reload has no document overflow and preserves the proven state;
+- 390 × 844 Chromium reload has no document overflow, preserves the proven
+  state, keeps rendered Flow nodes at 196 px, and bounds the minimap to 112 px;
 - Chromium verifies every rendered button has visible text or an accessible
-  label (86 buttons in the archived deterministic journey).
+  label.
 
 The browser evidence is in `browser/agent-studio-report.json` and
 `live/agent-studio-report.json`.
