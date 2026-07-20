@@ -64,7 +64,7 @@ own mixed graph from scratch.
    are visible and editable.
 3. Go to **Flow Studio**, create a visual Flow, drag another capability onto the canvas,
    connect it, inspect typed mappings and retry policy, then publish v1.
-4. Add a webhook trigger and invoke the one-time URL, or start the Flow manually.
+4. Add a webhook trigger and invoke its URL (the secret is shown once; the URL itself stays usable), or start the Flow manually.
    The Run is pinned before execution and becomes visible while the bounded worker
    is active.
 5. Open **Settings**, paste your own OpenAI API key, and save it for this
@@ -252,7 +252,7 @@ POST /api/v1/studio/flows/:id/versions
 POST /api/v1/studio/flows/:id/triggers
 POST /api/v1/studio/triggers/:id/state
 POST /api/v1/studio/flows/:id/runs:enqueue
-POST /api/v1/hooks/:one-time-secret
+POST /api/v1/hooks/:webhook-secret
 GET  /api/v1/studio/runs/:id
 POST /api/v1/studio/runs/:id:continue
 POST /api/v1/studio/runs/:id:cancel
@@ -319,10 +319,10 @@ run against the deployed OpenAI-backed service. The current local journey passes
 **34/34** checks; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 
-`evidence/live/` is archived from the previous release and is **stale**: the
-deployed host still serves the pre-ratification build. Those artefacts are
-superseded and must be regenerated against a redeployed host before they are
-cited again. See [`submission/checklist.md`](submission/checklist.md).
+The same journey passes **34/34** against the deployed public origin with real
+model calls; see
+[`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
+and the archived screenshots under `evidence/live/`.
 
 Prove the guards are load-bearing rather than taking the green suite on trust:
 

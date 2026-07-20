@@ -280,6 +280,7 @@ class DemoServer(ThreadingHTTPServer):
         control_plane: ControlPlane | None = None,
         model_configured: bool = False,
         workspace_model_call_limit: int = 12,
+        global_model_call_limit_per_hour: int = 120,
     ) -> None:
         self.control_plane = control_plane
         self.database_ready = control_plane is not None
@@ -288,6 +289,7 @@ class DemoServer(ThreadingHTTPServer):
             ApiApplication(
                 control_plane,
                 workspace_model_call_limit=workspace_model_call_limit,
+                global_model_call_limit_per_hour=global_model_call_limit_per_hour,
             )
             if control_plane is not None
             else None
@@ -370,6 +372,9 @@ def main(argv: list[str] | None = None) -> int:
             control_plane=control_plane,
             model_configured=False,
             workspace_model_call_limit=int(os.environ.get("KYN_WORKSPACE_MODEL_CALL_LIMIT", "24")),
+            global_model_call_limit_per_hour=int(
+                os.environ.get("KYN_PUBLIC_MODEL_CALLS_PER_HOUR", "120")
+            ),
         )
     except (OSError, ValueError) as error:
         print(f"error: cannot bind {args.host}:{args.port}: {error}", file=sys.stderr)

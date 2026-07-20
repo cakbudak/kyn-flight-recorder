@@ -19,18 +19,20 @@ the private stack. What is reused is *vocabulary*, per the stack-wide
 Vocabulary-First rule — the concept names below are the canonical CE names, so
 the public cut and the private stack do not drift apart.
 
-Canonical vocabulary adopted (source: CE vocabulary authority,
-`/opt/ce/handover/featureflow-mesh/`, papers 02/04/05, homonym pin paper 08 §W):
+Concept names are taken from the wider stack's existing vocabulary rather than
+invented here, so the public projection and its private counterpart do not drift
+apart:
 
 | Term | Meaning here |
 | --- | --- |
 | `dead_end` | A durable, fingerprinted record that one exact approach failed. |
-| `VETOES` | The relation `dead_end ──VETOES──▶ (flow_version, node)`. Mesh sense only. |
+| `VETOES` | The relation `dead_end ──VETOES──▶ (flow_version, node)`. |
 | `ratification_state` | `proposed` → `confirmed` → `canonical`. |
 | `check_brake` | Read-only verdict. The brake pulls only on a `canonical` match. |
 
-Homonym pin paper 08 §W is respected: this is the Mesh `VETOES` predicate, never
-the Council `veto` vote value. The bare word `veto` is not used as an identifier.
+The bare word `veto` is deliberately not used as an identifier: it names a
+different concept elsewhere in the wider stack, and reusing it here would
+collide.
 
 ## Investment 1 — Run graph renders
 
