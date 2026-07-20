@@ -9,6 +9,8 @@ git clone https://github.com/cakbudak/kyn-agent-studio.git
 cd kyn-agent-studio
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+npm ci
+npm run build
 .venv/bin/python scripts/verify.py --browser --performance
 .venv/bin/python serve.py
 ```
@@ -31,24 +33,22 @@ separate because it consumes the visitor's API quota.
 
 ## Current clean-clone proof
 
-On 2026-07-19, public source commit
-`9fd0c406aac2922e15c3bdc934adc346942115c9` was cloned from the renamed GitHub URL
-with the credential helper disabled. In that untouched clone:
+On 2026-07-20, public source commit
+`984c17657a9f06d2698496cc8818479c59ba2f41` was cloned from the public GitHub URL
+with the credential helper and global/system Git configuration disabled. In that
+untouched clone:
 
-- `pip install -r requirements.txt` completed;
-- 70 Python contract tests passed;
-- 7 pure browser-state tests passed;
+- `pip install -r requirements.txt` and `npm ci` completed;
+- 265 Python contract tests passed;
+- 9 pure browser-state tests passed;
 - the production frontend rebuilt successfully;
-- the current Chromium product journey passed 30/30;
-- the twenty-Run 64-node runtime gate passed at 277.636 ms Run p95 and
-  118.344 ms loaded-snapshot p95;
-- the 64-node/63-edge Chromium gate passed 7/7 at 241.275 ms render and
-  134.711 ms Fit View, with no overflow or browser/request errors;
+- the current deterministic Chromium product journey passed 42/42, including
+  completion refusal and admission on one pinned Flow version;
 - `npm audit` reported zero vulnerabilities;
-- `OPENAI_API_KEY` was absent;
+- `pip check` reported no broken requirements;
+- `.env` and `OPENAI_API_KEY` were absent;
 - `git status --short` remained empty after build and verification.
 
 The clean clone path was temporary and contained no configuration symlink,
 private Kyn dependency, pre-existing database, or uncommitted asset. This
-evidence commit refreshes sanitized public screenshots, reports, and
-documentation only; the product source verified above is unchanged.
+proof verifies the same source commit deployed at `https://buildweek.kyn.ist`.
