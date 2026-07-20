@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-20T07:08:32.821Z",
+  "generated_at": "2026-07-20T12:24:14.617Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -11,9 +11,9 @@
     ]
   },
   "summary": {
-    "checks": 35,
-    "passed": 35,
-    "failed": 0
+    "checks": 20,
+    "passed": 19,
+    "failed": 1
   },
   "checks": [
     {
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_79b9856e495a40cebe7a31ec265dd571",
+        "prompt": "prmv_c39bd7121ac9467d95d83476f46b9d94",
         "skills": [
-          "sklv_9afb2f7b9bd44a40af02a4bb1ba2968c"
+          "sklv_5d0a5c1aff204653b2314aac086e5c36"
         ],
         "actions": [
-          "actv_6176f1c6ab3142858cd3d7dbd5fec2d9"
+          "actv_e5341d4d0aef4b67bea9e0e27682e3ab"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_6176f1c6ab3142858cd3d7dbd5fec2d9"
+          "version_id": "actv_e5341d4d0aef4b67bea9e0e27682e3ab"
         }
       }
     },
@@ -189,7 +189,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_dd8de51989a94a71be0cd4ab6c714b2c",
+        "id": "arun_8392dea53d1848b3a134de38be4f2b31",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -227,15 +227,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_744f6ccf1308450d9a1815e971db1835"
+        "version_id": "aflowv_80b3da2b8521437aaad9ad3a3b88c2d9"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_d90b348053504f64a2fbec5319a98fee",
-        "child": "arun_c9e27883c4394a72a723433441845c10",
+        "parent": "arun_09eead52b6cd4b1ea038f38dc5665aed",
+        "child": "arun_85c8135228644e9aab3206e4e8640454",
         "outcome": "standard"
       }
     },
@@ -243,8 +243,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_a645a0dd0410484fa172dfbca5018f37",
-        "run": "arun_3840661c5de043209a77e2a7f07fd8cb",
+        "trigger": "atrg_932076c2317a4d1fb776a737aa109fcb",
+        "run": "arun_c229f4d859fb42beaa5d23af4026a187",
         "outcome": "priority"
       }
     },
@@ -256,153 +256,19 @@
       }
     },
     {
-      "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
-      "status": "pass",
-      "detail": {
-        "run": "arun_8a4890a2797c42a69d344d2efc89213d",
-        "calls": 1,
-        "steps": [
-          "completed",
-          "completed",
-          "waiting_approval"
-        ],
-        "effects": 0
-      }
-    },
-    {
-      "name": "Run graph renders every pinned node and propagates node measurements, probed through the MiniMap because it alone re-derives from live measured dimensions while the canvas keeps drawing from static positions",
-      "status": "pass",
-      "detail": {
-        "pinned_nodes": 5,
-        "rendered_nodes": 5,
-        "minimap_nodes": 5
-      }
-    },
-    {
-      "name": "human decision resumes the exact pinned graph into one attributable idempotent effect",
-      "status": "pass",
-      "detail": {
-        "effects": 1,
-        "actor": "build-week-operator"
-      }
-    },
-    {
-      "name": "Run detail surfaces the derived dead end as canonical with its distinct-Run count and citing Run links",
-      "status": "pass",
-      "detail": {
-        "state": "Canonical",
-        "count": "3 distinct Runs",
-        "citations": 3,
-        "derived_state": "canonical",
-        "derived_distinct_runs": 3,
-        "node": "recovery-evidence-store"
-      }
-    },
-    {
-      "name": "the next Run on the canonical path is refused before creation and the refusal cites the three prior Runs",
-      "status": "pass",
-      "detail": {
-        "root_runs": 3,
-        "modals": 0,
-        "cited_runs": 3,
-        "characters": 666
-      }
-    },
-    {
-      "name": "a Flow matching a distilled principle publishes successfully and is advised rather than refused, and the workspace surface states the rule and derives its vocabulary ceiling from the shipped predicate table",
-      "status": "pass",
-      "detail": {
-        "published_version": 1,
-        "advised_run": "blocked",
-        "advised_run_steps": 1,
-        "distinct_flows": 3,
-        "citations": 5,
-        "citation_opened": "arun_92e85c8946ebd",
-        "run_still_offered": true,
-        "refusal_surfaces": 0,
-        "principle_entries": 1
-      }
-    },
-    {
-      "name": "maintenance cites owned evidence, appends bounded successors, preserves failure, and proves changed behavior",
-      "status": "pass",
-      "detail": {
-        "root": "blocked",
-        "action_versions": [
-          2,
-          1
-        ],
-        "proof": "completed",
-        "root_effects": 0,
-        "proof_effects": 1
-      }
-    },
-    {
-      "name": "live documentation explains outputs, AI pins, subflows, Run truth, maintenance, BYOK, and public limits",
-      "status": "pass",
-      "detail": {
-        "characters": 9612,
-        "missing": []
-      }
-    },
-    {
-      "name": "every rendered button has an accessible name",
-      "status": "pass",
-      "detail": {
-        "unnamed": 0
-      }
-    },
-    {
-      "name": "reduced-motion preference collapses interaction transitions",
-      "status": "pass",
-      "detail": "1e-06s"
-    },
-    {
-      "name": "390px reload preserves the workspace and graph without page overflow",
-      "status": "pass",
-      "detail": {
-        "clientWidth": 390,
-        "scrollWidth": 390,
-        "nodes": 5,
-        "mainTop": 107
-      }
-    },
-    {
-      "name": "server sends restrictive security and no-store headers",
-      "status": "pass",
-      "detail": null
-    },
-    {
-      "name": "browser makes no cross-origin runtime request",
-      "status": "pass",
-      "detail": []
-    },
-    {
-      "name": "browser journey has no failed request",
-      "status": "pass",
-      "detail": []
-    },
-    {
-      "name": "browser journey has no console or page error",
-      "status": "pass",
-      "detail": []
-    },
-    {
-      "name": "the only refused HTTP response in the journey is the one asserted brake 409",
-      "status": "pass",
-      "detail": [
-        "Failed to load resource: the server responded with a status of 409 ()"
-      ]
+      "name": "Playwright verification completed",
+      "status": "fail",
+      "detail": "locator.waitFor: Timeout 300000ms exceeded.\nCall log:\n  - waiting for locator('.runs-page') to be visible\n"
     }
   ],
   "diagnostics": {
     "server_output": [
       ""
     ],
-    "page_errors": [],
+    "page_errors": [
+      "Failed to load resource: the server responded with a status of 429 ()"
+    ],
     "failed_requests": [],
-    "brake_refusals": [
-      "Failed to load resource: the server responded with a status of 409 ()"
-    ]
+    "brake_refusals": []
   }
 }

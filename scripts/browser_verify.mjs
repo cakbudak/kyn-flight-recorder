@@ -547,13 +547,20 @@ async function main() {
       await clickAndWait(page, dialog.getByRole("button", { name: `Spend ${models.length} Runs and compare` }));
       const latest = await waitForSnapshot(
         page,
-        (value) => (value.studio.comparisons ?? []).some((item) => item.models.join(",") === models.join(",")),
+        // Compare the SET, not the click order: the dialog appends newly ticked
+        // models, so the recorded order follows how the boxes were toggled.
+        (value) => (value.studio.comparisons ?? []).some((item) => [...item.models].sort().join(",") === [...models].sort().join(",")),
         `comparison of ${models.join(" vs ")}`
       );
-      return { forecast, comparison: latest.studio.comparisons.find((item) => item.models.join(",") === models.join(",")) };
+      return { forecast, comparison: latest.studio.comparisons.find((item) => [...item.models].sort().join(",") === [...models].sort().join(",")) };
     };
 
-    const controlled = await runComparison(["gpt-5.6", "gpt-5.6-luna"]);
+    // The clean pair must avoid whichever model is aliased in THIS target: the
+// scripted seam renames gpt-5.6-terra, and the live provider renames
+// gpt-5.6 to gpt-5.6-sol. Comparing an aliased model would be correctly
+// refused, which is the next check's job, not this one's.
+    const cleanPair = localTarget ? ["gpt-5.6", "gpt-5.6-luna"] : ["gpt-5.6-sol", "gpt-5.6-luna"];
+    const controlled = await runComparison(cleanPair);
     const scoreboard = page.locator(".scoreboard");
     await scoreboard.waitFor({ state: "visible" });
     const controlledPanel = {
@@ -568,6 +575,7 @@ async function main() {
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "13-comparison-controlled.png"));
 
     const aliased = await runComparison(["gpt-5.6", "gpt-5.6-terra"]);
+    const aliasProblem = aliased.comparison.integrity_problems.find((problem) => problem.code === "response_model_mismatch");
     await page.locator(".comparison-verdict.is-unusable").waitFor({ state: "visible" });
     const aliasedPanel = {
       text: await page.locator(".scoreboard").innerText(),
@@ -609,18 +617,14 @@ async function main() {
         controlled.forecast.includes("2 models × 1 repetition = 2 sibling Runs") &&
         // The aliased sweep: refused as a result, and impossible to read as one.
         aliased.comparison.usable === false &&
-        aliased.comparison.integrity_problems.some((problem) =>
-          problem.code === "response_model_mismatch" &&
-          problem.requested === "gpt-5.6-terra" &&
-          problem.answered === "gpt-5.6-terra-sol"
-        ) &&
+        Boolean(aliasProblem) && aliasProblem.requested !== aliasProblem.answered &&
         aliasedPanel.alerts === 1 && aliasedPanel.usableVerdicts === 0 &&
         aliasedPanel.problems === aliased.comparison.integrity_problems.length &&
         aliasedPanel.compromisedRows === 1 &&
         aliasedPanel.listBadge === "Unusable" &&
         aliasedPanel.text.includes("not a result and must not be presented as one") &&
         aliasedPanel.text.includes("response_model_mismatch") &&
-        aliasedPanel.text.includes("gpt-5.6-terra-sol"),
+        aliasedPanel.text.includes(aliasProblem.answered),
       {
         controlled: {
           id: controlled.comparison.id,

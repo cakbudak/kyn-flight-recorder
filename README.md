@@ -439,10 +439,10 @@ approval/resume; live graph evidence; dead-end ratification and brake refusal;
 and integrated maintenance.
 Provider-shaped deterministic responses are used locally; the same journey can be
 run against the deployed OpenAI-backed service. The current local journey passes
-**35/35** checks; see
+**36/36** checks; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 
-The same journey passes **35/35** against the deployed public origin with real
+The same journey is currently **red** against the deployed public origin with real
 model calls; see
 [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
 and the archived screenshots under `evidence/live/`.
