@@ -8,7 +8,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, NamedTuple, Sequence
+from typing import Any, Collection, Iterable, Mapping, NamedTuple, Sequence
 
 
 GENESIS_HASH = "0" * 64
@@ -473,6 +473,23 @@ NON_RATIFIABLE_FAULTS: tuple[NonRatifiableFault, ...] = (
             "can never be observed is dead policy and the brake carries none."
         ),
     ),
+    NonRatifiableFault(
+        name="completion_unevidenced",
+        error_code="completion_unevidenced",
+        executor_kind="",
+        reason=(
+            "A declared acceptance criterion can go unevidenced because this "
+            "Run's input never reached the work, which is a property of the "
+            "data and not of the pinned definition. Ratifying it would brake a "
+            "Flow that valid input still satisfies — the same trap as "
+            "`assertion_rejected`, where three refusals of three different bad "
+            "inputs share one fingerprint. The structural case is refused far "
+            "earlier and without spending a Run: publication rejects a "
+            "criterion whose evidence kind no pinned site can ever mint, "
+            "because a Flow may not declare a contract its own graph cannot "
+            "satisfy."
+        ),
+    ),
 )
 
 
@@ -843,6 +860,146 @@ def normalize_outcomes(
     if require_error and "error" not in ids:
         raise ContractViolation(f"{field} must declare an error outcome")
     return normalized
+
+
+# The acceptance contract a Flow version may declare. Bounded like `outcomes`,
+# but lower, because the two bounds measure different things: outcomes bound how
+# far a graph may fan out, while every acceptance criterion must hold at least
+# one resolved evidence anchor before a Run may complete. So the ceiling here is
+# what a single Run can plausibly evidence and a reader can hold in their head
+# while reading a refusal — eight, deliberately under the twelve of `outcomes`.
+MAX_ACCEPTANCE_CRITERIA = 8
+
+# The Flow node ceiling, named here rather than left as a literal in the runtime
+# because the acceptance contract bounds against it too: a criterion may name at
+# most every node in its Flow once, so anything beyond this could only be a
+# duplicate or a typo. One definition, so the two bounds cannot drift apart.
+MAX_FLOW_NODES = 64
+
+
+def _evidence_kind_names() -> frozenset[str]:
+    """Read the evidence vocabulary from `stop_seam`, which owns it.
+
+    Imported inside the call rather than at module scope: `stop_seam` depends on
+    this module for its refusal type, so a top-level import here would close a
+    cycle. The table stays owned there because that is where it is enforced
+    against run-owned truth, and a second copy here is exactly the drift the
+    note on `DEFAULT_NODE_SETTINGS` exists to refuse.
+    """
+
+    from .stop_seam import EVIDENCE_KINDS
+
+    return frozenset(kind.name for kind in EVIDENCE_KINDS)
+
+
+def normalize_acceptance_criteria(
+    value: Any,
+    field: str,
+    *,
+    node_ids: Collection[str] | None = None,
+) -> list[dict[str, str]]:
+    """Validate the immutable acceptance contract pinned to a Flow version.
+
+    Zero criteria is the default and means the feature is inert: no judge call,
+    no model spend, and the same completion path every Flow takes today.
+
+    Each criterion names the `node_ids` whose work may evidence it, and is
+    satisfied by an anchor attributable to any one of them. Without that pin an
+    `effect` criterion would be satisfied by *any* effect the Run wrote, so "the
+    report was published" could be carried by an unrelated store write — the
+    resolver can filter fabricated and foreign-Run anchors, but it cannot filter
+    irrelevance. Several sites are admitted because a Flow may branch to two
+    nodes either of which legitimately does the work; a single site would fail
+    such a Run structurally, while the work was genuinely done.
+
+    The list is order-normalized because it is semantically a set: two authors
+    declaring the same sites in different order must reach the same pinned
+    version rather than two versions that differ only in spelling.
+
+    `node_ids` (the argument) is the pinned node set, supplied at publication;
+    it is optional so the normalizer stays usable on its own.
+    """
+
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > MAX_ACCEPTANCE_CRITERIA:
+        raise ContractViolation(
+            f"{field} must contain at most {MAX_ACCEPTANCE_CRITERIA} criteria"
+        )
+    kinds = _evidence_kind_names()
+    normalized: list[dict[str, str]] = []
+    ids: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) != {
+            "id",
+            "statement",
+            "evidence_kind",
+            "node_ids",
+        }:
+            raise ContractViolation(f"{field}[{index}] has an invalid shape")
+        criterion_id = require_slug(item["id"], f"{field}[{index}] id")
+        if criterion_id in ids:
+            raise ContractViolation(f"{field} criterion ids must be unique")
+        ids.add(criterion_id)
+        if item["evidence_kind"] not in kinds:
+            raise ContractViolation(
+                f"{field}[{index}] evidence_kind is not an admitted evidence kind"
+            )
+        declared_sites = item["node_ids"]
+        if (
+            not isinstance(declared_sites, list)
+            or not 1 <= len(declared_sites) <= MAX_FLOW_NODES
+        ):
+            raise ContractViolation(
+                f"{field}[{index}] must name between one and "
+                f"{MAX_FLOW_NODES} node ids"
+            )
+        sites = [
+            require_slug(site, f"{field}[{index}] node id") for site in declared_sites
+        ]
+        if len(set(sites)) != len(sites):
+            raise ContractViolation(f"{field}[{index}] must not name a node twice")
+        if node_ids is not None:
+            unknown = sorted(set(sites) - set(node_ids))
+            if unknown:
+                raise ContractViolation(
+                    f"{field} criterion {criterion_id} pins "
+                    f"{', '.join(unknown)}, which this Flow does not declare"
+                )
+        normalized.append(
+            {
+                "id": criterion_id,
+                "statement": require_string(
+                    item["statement"], f"{field}[{index}] statement", maximum=240
+                ),
+                "evidence_kind": str(item["evidence_kind"]),
+                "node_ids": sorted(sites),
+            }
+        )
+    return normalized
+
+
+def normalize_judge_agent_version_id(
+    value: Any, field: str, *, criteria: Sequence[Mapping[str, Any]]
+) -> str | None:
+    """Pair the judge casting with the contract it adjudicates.
+
+    Required if and only if at least one criterion is declared: a contract with
+    no judge could never be adjudicated, and a judge with no contract would be a
+    model call with nothing to decide.
+    """
+
+    if not criteria:
+        if value is not None:
+            raise ContractViolation(
+                f"{field} may only be declared alongside acceptance criteria"
+            )
+        return None
+    if value is None:
+        raise ContractViolation(
+            f"{field} is required when acceptance criteria are declared"
+        )
+    return require_string(value, field, maximum=80)
 
 
 def render_prompt(

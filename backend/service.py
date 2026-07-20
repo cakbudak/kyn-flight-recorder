@@ -13,7 +13,9 @@ from .contracts import (
     PLACEHOLDER_RE,
     fingerprint,
     new_id,
+    normalize_acceptance_criteria,
     normalize_json_schema,
+    normalize_judge_agent_version_id,
     normalize_outcomes,
     policy_marker,
     require_slug,
@@ -24,7 +26,12 @@ from .contracts import (
 from .model_comparison import build_comparison
 from .runtime import AgentRuntime, ResponseTransport
 from .store import Store
-from .studio_runtime import StudioRuntime, validate_flow_definition
+from .studio_runtime import (
+    StudioRuntime,
+    action_mints_effect,
+    validate_acceptance_contract,
+    validate_flow_definition,
+)
 from .studio_store import StudioStore
 from .tools import ToolRegistry
 
@@ -78,11 +85,219 @@ class ControlPlane:
         if seed:
             self.store.seed_default_lab(workspace["id"], model=self.default_model)
             self.studio.seed_default(workspace["id"], model=self.default_model)
+            self._seed_contracted_flow(workspace["id"])
         return {
             "workspace_id": workspace["id"],
             "workspace_token": workspace["token"],
             "snapshot": self.snapshot(workspace["id"]),
         }
+
+    # The one seeded Flow that declares what finishing means, so the stop seam is
+    # reachable in the shipped demo rather than only in the test suite.
+    #
+    # Deliberately branch-shaped, and the branch is the whole point. One pinned
+    # version both refuses and admits, decided by nothing but the Run input: an
+    # input below the readiness threshold routes away from the ledger, so the
+    # declared evidence is never minted and the Run fails `completion_unevidenced`;
+    # an input above it writes the record and the same version completes. The
+    # refusal is therefore honest — the evidence genuinely does not exist — which
+    # is also why a real Goal-Judge reaches it without being told to, and why the
+    # fault is not ratifiable: it is a property of this Run's data, not of the
+    # definition.
+    #
+    # Seeded through this class's own authoring API rather than by direct insert,
+    # so the acceptance contract passes exactly the two publication guards a
+    # user-authored Flow passes — including self-adjudication, which is why the
+    # judge Agent below is cast by no node of this graph. Workspace creation
+    # fails loudly if either guard ever refuses it.
+    def _seed_contracted_flow(self, workspace_id: str) -> dict[str, Any]:
+        record_property = {"type": "string", "minLength": 1, "maxLength": 2_000}
+        readiness_property = {"type": "number", "minimum": 0, "maximum": 1}
+        gate = self.create_action(
+            workspace_id,
+            name="Publication readiness gate",
+            slug="publication-readiness-gate",
+            description=(
+                "Routes a submitted record by its declared readiness score, with no "
+                "model in the decision."
+            ),
+            kind="condition",
+            input_schema={
+                "type": "object",
+                "properties": {"readiness": dict(readiness_property)},
+                "required": ["readiness"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "matched": {"type": "boolean"},
+                    "actual": {"type": "number"},
+                },
+                "required": ["matched", "actual"],
+                "additionalProperties": False,
+            },
+            config={"path": "readiness", "operator": "gte", "value": 0.75},
+            agent_version_id=None,
+        )
+        ledger = self.create_action(
+            workspace_id,
+            name="Evidence ledger write",
+            slug="evidence-ledger-write",
+            description=(
+                "Appends the submitted record to this workspace's published evidence "
+                "ledger as one idempotent effect."
+            ),
+            kind="data_store",
+            input_schema={
+                "type": "object",
+                "properties": {"record": dict(record_property)},
+                "required": ["record"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "effect_id": {"type": "string"},
+                    "collection": {"type": "string"},
+                },
+                "required": ["effect_id", "collection"],
+                "additionalProperties": False,
+            },
+            config={
+                "operation": "append_record",
+                "collection": "published-evidence",
+                "write_enabled": True,
+            },
+            agent_version_id=None,
+        )
+        hold = self.create_action(
+            workspace_id,
+            name="Hold for revision",
+            slug="hold-for-revision",
+            description=(
+                "Returns the record unpublished when readiness is short, writing "
+                "nothing anywhere."
+            ),
+            kind="template",
+            input_schema={
+                "type": "object",
+                "properties": {"record": dict(record_property)},
+                "required": ["record"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            config={
+                "template": "Held for revision and published nowhere: {{record}}"
+            },
+            agent_version_id=None,
+        )
+        prompt = self.create_prompt(
+            workspace_id,
+            name="Goal-Judge adjudication prompt",
+            slug="goal-judge-adjudication",
+            template=(
+                "Decide, for each declared acceptance criterion, whether this Run's "
+                "own evidence shows the declared work was performed at a declared "
+                "site. Anchor only supplied evidence ids. Prefer marking a criterion "
+                "unevidenced over anchoring it to evidence that does not show the "
+                "declared work."
+            ),
+            variables=[],
+        )
+        judge = self.create_agent(
+            workspace_id,
+            name="Completion Goal-Judge",
+            slug="completion-goal-judge",
+            role="executor",
+            model=self.default_model,
+            instructions=(
+                "You adjudicate completion claims at the stop seam. A claim of being "
+                "finished is evidence, never proof. Judge only against the Run "
+                "evidence supplied to you."
+            ),
+            prompt_version_id=prompt["version"]["id"],
+            skill_version_ids=[],
+        )
+        return self.create_studio_flow(
+            workspace_id,
+            name="Contracted evidence publication",
+            slug="contracted-evidence-publication",
+            description=(
+                "Declares what finishing means: this Run may only report completed if "
+                "the submitted record actually reached the evidence ledger."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "record": dict(record_property),
+                    "readiness": dict(readiness_property),
+                },
+                "required": ["record", "readiness"],
+                "additionalProperties": False,
+            },
+            acceptance_criteria=[
+                {
+                    "id": "record-in-ledger",
+                    "statement": (
+                        "The submitted record was written to the workspace evidence "
+                        "ledger."
+                    ),
+                    "evidence_kind": "effect",
+                    "node_ids": ["publish-to-ledger"],
+                },
+                {
+                    "id": "ledger-write-succeeded",
+                    "statement": (
+                        "The ledger write reported success rather than a mere "
+                        "attempt."
+                    ),
+                    "evidence_kind": "receipt",
+                    "node_ids": ["publish-to-ledger"],
+                },
+            ],
+            judge_agent_version_id=judge["version"]["id"],
+            start_node_id="readiness-gate",
+            nodes=[
+                {
+                    "id": "readiness-gate",
+                    "type": "action",
+                    "version_id": gate["version"]["id"],
+                    "input_mapping": {
+                        "readiness": {"source": "input", "path": "readiness"}
+                    },
+                },
+                {
+                    "id": "publish-to-ledger",
+                    "type": "action",
+                    "version_id": ledger["version"]["id"],
+                    "input_mapping": {
+                        "record": {"source": "input", "path": "record"}
+                    },
+                },
+                {
+                    "id": "hold-for-revision",
+                    "type": "action",
+                    "version_id": hold["version"]["id"],
+                    "input_mapping": {
+                        "record": {"source": "input", "path": "record"}
+                    },
+                },
+            ],
+            routes=[
+                {"from": "readiness-gate", "to": "publish-to-ledger", "outcome": "true"},
+                {
+                    "from": "readiness-gate",
+                    "to": "hold-for-revision",
+                    "outcome": "false",
+                },
+            ],
+        )
 
     def resolve_workspace(self, token: str) -> str:
         return self.store.resolve_workspace(token)
@@ -621,6 +836,8 @@ class ControlPlane:
         input_schema: Any,
         output_schema: Any = None,
         outcomes: Any = None,
+        acceptance_criteria: Any = None,
+        judge_agent_version_id: Any = None,
         start_node_id: Any,
         nodes: Any,
         routes: Any,
@@ -649,6 +866,13 @@ class ControlPlane:
                     f"Flow node {node['id']} mapping does not satisfy its pinned input contract"
                 )
         self._validate_route_outcome_ownership(normalized_routes, contracts)
+        normalized_criteria, normalized_judge = self._normalize_acceptance_contract(
+            workspace_id,
+            acceptance_criteria,
+            judge_agent_version_id,
+            nodes=normalized_nodes,
+            contracts=contracts,
+        )
         normalized_output = (
             normalize_json_schema(output_schema, "Flow output schema")
             if output_schema is not None
@@ -669,6 +893,8 @@ class ControlPlane:
             start_node_id=start,
             nodes=normalized_nodes,
             routes=normalized_routes,
+            acceptance_criteria=normalized_criteria,
+            judge_agent_version_id=normalized_judge,
         )
         return {
             **published,
@@ -686,6 +912,8 @@ class ControlPlane:
         input_schema: Any,
         output_schema: Any = None,
         outcomes: Any = None,
+        acceptance_criteria: Any = None,
+        judge_agent_version_id: Any = None,
         start_node_id: Any,
         nodes: Any,
         routes: Any,
@@ -733,6 +961,24 @@ class ControlPlane:
                     f"Flow node {node['id']} mapping does not satisfy its pinned input contract"
                 )
         self._validate_route_outcome_ownership(normalized_routes, contracts)
+        # An omitted acceptance contract carries forward with its judge, exactly
+        # as `outcomes` does. Dropping it on silence would let a revision that
+        # simply forgot the field quietly retire a safety contract; clearing it
+        # stays expressible by declaring `[]`. If a carried-forward criterion
+        # pins a node this revision removed, publication refuses — loudly, which
+        # is the right way for a stale contract to surface.
+        carried_forward = acceptance_criteria is None and judge_agent_version_id is None
+        normalized_criteria, normalized_judge = self._normalize_acceptance_contract(
+            workspace_id,
+            current["version"]["acceptance_criteria"] if carried_forward else acceptance_criteria,
+            (
+                current["version"]["judge_agent_version_id"]
+                if carried_forward
+                else judge_agent_version_id
+            ),
+            nodes=normalized_nodes,
+            contracts=contracts,
+        )
         normalized_output = (
             normalize_json_schema(output_schema, "Flow output schema")
             if output_schema is not None
@@ -757,6 +1003,8 @@ class ControlPlane:
             start_node_id=start,
             nodes=normalized_nodes,
             routes=normalized_routes,
+            acceptance_criteria=normalized_criteria,
+            judge_agent_version_id=normalized_judge,
         )
         return {
             **revised,
@@ -775,6 +1023,10 @@ class ControlPlane:
                 # The declared policy predicate a principle would recognise.
                 "executor_kind": action["kind"],
                 "policy_marker": policy_marker(action["kind"], action["config"]),
+                # What this pinned Action can mint, for the acceptance guard:
+                # whether it can ever write, and which Agent version it casts.
+                "mints_effect": action_mints_effect(action["kind"], action["config"]),
+                "agent_version_id": action["agent_version_id"],
             }
         if node["type"] == "agent":
             agent = self.studio.get_agent_runtime(workspace_id, node["version_id"])
@@ -810,6 +1062,59 @@ class ControlPlane:
             "output_schema": flow["output_schema"],
             "outcomes": flow["outcomes"],
         }
+
+    def _normalize_acceptance_contract(
+        self,
+        workspace_id: str,
+        acceptance_criteria: Any,
+        judge_agent_version_id: Any,
+        *,
+        nodes: Sequence[Mapping[str, Any]],
+        contracts: Mapping[str, Mapping[str, Any]],
+    ) -> tuple[list[dict[str, str]], str | None]:
+        """Normalize the declared acceptance contract and run its two guards.
+
+        Called after the node contracts are resolved because both guards read
+        the *pinned* graph: what a node's Action can actually mint, and which
+        Agent versions the graph already casts.
+        """
+
+        criteria = normalize_acceptance_criteria(
+            acceptance_criteria,
+            "Flow acceptance criteria",
+            node_ids={str(node["id"]) for node in nodes},
+        )
+        judge = normalize_judge_agent_version_id(
+            judge_agent_version_id, "Flow judge Agent version", criteria=criteria
+        )
+        if judge is not None:
+            try:
+                self.studio.get_agent_runtime(workspace_id, judge)
+            except NotFound as error:
+                raise ContractViolation(
+                    "Flow judge Agent version does not belong to the workspace"
+                ) from error
+        # Walked only when a judge is declared, so a Flow that declares no
+        # contract pays nothing for a guarantee it never asked for.
+        subflow_cast = (
+            {
+                str(node["id"]): self.studio.flow_version_cast_agents(
+                    workspace_id, str(node["version_id"])
+                )
+                for node in nodes
+                if node["type"] == "flow"
+            }
+            if judge is not None
+            else {}
+        )
+        validate_acceptance_contract(
+            acceptance_criteria=criteria,
+            judge_agent_version_id=judge,
+            nodes=nodes,
+            node_contracts=contracts,
+            subflow_cast=subflow_cast,
+        )
+        return criteria, judge
 
     def _flow_advisories(
         self, workspace_id: str, contracts: Mapping[str, Mapping[str, Any]]

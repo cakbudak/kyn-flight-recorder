@@ -891,6 +891,143 @@ async function main() {
       await capture(page, resolve(ROOT, options.artifacts, "07-maintenance-proof.png"));
     }
 
+    progress("refusing a completion the evidence does not support, then admitting the same pinned version when it does");
+    // The stop seam, in the two directions that make it a claim rather than a
+    // slogan. One seeded Flow version declares that finishing means the record
+    // reached the evidence ledger; a readiness below the gate routes away from
+    // that node, so the declared evidence is never minted and the Run is refused.
+    // The identical pinned version, given input that reaches the node, completes.
+    // Nothing about the contract or the judge changes between the two — only the
+    // data — which is the whole reason `completion_unevidenced` is a property of
+    // a Run and not of a definition.
+    //
+    // Exactly one model call per Run, both times: the Flow pins no model-backed
+    // node, so the adjudication is the entire spend and this beat costs the
+    // journey two calls.
+    snapshot = await workspaceSnapshot(page);
+    const contractedFlow = snapshot.studio.flows.find((item) => item.slug === "contracted-evidence-publication");
+    const declaredCriteria = contractedFlow.version.acceptance_criteria;
+    const contractedRecord = "Build Week launch note submitted for the public evidence ledger.";
+    const seenContractedRuns = new Set();
+    const statusHistory = (run) => run.events.filter((event) => event.type === "run.status_changed").map((event) => event.payload.to);
+    const completionEvents = (run) => run.events.filter((event) => event.type.startsWith("completion."));
+    const isTerminal = (run) => ["completed", "failed", "blocked", "cancelled"].includes(run.status);
+    const contractedRun = async (readiness, label) => {
+      await navigate(page, "Flow Studio");
+      await page.locator("#flow-select").selectOption(contractedFlow.id);
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      await fieldControl(page.locator(".modal"), "Run input", "textarea").fill(JSON.stringify({ record: contractedRecord, readiness }, null, 2));
+      await page.getByRole("button", { name: "Pin and start Run" }).click();
+      // A refused mutation would otherwise expire as a bare locator timeout on
+      // the Runs view instead of reporting the server's own sentence.
+      await awaitSurface(page, ".runs-page", `starting the ${label} contracted Run`);
+      const fresh = (value) => value.studio.runs.find((run) => run.flow_id === contractedFlow.id && !seenContractedRuns.has(run.id) && isTerminal(run));
+      const latest = await waitForSnapshot(page, (value) => Boolean(fresh(value)), `terminal ${label} contracted Run`);
+      const run = fresh(latest);
+      seenContractedRuns.add(run.id);
+      // Select this Run explicitly rather than trusting the console's default.
+      // A citation earlier in the journey asked the console to focus one exact
+      // Run, and that request is honoured again on every remount — so arriving
+      // here from the Flow Studio would otherwise land on the cited Run and the
+      // adjudication asserted below would be read off the wrong evidence.
+      await page.locator(".run-list-item").filter({ hasText: shortId(run.id) }).first().click();
+      await waitIdle(page);
+      return run;
+    };
+
+    const refusedRun = await contractedRun(0.31, "refused");
+    const refusedEvents = completionEvents(refusedRun);
+    record(
+      "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
+      declaredCriteria.length === 2 &&
+        contractedFlow.version.judge_agent_version_id !== null &&
+        refusedRun.status === "failed" &&
+        refusedRun.error_code === "completion_unevidenced" &&
+        // Never completed, not merely not completed now: a post-hoc annotation
+        // on an already-finished Run would satisfy the final row and nothing a
+        // user cares about.
+        !statusHistory(refusedRun).includes("completed") &&
+        refusedRun.output === null &&
+        refusedEvents.length === 1 && refusedEvents[0].type === "completion.refused" &&
+        refusedEvents[0].payload.admitted === false &&
+        declaredCriteria.every((criterion) => refusedEvents[0].payload.unevidenced.includes(criterion.id)) &&
+        // The work it did do is untouched, and the work it never did is absent.
+        refusedRun.effects.length === 0 &&
+        refusedRun.steps.map((step) => step.node_id).join(",") === "readiness-gate,hold-for-revision" &&
+        // One adjudication, and the ledger still verifies across it.
+        refusedRun.model_calls.length === 1 &&
+        verifyChain(refusedRun),
+      {
+        run: refusedRun.id,
+        status: refusedRun.status,
+        error_code: refusedRun.error_code,
+        status_history: statusHistory(refusedRun),
+        unevidenced: refusedEvents[0]?.payload?.unevidenced,
+        effects: refusedRun.effects.length,
+        model_calls: refusedRun.model_calls.length
+      }
+    );
+
+    await awaitSurface(page, ".completion-callout", "the refused adjudication");
+    await page.locator(".completion-callout").scrollIntoViewIfNeeded();
+    // These two frames are submission assets, so let the transient success
+    // toast clear rather than capturing it parked over the verdict.
+    await page.locator(".toast").waitFor({ state: "hidden" });
+    await waitIdle(page);
+    const refusalPanel = {
+      text: await page.locator(".completion-callout").innerText(),
+      tone: await page.locator(".completion-callout.tone-danger").count(),
+      criteria: await page.locator(".completion-callout .criterion-list > li").count(),
+      unevidenced: await page.locator(".completion-callout .criterion-list > li.is-unevidenced").count()
+    };
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "15-completion-refused.png"));
+    record(
+      "the Runs console renders the stop-seam refusal and names every declared promise that carried no accepted evidence",
+      refusalPanel.tone === 1 &&
+        refusalPanel.criteria === declaredCriteria.length &&
+        refusalPanel.unevidenced === declaredCriteria.length &&
+        refusalPanel.text.includes("Completion refused") &&
+        refusalPanel.text.includes("completion_unevidenced") &&
+        declaredCriteria.every((criterion) => refusalPanel.text.includes(criterion.id) && refusalPanel.text.includes(criterion.statement)) &&
+        refusalPanel.text.includes("publish-to-ledger"),
+      { ...refusalPanel, characters: refusalPanel.text.length }
+    );
+
+    const admittedRun = await contractedRun(0.92, "admitted");
+    const admittedEvents = completionEvents(admittedRun);
+    await awaitSurface(page, ".completion-callout.tone-success", "the admitted adjudication");
+    await page.locator(".completion-callout").scrollIntoViewIfNeeded();
+    // These two frames are submission assets, so let the transient success
+    // toast clear rather than capturing it parked over the verdict.
+    await page.locator(".toast").waitFor({ state: "hidden" });
+    await waitIdle(page);
+    const admissionPanelText = await page.locator(".completion-callout").innerText();
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "16-completion-admitted.png"));
+    record(
+      "the identical pinned Flow version admits when the Run actually reached the declared work, so the refusal was about this Run's data and not the definition",
+      admittedRun.flow_version_id === refusedRun.flow_version_id &&
+        admittedRun.flow_fingerprint === refusedRun.flow_fingerprint &&
+        admittedRun.status === "completed" &&
+        admittedRun.error_code === null &&
+        statusHistory(admittedRun).join(",") === "running,completed" &&
+        admittedEvents.length === 1 && admittedEvents[0].type === "completion.admitted" &&
+        admittedEvents[0].payload.admitted === true &&
+        admittedEvents[0].payload.unevidenced.length === 0 &&
+        admittedEvents[0].payload.criteria.every((criterion) => criterion.holds && criterion.surviving.length >= 1) &&
+        admittedRun.effects.length === 1 &&
+        admittedRun.model_calls.length === 1 &&
+        admissionPanelText.includes("Completion admitted") &&
+        verifyChain(admittedRun),
+      {
+        refused: refusedRun.id,
+        admitted: admittedRun.id,
+        shared_flow_version: admittedRun.flow_version_id,
+        effects: admittedRun.effects.length,
+        model_calls: admittedRun.model_calls.length,
+        adjudications_added_by_this_beat: refusedRun.model_calls.length + admittedRun.model_calls.length
+      }
+    );
+
     progress("checking documentation, accessibility, motion, and responsive layout");
     await navigate(page, "Documentation");
     const documentationText = await page.locator(".docs-page").innerText();

@@ -85,7 +85,7 @@
   /* code and monospace panels; dark recesses them below the card, so light
      must too -- surface-0 sits ABOVE surface-1 on an inverted ramp */
   --code-surface: var(--surface-0);
-  --sequence-arrow: #7a8593;
+  --sequence-arrow: #8f99a7;
   --doc-index: #7a8593;
 
   --tone-success-border: color-mix(in srgb, var(--tone-success-edge) calc(25% * var(--edge-scale)), transparent);
@@ -177,28 +177,28 @@
     --accent-text: #3f6212;
 
     --tone-success-solid: #5f8b1a;
-    --tone-success-text: #3f6212;
+    --tone-success-text: #37540f;
     --tone-success-edge: #3f6212;
     --tone-success-tint: #3f6212;
     --tone-success-surface: #e8f2d6;
 
     --tone-ai-solid: #6d4bd8;
-    --tone-ai-text: #5b34c0;
+    --tone-ai-text: #4f2ba8;
     --tone-ai-edge: #5b34c0;
     --tone-ai-tint: #5b34c0;
 
     --tone-warning-solid: #a06508;
-    --tone-warning-text: #7a4d09;
+    --tone-warning-text: #6a4108;
     --tone-warning-edge: #7a4d09;
     --tone-warning-tint: #7a4d09;
 
     --tone-danger-solid: #c23a25;
-    --tone-danger-text: #a32d1e;
+    --tone-danger-text: #8f2718;
     --tone-danger-edge: #a32d1e;
     --tone-danger-tint: #a32d1e;
-    --tone-danger-ink: #8f2718;
-    --tone-danger-ink-banner: #8f2718;
-    --tone-danger-ink-card: #8f2718;
+    --tone-danger-ink: #7f2214;
+    --tone-danger-ink-banner: #7f2214;
+    --tone-danger-ink-card: #7f2214;
     --tone-danger-surface: #fbe6e1;
     --tone-danger-surface-strong: #fbe6e1;
 
@@ -260,28 +260,28 @@
   --accent-text: #3f6212;
 
   --tone-success-solid: #5f8b1a;
-  --tone-success-text: #3f6212;
+  --tone-success-text: #37540f;
   --tone-success-edge: #3f6212;
   --tone-success-tint: #3f6212;
   --tone-success-surface: #e8f2d6;
 
   --tone-ai-solid: #6d4bd8;
-  --tone-ai-text: #5b34c0;
+  --tone-ai-text: #4f2ba8;
   --tone-ai-edge: #5b34c0;
   --tone-ai-tint: #5b34c0;
 
   --tone-warning-solid: #a06508;
-  --tone-warning-text: #7a4d09;
+  --tone-warning-text: #6a4108;
   --tone-warning-edge: #7a4d09;
   --tone-warning-tint: #7a4d09;
 
   --tone-danger-solid: #c23a25;
-  --tone-danger-text: #a32d1e;
+  --tone-danger-text: #8f2718;
   --tone-danger-edge: #a32d1e;
   --tone-danger-tint: #a32d1e;
-  --tone-danger-ink: #8f2718;
-  --tone-danger-ink-banner: #8f2718;
-  --tone-danger-ink-card: #8f2718;
+  --tone-danger-ink: #7f2214;
+  --tone-danger-ink-banner: #7f2214;
+  --tone-danger-ink-card: #7f2214;
   --tone-danger-surface: #fbe6e1;
   --tone-danger-surface-strong: #fbe6e1;
 
@@ -746,9 +746,13 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 
 /* ratification brake: derived dead-end evidence and the refusal it produces */
 .dead-end-callout { margin: var(--space-4) var(--space-5); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-1); }
-.dead-end-callout.tone-warning { border-color: var(--tone-warning-border); background: var(--tone-warning-bg); }
-.dead-end-callout.tone-danger { border-color: var(--tone-danger-border); background: var(--tone-danger-bg); }
-.dead-end-callout > header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: var(--space-4); padding: var(--space-4); border-bottom: 1px solid var(--line); }
+/* Tone rides the edge and the icon, never the surface. The ratification state
+   is announced by a tinted badge in this header, and a tone-tinted surface
+   under it stacks two tints: measured at 3.80:1 for Canonical and 3.88:1 for
+   Confirmed on light before the tint came off. */
+.dead-end-callout.tone-warning { border-color: var(--tone-warning-border); }
+.dead-end-callout.tone-danger { border-color: var(--tone-danger-border); }
+.dead-end-callout > header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: var(--space-4); padding: var(--space-4); border-bottom: 1px solid var(--line); background: var(--surface-0); border-radius: var(--radius) var(--radius) 0 0; }
 .dead-end-callout.tone-warning > header { border-bottom-color: var(--tone-warning-border); }
 .dead-end-callout.tone-danger > header { border-bottom-color: var(--tone-danger-border); }
 .dead-end-icon, .brake-icon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--text-soft); }
@@ -783,6 +787,62 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .brake-refusal > header p strong { color: var(--text); }
 .brake-refusal article { margin: 0 var(--space-5) var(--space-5); border-color: var(--tone-danger-border); }
 
+/* stop seam: the completion verdict, and the anchors the runtime discarded.
+   The discarded anchors are the product of this panel, not a footnote, so they
+   are cards inside the criterion rather than a list of codes. A refused
+   completion is toned like the brake -- it stopped work -- but it is evidence
+   already recorded rather than a live alarm, so it stays in the page flow with
+   no role="alert" and nothing to dismiss. */
+.completion-callout { margin: var(--space-4) var(--space-5); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-1); }
+/* Tone rides the edge and the icon, never the surface. Every verdict here is
+   announced by a tinted badge, and tinting the surface underneath it stacks the
+   two: measured at 3.80:1 for the refused badge and 3.56:1 for the runtime
+   fault on light before this was pulled back to untinted cards. */
+.completion-callout.tone-success { border-color: var(--tone-success-border); }
+.completion-callout.tone-danger { border-color: var(--tone-danger-border); }
+.completion-callout > header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: var(--space-4); padding: var(--space-4); border-bottom: 1px solid var(--line); background: var(--surface-0); border-radius: var(--radius) var(--radius) 0 0; }
+.completion-callout.tone-success > header { border-bottom-color: var(--tone-success-border); }
+.completion-callout.tone-danger > header { border-bottom-color: var(--tone-danger-border); }
+.completion-icon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--text-soft); }
+.completion-callout.tone-success .completion-icon { border-color: var(--tone-success-border); color: var(--tone-success-text); }
+.completion-callout.tone-danger .completion-icon { border-color: var(--tone-danger-border); color: var(--tone-danger-text); }
+.completion-callout h3 { margin: 3px 0; font-size: 14px; }
+.completion-callout > header p:not(.panel-kicker) { max-width: 84ch; margin: var(--space-1) 0 0; color: var(--text-soft); font-size: 13px; line-height: 1.6; }
+.completion-callout > header p strong { color: var(--text); }
+.completion-callout > header p code { color: var(--text); font-size: 12px; }
+.completion-lead { max-width: 86ch; margin: 0; padding: var(--space-4) var(--space-4) 0; color: var(--text-soft); font-size: 13px; line-height: 1.6; }
+.criterion-list { display: grid; gap: var(--space-3); margin: 0; padding: var(--space-4); list-style: none; }
+.criterion-list > li { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-0); }
+.criterion-list > li.is-unevidenced { border-color: var(--tone-danger-border); }
+.criterion-list > li > header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.criterion-list > li > header strong { max-width: 82ch; font-size: 13px; }
+.criterion-list > li > header > code { padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: 3px; color: var(--text-soft); font-size: 12px; }
+.criterion-list .definition-list dd { white-space: normal; }
+.criterion-empty { margin: 0; color: var(--muted); font-size: 12px; }
+/* anchors are not citations: a citation points into the knowledge graph, an
+   anchor points at one run-owned record. Kept visually apart from the citation
+   chips for that reason -- same id rendering, no link affordance. */
+.anchor-roster { display: grid; gap: var(--space-2); }
+.anchor-roster ul { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.anchor-roster li > code { display: inline-flex; align-items: center; min-height: 32px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text-soft); background: var(--surface-1); font-size: 12px; }
+/* Two faults, two presentations, and the split is load-bearing. Every code but
+   one is the judge pointing at something the runtime would not take, which an
+   operator acts on by reading the pinned Flow. `anchor_node_unattributable` is
+   this runtime failing to attribute a record it holds -- a defect report
+   against us, so it carries the danger edge and its own surface and may never
+   be dressed up as judge noise. */
+.anchor-refusal-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.anchor-refusal { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--tone-warning-border); border-left-width: 3px; border-radius: var(--radius-sm); background: var(--surface-1); }
+.anchor-refusal.fault-runtime { border-color: var(--tone-danger-border); border-left-width: 5px; background: var(--tone-danger-surface); }
+.anchor-fault-mark { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--tone-danger-text); font-size: 12px; font-weight: 800; letter-spacing: .025em; }
+.anchor-refusal > header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.anchor-refusal > header strong { font-size: 12px; }
+.anchor-refusal > header > code { padding: var(--space-1) var(--space-2); border: 1px solid var(--line); border-radius: 3px; color: var(--text-soft); font-size: 12px; }
+.anchor-refusal-id { margin-left: auto; color: var(--muted); font-size: 12px; }
+.anchor-refusal-id code { color: var(--text-soft); font-size: 12px; }
+.anchor-refusal p { max-width: 86ch; margin: 0; color: var(--text-soft); font-size: 12px; line-height: 1.6; }
+.anchor-refusal .anchor-refusal-fault { color: var(--muted); }
+
 /* publish advisory: the same evidence vocabulary as the brake, in the calm
    informational tone. The brake is danger-toned because it refused a Run; this
    refused nothing, so it must not borrow a single alarm cue -- no danger hue,
@@ -809,7 +869,11 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .evidence-card.span-two { grid-column: 1 / -1; }
 .evidence-card > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); }
 .evidence-card h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; }
-.evidence-card header > span { color: var(--muted); font-size: 12px; }
+/* The plain timestamp span in these headers is muted; a Badge is not. Without
+   the :not() this rule outranked .badge-danger and rendered the Run-failure
+   badge in muted grey on a danger tint -- a danger state saying nothing in
+   colour, and 4.07:1 while it did. */
+.evidence-card header > span:not(.badge) { color: var(--muted); font-size: 12px; }
 .evidence-card dl { display: grid; grid-template-columns: repeat(2,1fr); margin: 0; }
 .evidence-card dl div { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-3); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .evidence-card dt { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
@@ -942,7 +1006,10 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .use-case:hover { background: var(--surface-2); }
 .use-case > strong { margin-top: 7px; font-size: 13px; }
 .use-case p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
-.use-case > span { display: flex; align-items: center; gap: 4px; margin-top: auto; color: var(--accent-text); font-size: 12px; font-weight: 750; }
+/* The call-to-action span at the foot of the card, not the tone badge at its
+   head: without the :not() this outranked .badge-ai and painted accent olive
+   over an AI tint, which is both the wrong tone and 4.20:1 on light. */
+.use-case > span:not(.badge) { display: flex; align-items: center; gap: 4px; margin-top: auto; color: var(--accent-text); font-size: 12px; font-weight: 750; }
 /* distilled principles: derived workspace knowledge, plus the stated ceiling */
 .principles-section .compact-empty { padding: var(--space-4) var(--space-5) var(--space-5); }
 .principles-section .compact-empty small em { color: var(--text-soft); font-style: normal; font-weight: 750; }
@@ -1361,6 +1428,9 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
   .approval-callout > div:last-child { grid-column: 1 / -1; justify-content: flex-end; }
   .dead-end-callout > header { grid-template-columns: auto 1fr; }
   .dead-end-callout > header > .badge { grid-column: 2; justify-self: start; }
+  .completion-callout > header { grid-template-columns: auto 1fr; }
+  .completion-callout > header > .badge { grid-column: 2; justify-self: start; }
+  .anchor-refusal-id { margin-left: 0; }
   .brake-refusal { position: static; width: auto; max-height: none; margin: 10px 16px; transform: none; }
   .segmented { padding-left: 8px; }
   .run-tab-content { padding: 12px; }

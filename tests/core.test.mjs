@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   APPROVAL_DEMO_BRIEF,
   TERMINAL_RUN_STATUSES,
+  completionAdjudication,
   exampleForSchema,
   isActiveRun,
   latestStepForNode,
@@ -82,6 +83,18 @@ test("run selection uses the Studio projection and honors an explicit ID", () =>
 test("healthy runs do not expose a maintenance workflow", () => {
   assert.equal(maintenancePhase(run({ status: "completed" })), "not-required");
   assert.equal(maintenancePhase(null), "unavailable");
+});
+
+test("the stop-seam verdict is read off the ledger and never derived in the browser", () => {
+  const refused = { type: "completion.refused", payload: { admitted: false, unevidenced: ["c1"], criteria: [] } };
+  assert.equal(completionAdjudication(run({ events: [{ type: "run.started", payload: {} }] })), null);
+  assert.equal(completionAdjudication(run()), null);
+  assert.equal(completionAdjudication(null), null);
+  const source = run({ events: [{ type: "completion.admitted", payload: { admitted: true } }, refused] });
+  assert.equal(completionAdjudication(source), refused.payload);
+  // Admission is the server's verdict, not a count of surviving anchors: a
+  // payload that says refused stays refused however its criteria read.
+  assert.equal(completionAdjudication(run({ events: [{ type: "completion.refused", payload: { admitted: false, unevidenced: [], criteria: [{ criterion_id: "c1", holds: true, surviving: ["effect_1"], discarded: [] }] } }] })).admitted, false);
 });
 
 test("the seeded AI Run example states every readiness boundary explicitly", () => {

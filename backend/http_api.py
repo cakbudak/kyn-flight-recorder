@@ -261,7 +261,12 @@ class ApiApplication:
                     "nodes",
                     "routes",
                 },
-                {"output_schema", "outcomes"},
+                {
+                    "output_schema",
+                    "outcomes",
+                    "acceptance_criteria",
+                    "judge_agent_version_id",
+                },
             )
             return self._ok(
                 self.control_plane.create_studio_flow(workspace_id, **body),
@@ -280,7 +285,14 @@ class ApiApplication:
                     "nodes",
                     "routes",
                 },
-                {"name", "description", "output_schema", "outcomes"},
+                {
+                    "name",
+                    "description",
+                    "output_schema",
+                    "outcomes",
+                    "acceptance_criteria",
+                    "judge_agent_version_id",
+                },
             )
             return self._ok(
                 self.control_plane.revise_studio_flow(

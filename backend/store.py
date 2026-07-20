@@ -87,6 +87,22 @@ class Store:
                 connection.execute(
                     "ALTER TABLE automation_flow_versions ADD COLUMN outcomes_json TEXT"
                 )
+            # Both nullable, and NULL is the whole backward-compatibility story:
+            # a version written before the acceptance contract existed declares
+            # no criteria, which is exactly the inert default. Nothing is
+            # back-filled, because inventing a contract for a version that was
+            # published without one would pin a promise nobody made.
+            if "acceptance_criteria_json" not in flow_version_columns:
+                connection.execute(
+                    "ALTER TABLE automation_flow_versions "
+                    "ADD COLUMN acceptance_criteria_json TEXT"
+                )
+            if "judge_agent_version_id" not in flow_version_columns:
+                connection.execute(
+                    "ALTER TABLE automation_flow_versions "
+                    "ADD COLUMN judge_agent_version_id TEXT "
+                    "REFERENCES agent_versions(id) ON DELETE RESTRICT"
+                )
             run_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(automation_runs)")

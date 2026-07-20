@@ -174,6 +174,20 @@ export function maintenancePhase(run, runs = []) {
   return proof ? "proven" : "applied";
 }
 
+export const COMPLETION_EVENT_TYPES = ["completion.admitted", "completion.refused"];
+
+/** The stop-seam verdict this Run carries, or null when none was recorded.
+ *
+ * The server decides admission; this only locates the event it wrote. The last
+ * one wins because the ledger is append-only and a Run may only ever reach the
+ * seam once — reading the last keeps a replayed ledger showing its verdict
+ * rather than an earlier one. A Flow that declares no criteria records nothing,
+ * which is the default, so an absent event is inertness and not a failure.
+ */
+export function completionAdjudication(run) {
+  return (run?.events ?? []).filter((event) => COMPLETION_EVENT_TYPES.includes(event.type)).at(-1)?.payload ?? null;
+}
+
 export function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }

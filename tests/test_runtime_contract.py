@@ -16,6 +16,15 @@ from backend.store import Store
 class ScriptedResponsesClient:
     """Provider-shaped fake. It never performs product decisions for the runtime."""
 
+    #: The state each evidence kind must be in before a record can carry a claim,
+    #: written in the shape the Goal-Judge is shown. Held here rather than
+    #: imported so this seam's idea of an honest reading is legible beside it.
+    ADMISSIBLE_ANCHOR_STATE = {
+        "receipt": "succeeded",
+        "step": "completed",
+        "approval": True,
+    }
+
     def __init__(
         self,
         store: Store,
@@ -39,6 +48,17 @@ class ScriptedResponsesClient:
         if not isinstance(metadata, dict):
             raise AssertionError("runtime did not identify the pinned agent role")
         if metadata.get("kyn_surface") == "agent-studio":
+            if metadata.get("operation") == "adjudication":
+                input_items = payload.get("input")
+                if not isinstance(input_items, list) or not input_items:
+                    raise AssertionError("adjudication question is missing")
+                return self._message(
+                    json.dumps(
+                        self._adjudication(json.loads(str(input_items[0]["content"]))),
+                        separators=(",", ":"),
+                    ),
+                    "studio-adjudication",
+                )
             if metadata.get("operation") == "diagnosis":
                 input_items = payload.get("input")
                 if not isinstance(input_items, list) or not input_items:
@@ -73,6 +93,56 @@ class ScriptedResponsesClient:
         if role == "repairer":
             return self._repair_response(metadata)
         raise AssertionError(f"unexpected role: {role!r}")
+
+    @classmethod
+    def _adjudication(cls, question: dict[str, object]) -> dict[str, object]:
+        """Answer the stop seam from the supplied evidence and nothing else.
+
+        This seam decides nothing the runtime is entitled to decide. It reads the
+        candidate set code assembled and anchors a criterion to every record of
+        the declared kind, minted at a declared site, in a state that can carry
+        the claim — the honest reading, and the same one a real model reaches
+        from the same evidence, because the two cases the shipped demo exercises
+        differ in whether the record exists at all rather than in how it is
+        described. A criterion with no such record is marked unevidenced.
+
+        Nothing here is scripted per-Run, so a refusal produced through this seam
+        is caused by the Run's evidence, never by the seam's opinion of it.
+        """
+
+        criteria = []
+        for criterion in question["acceptance_criteria"]:
+            admissible = cls.ADMISSIBLE_ANCHOR_STATE.get(criterion["evidence_kind"])
+            anchors = [
+                record["id"]
+                for records in question["run_evidence"].values()
+                for record in records
+                if record["kind"] == criterion["evidence_kind"]
+                and record["site"] in criterion["declared_sites"]
+                and (admissible is None or record["state"] == admissible)
+            ]
+            criteria.append(
+                {
+                    "criterion_id": criterion["criterion_id"],
+                    "unevidenced": not anchors,
+                    "anchors": anchors,
+                    "reason": (
+                        f"{len(anchors)} run-owned {criterion['evidence_kind']} "
+                        "record(s) were minted at a declared site."
+                        if anchors
+                        else "No run-owned record of the declared kind was minted "
+                        "at any declared site, so nothing here shows the declared "
+                        "work was performed."
+                    ),
+                }
+            )
+        return {
+            "assessment": (
+                "Each declared acceptance criterion was read against this Run's own "
+                "evidence at the sites the criterion pinned."
+            ),
+            "criteria": criteria,
+        }
 
     def _base(self, output: list[dict[str, object]], role: object) -> dict[str, object]:
         ordinal = len(self.requests)

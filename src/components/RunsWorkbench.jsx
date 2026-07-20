@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useThemeTokens } from "../theme.js";
 import {
   Background,
@@ -15,6 +15,7 @@ import { api, commandId } from "../api.js";
 import { Icon } from "../icons.jsx";
 import {
   STATUS_TONE,
+  completionAdjudication,
   exampleForSchema,
   formatTime,
   graphNodeLabel,
@@ -50,6 +51,50 @@ const RATIFICATION_MEANING = {
   proposed: "One Run reproduced this exact approach. It is recorded and it does not brake — an honest second attempt is never refused.",
   confirmed: "Two independent Runs reproduced it. It still does not brake; one further independent reproduction ratifies it.",
   canonical: "Three independent Runs reproduced it. This pinned Flow version is now refused before any Run row exists — which branch a Run would take is not knowable before it runs, so the version is the scope. Publishing a successor changes the fingerprint and clears the brake."
+};
+
+// The refusal codes and their prose belong to the resolver, and the payload
+// carries that prose with every discarded anchor, so nothing here restates a
+// reason. These are scan labels over the server's own sentences — plus the one
+// distinction inside them a reader must not miss: five codes are the judge
+// pointing at something the runtime would not take, and one is the runtime
+// admitting it could not attribute a record it holds.
+const ANCHOR_REFUSAL_LABEL = {
+  anchor_unresolvable: "No such record",
+  anchor_foreign_run: "Another Run's record",
+  anchor_kind_inadmissible: "Not the declared kind",
+  anchor_node_mismatch: "Not a declared site",
+  anchor_node_unattributable: "This runtime could not attribute it",
+  anchor_state_mismatch: "State cannot carry the claim"
+};
+// Blame is assigned code by code and never by default. A refusal code this
+// console has not been taught renders neutrally on the resolver's own reason,
+// because guessing whose fault it is would be the exact mis-attribution this
+// panel exists to expose.
+const ANCHOR_FAULT = {
+  anchor_unresolvable: "judge",
+  anchor_foreign_run: "judge",
+  anchor_kind_inadmissible: "judge",
+  anchor_node_mismatch: "judge",
+  anchor_state_mismatch: "judge",
+  anchor_node_unattributable: "runtime"
+};
+const ANCHOR_FAULT_LABEL = { judge: "Judge claim refused", runtime: "Runtime defect", unclassified: "Anchor refused" };
+// A judge claim is refused with the same tinted badge every other refusal in
+// this product wears. The runtime fault deliberately wears none: it sits on the
+// alarm surface with its own mark, because a badge on that surface stacks two
+// tints and, measured, drops its own label to 4.32:1 on light.
+const ANCHOR_FAULT_TONE = { judge: "warning" };
+// Only the runtime fault carries a second paragraph, and the asymmetry is the
+// point: a refused judge claim is the ordinary case, stated once above the list
+// so five identical restatements do not bury the one refusal that is ours.
+const ANCHOR_FAULT_MEANING = {
+  runtime: "This one is not judge noise. Attributing a record to the node that minted it is this runtime's job, and it failed: a record that may well evidence the claim could never be matched against a declared site. Read it as a defect report against this system, not against the judge."
+};
+// One code names something an operator can go and look at, so it says so. The
+// rest are answered in full by the reason the resolver already published.
+const ANCHOR_REFUSAL_ACT = {
+  anchor_node_mismatch: "Read the pinned Flow at the declared sites above: they are the only nodes whose work this criterion accepts."
 };
 
 export default function RunsWorkbench({ snapshot, refresh, mutate, busy, focusRunId = null }) {
@@ -91,6 +136,7 @@ export default function RunsWorkbench({ snapshot, refresh, mutate, busy, focusRu
   const selectRun = (id) => { setSelectedId(id); setTab("summary"); };
   const currentFlow = selected ? snapshot.studio.flows.find((flow) => flow.id === selected.flow_id) : null;
   const pinnedFlowVersion = currentFlow?.versions.find((version) => version.id === selected?.flow_version_id);
+  const adjudication = completionAdjudication(selected);
   const requiresModel = Boolean(pinnedFlowVersion?.requires_model);
 
   const continueRun = async () => mutate(() => api(`/api/v1/studio/runs/${selected.id}:continue`, { method: "POST", keyMode: requiresModel ? "required" : "optional", body: {} }), { success: "Run worker resumed" });
@@ -127,6 +173,7 @@ export default function RunsWorkbench({ snapshot, refresh, mutate, busy, focusRu
             <RunGraph snapshot={snapshot} run={selected} onSelectChild={selectRun} />
             {selected.pending_approval ? <ApprovalCallout run={selected} onDecision={(approved) => setApproval({ request: selected.pending_approval, approved })} /> : null}
             {selected.dead_ends?.length ? <DeadEndCallout run={selected} onSelectRun={selectRun} /> : null}
+            {adjudication ? <CompletionAdjudication run={selected} adjudication={adjudication} /> : null}
             <Segmented value={tab} onChange={setTab} label="Run evidence sections" items={[
               { value: "summary", label: "Summary" },
               { value: "steps", label: "Steps", count: selected.steps.length },
@@ -243,6 +290,80 @@ function DeadEndCallout({ run, onSelectRun }) {
       <CitedRuns label={`Citing Runs · ${record.citing_run_ids.length}`} ids={record.citing_run_ids} currentRunId={run.id} onSelectRun={onSelectRun} />
     </li>)}</ol>
   </section>;
+}
+
+/** The stop-seam verdict, and above all the anchors the runtime discarded.
+ *
+ * The panel exists for the discarded anchors. A judge that approves a
+ * completion proves nothing on its own, and the only way to see that in the
+ * product is to watch the runtime cite the judge's own anchors back and refuse
+ * them — so a discarded anchor gets the same card weight as a criterion, in
+ * both directions: an admitted completion that discarded anchors on the way is
+ * exactly as interesting as a refused one.
+ *
+ * Whether a criterion holds is read off the event, never recomputed. The
+ * server resolved it against records the browser cannot see.
+ */
+function CompletionAdjudication({ run, adjudication }) {
+  const criteria = adjudication.criteria ?? [];
+  const unevidenced = adjudication.unevidenced ?? [];
+  const discarded = criteria.reduce((total, criterion) => total + (criterion.discarded?.length ?? 0), 0);
+  const tone = adjudication.admitted ? "success" : "danger";
+  return <section className={`completion-callout tone-${tone}`} aria-labelledby="completion-adjudication-title">
+    <header>
+      <span className="completion-icon"><Icon name={adjudication.admitted ? "check" : "lock"} size={22} /></span>
+      <div>
+        <p className="panel-kicker">Stop seam · {criteria.length} declared acceptance criteri{criteria.length === 1 ? "on" : "a"}</p>
+        <h3 id="completion-adjudication-title">{adjudication.admitted ? "Completion admitted on resolved evidence" : `Completion refused · ${unevidenced.length} declared promise${unevidenced.length === 1 ? "" : "s"} went unevidenced`}</h3>
+        {adjudication.admitted
+          ? <p>A judge said this work was finished, and that sentence admitted nothing. Every declared criterion holds at least one anchor the runtime resolved independently against this Run's own records. {discarded ? <>{discarded} anchor{discarded === 1 ? " it cited was" : "s it cited were"} still discarded on the way — those are below, and they are the point.</> : "Every anchor it cited resolved."}</p>
+          : <p><strong>Nothing crashed.</strong> The pinned Flow version declares what finishing means here, and {unevidenced.map((id, index) => <span key={id}>{index ? ", " : ""}<code>{id}</code></span>)} carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched.{run.error_code ? <> The Run records <code>{run.error_code}</code>.</> : null}</p>}
+      </div>
+      <Badge tone={tone} dot>{adjudication.admitted ? "Admitted" : "Refused"}</Badge>
+    </header>
+    {discarded ? <p className="completion-lead">Every anchor below was cited by the judge itself. An anchor is a claim and never authority: only the ones that survived resolution against this Run's own records carry a criterion, and the runtime discarded {discarded === 1 ? "the one" : `${discarded} of them`} for the named reason.</p> : null}
+    <ol className="criterion-list">{criteria.map((criterion) => <Criterion key={criterion.criterion_id} criterion={criterion} />)}</ol>
+  </section>;
+}
+
+function Criterion({ criterion }) {
+  const surviving = criterion.surviving ?? [];
+  const discarded = criterion.discarded ?? [];
+  return <li className={criterion.holds ? "is-held" : "is-unevidenced"}>
+    <header><Badge tone={criterion.holds ? "success" : "danger"} dot>{criterion.holds ? "Evidenced" : "Unevidenced"}</Badge><strong>{criterion.statement}</strong><code>{criterion.criterion_id}</code></header>
+    <DefinitionList items={[
+      ["Admissible evidence", titleCase(criterion.evidence_kind)],
+      ["Declared sites", (criterion.declared_sites ?? []).join(", ")],
+      ["Anchors that survived", String(surviving.length)],
+      ["Anchors discarded", String(discarded.length)]
+    ]} />
+    {surviving.length
+      ? <AnchorRoster label={`Surviving anchors · ${surviving.length}`} ids={surviving} />
+      : <p className="criterion-empty">No anchor survived resolution, so this criterion carries nothing.</p>}
+    {discarded.length ? <ul className="anchor-refusal-list" aria-label={`Discarded anchors for ${criterion.criterion_id}`}>{discarded.map((anchor) => <DiscardedAnchor key={anchor.anchor_id} anchor={anchor} />)}</ul> : null}
+  </li>;
+}
+
+function AnchorRoster({ label, ids }) {
+  const headingId = useId();
+  return <div className="anchor-roster"><p className="panel-kicker" id={headingId}>{label}</p><ul aria-labelledby={headingId}>{ids.map((id) => <li key={id}><code>{shortId(id, 14)}</code></li>)}</ul></div>;
+}
+
+/** One anchor the judge cited and the resolver threw out, with its own reason.
+ *
+ * The reason is the resolver's published prose, rendered verbatim, so the
+ * console cannot drift into a second vocabulary for the same refusal.
+ */
+function DiscardedAnchor({ anchor }) {
+  const fault = ANCHOR_FAULT[anchor.refusal] ?? "unclassified";
+  return <li className={`anchor-refusal fault-${fault}`}>
+    <header>{fault === "runtime"
+      ? <span className="anchor-fault-mark"><Icon name="warning" size={14} />{ANCHOR_FAULT_LABEL[fault]}</span>
+      : <Badge tone={ANCHOR_FAULT_TONE[fault]} dot>{ANCHOR_FAULT_LABEL[fault]}</Badge>}<strong>{ANCHOR_REFUSAL_LABEL[anchor.refusal] ?? titleCase(anchor.refusal)}</strong><code>{anchor.refusal}</code><span className="anchor-refusal-id">Anchor <code>{shortId(anchor.anchor_id, 14)}</code></span></header>
+    <p>{anchor.reason}</p>
+    {ANCHOR_FAULT_MEANING[fault] ? <p className="anchor-refusal-fault">{ANCHOR_FAULT_MEANING[fault]}</p> : null}
+    {ANCHOR_REFUSAL_ACT[anchor.refusal] ? <p className="anchor-refusal-fault">{ANCHOR_REFUSAL_ACT[anchor.refusal]}</p> : null}
+  </li>;
 }
 
 export function BrakeRefusal({ detail, onDismiss }) {

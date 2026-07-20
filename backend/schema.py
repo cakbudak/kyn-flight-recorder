@@ -287,6 +287,8 @@ CREATE TABLE IF NOT EXISTS automation_flow_versions (
     input_schema_json TEXT NOT NULL,
     output_schema_json TEXT,
     outcomes_json TEXT,
+    acceptance_criteria_json TEXT,
+    judge_agent_version_id TEXT REFERENCES agent_versions(id) ON DELETE RESTRICT,
     start_node_id TEXT NOT NULL,
     nodes_json TEXT NOT NULL,
     routes_json TEXT NOT NULL,

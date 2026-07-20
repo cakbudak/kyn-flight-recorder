@@ -7,10 +7,13 @@ import math
 import re
 import time
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from .contracts import (
     ActionBlocked,
+    MAX_ACCEPTANCE_CRITERIA,
+    MAX_FLOW_NODES,
     PLACEHOLDER_RE,
     RETRYABLE_ERROR_CODES,
     BrakeEngaged,
@@ -29,6 +32,12 @@ from .contracts import (
     validate_json_schema,
 )
 from .runtime import ResponseTransport
+from .stop_seam import (
+    AcceptanceCriterion,
+    EvidenceBundle,
+    EvidenceRecord,
+    adjudicate,
+)
 from .studio_store import StudioStore
 
 
@@ -36,6 +45,11 @@ NODE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 CALLABLE_ACTION_KINDS = frozenset(
     {"template", "condition", "router", "sandbox", "transform", "assert"}
 )
+# The Action kinds whose executor mints a run effect, and the kind that mints a
+# human approval decision. Named once, beside the executor that mints them, so
+# the publication guard and the runtime cannot drift on what a node can produce.
+EFFECT_MINTING_ACTION_KINDS = frozenset({"sandbox", "data_store"})
+APPROVAL_ACTION_KIND = "approval"
 PROVIDER_DETAIL_FIELDS = frozenset(
     {"provider_code", "provider_type", "provider_param", "status", "request_id"}
 )
@@ -88,7 +102,7 @@ def validate_flow_definition(
     start = require_string(start_node_id, "Flow start node", maximum=64)
     if not NODE_ID_RE.fullmatch(start):
         raise ContractViolation("Flow start node has an invalid id")
-    if not isinstance(nodes, list) or not 1 <= len(nodes) <= 64:
+    if not isinstance(nodes, list) or not 1 <= len(nodes) <= MAX_FLOW_NODES:
         raise ContractViolation("Flow must contain between one and sixty-four nodes")
     normalized_nodes: list[dict[str, Any]] = []
     ids: set[str] = set()
@@ -275,6 +289,99 @@ def validate_flow_definition(
                     f"Flow node {node['id']} may read only a reachable predecessor Step"
                 )
     return start, normalized_nodes, normalized_routes
+
+
+def action_mints_effect(executor_kind: Any, config: Any) -> bool:
+    """Whether a pinned Action can ever mint a run effect.
+
+    Kind alone is not the predicate. A Store Action pinned with
+    `write_enabled: false` is refused by the very check its executor applies on
+    every attempt, so it can never mint an effect however the Run goes.
+    """
+
+    if executor_kind not in EFFECT_MINTING_ACTION_KINDS:
+        return False
+    if not isinstance(config, Mapping):
+        return False
+    return config.get("write_enabled", True) is True
+
+
+def validate_acceptance_contract(
+    *,
+    acceptance_criteria: Sequence[Mapping[str, Any]],
+    judge_agent_version_id: str | None,
+    nodes: Sequence[Mapping[str, Any]],
+    node_contracts: Mapping[str, Mapping[str, Any]],
+    subflow_cast: Mapping[str, frozenset[str]] = MappingProxyType({}),
+) -> None:
+    """Refuse, at publication, two declarations no Run could ever redeem.
+
+    This runs beside `validate_flow_definition` rather than inside it because
+    both refusals read the *resolved* graph — what each node's pinned target can
+    actually mint, and which Agent versions the graph already casts — while that
+    function is deliberately pure over the node shapes alone. Both refusals are
+    decidable without executing anything, so they cost no Runs.
+
+    A Flow that declares no criteria reaches neither loop, which is the whole
+    inertness guarantee.
+    """
+
+    for criterion in acceptance_criteria:
+        evidence_kind = str(criterion["evidence_kind"])
+        # Checked for *every* named site, not merely one. A criterion naming two
+        # sites promises a reader that either could carry the claim, so
+        # admitting an incapable site beside a capable one would let the
+        # contract read as stronger than the graph can honour.
+        for site in criterion["node_ids"]:
+            node_id = str(site)
+            # Membership was already proved when the criteria were normalized
+            # against the pinned node set, so an absent contract here would be a
+            # caller defect; treating it as an empty contract fails closed.
+            contract = node_contracts.get(node_id) or {}
+            # A Flow may not declare a contract its own pinned graph cannot
+            # possibly satisfy. `receipt` and `step` are minted for every node by
+            # the runtime itself, so they are always satisfiable and are not
+            # checked here. The other two name a capability: only a writing
+            # Action mints an effect, and only a human-approval Action mints an
+            # approval decision. A subflow node satisfies neither — its work is
+            # minted against the child Run, so it can never be anchored to this
+            # one.
+            satisfiable = {
+                "effect": bool(contract.get("mints_effect")),
+                "approval": contract.get("executor_kind") == APPROVAL_ACTION_KIND,
+            }.get(evidence_kind, True)
+            if not satisfiable:
+                raise ContractViolation(
+                    f"Flow acceptance criterion {criterion['id']} demands "
+                    f"{evidence_kind} evidence from node {node_id}, whose "
+                    "pinned target can never mint it"
+                )
+
+    if judge_agent_version_id is None:
+        return
+    # Independence is a property of the casting, not of the prompt. Nobody
+    # grades their own homework, and an Agent pinned one indirection deep behind
+    # an AI Action — or down inside a pinned subflow — is still cast in the work
+    # it would be judging. `subflow_cast` carries the transitive casting the
+    # store read off each pinned subflow version, so the whole pinned set is
+    # checked rather than only the nodes this Flow declares itself.
+    cast_by: dict[str, list[str]] = {}
+    for node in nodes:
+        node_id = str(node["id"])
+        if node["type"] == "agent":
+            cast_by.setdefault(str(node["version_id"]), []).append(node_id)
+        pinned_agent = (node_contracts.get(node_id) or {}).get("agent_version_id")
+        if pinned_agent:
+            cast_by.setdefault(str(pinned_agent), []).append(node_id)
+        for inherited in subflow_cast.get(node_id, ()):
+            cast_by.setdefault(str(inherited), []).append(node_id)
+    casting = cast_by.get(judge_agent_version_id)
+    if casting:
+        raise ContractViolation(
+            "Flow judge Agent version is already cast by "
+            f"node {', '.join(sorted(set(casting)))}, so it would adjudicate "
+            "its own work"
+        )
 
 
 def _normalize_path(value: Any, field: str) -> str:
@@ -841,6 +948,300 @@ class StudioRuntime:
             },
         )
 
+    ADJUDICATION_SCHEMA: Mapping[str, Any] = MappingProxyType(
+        {
+            "type": "object",
+            "properties": {
+                "assessment": {"type": "string", "minLength": 20, "maxLength": 1200},
+                "criteria": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": MAX_ACCEPTANCE_CRITERIA,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "criterion_id": {"type": "string"},
+                            "unevidenced": {"type": "boolean"},
+                            "anchors": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "maxItems": 8,
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 8,
+                                "maxLength": 400,
+                            },
+                        },
+                        "required": [
+                            "criterion_id",
+                            "unevidenced",
+                            "anchors",
+                            "reason",
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["assessment", "criteria"],
+            "additionalProperties": False,
+        }
+    )
+
+    def _record_adjudication(
+        self, workspace_id: str, run_id: str, adjudication: Any
+    ) -> None:
+        """Put the adjudication in the ledger whichever way it went.
+
+        Recording only refusals would make the happy path unauditable and would
+        quietly imply that an unrecorded completion was never questioned.
+        """
+
+        self.repository.append_event(
+            workspace_id,
+            run_id,
+            event_type=(
+                "completion.admitted"
+                if adjudication.admitted
+                else "completion.refused"
+            ),
+            actor_type="runtime",
+            actor_id=None,
+            payload={
+                "admitted": adjudication.admitted,
+                "unevidenced": list(adjudication.unevidenced),
+                "criteria": [
+                    {
+                        "criterion_id": resolution.criterion_id,
+                        "statement": resolution.statement,
+                        "evidence_kind": resolution.evidence_kind,
+                        "declared_sites": list(resolution.node_ids),
+                        "holds": resolution.holds,
+                        "surviving": list(resolution.surviving),
+                        "discarded": [
+                            {
+                                "anchor_id": item.anchor_id,
+                                "refusal": item.refusal,
+                                "reason": item.reason,
+                            }
+                            for item in resolution.discarded
+                        ],
+                    }
+                    for resolution in adjudication.resolutions
+                ],
+            },
+        )
+
+    def _adjudication_step_id(self, run: Mapping[str, Any]) -> str | None:
+        """Attach the judge's model call to the last Step that finished work.
+
+        A model call needs a Step to hang from, and no Step may be created once
+        a Run is terminal, so the judge borrows the Run's own last Step exactly
+        as diagnosis borrows the failed one.
+        """
+
+        for step in reversed(run["steps"]):
+            if step["status"] == "completed":
+                return step["id"]
+        return run["steps"][-1]["id"] if run["steps"] else None
+
+    def _adjudicate_completion(
+        self,
+        workspace_id: str,
+        run_id: str,
+        flow_version: Mapping[str, Any],
+    ) -> Any:
+        """Bind a completion claim to evidence before the claim becomes true.
+
+        Returns `None` when the pinned Flow version declares no contract, which
+        is the default and costs a model call nothing. Otherwise the Goal-Judge
+        is shown this Run's evidence as it actually is — not pre-filtered to
+        records that already qualify, which would pre-decide the question it
+        exists to answer — and must anchor every criterion it holds satisfied.
+        """
+
+        declared = list(flow_version.get("acceptance_criteria") or ())
+        if not declared:
+            return None
+        run = self.repository.get_run(workspace_id, run_id)
+        evidence = self.repository.adjudication_evidence(workspace_id, run_id)
+        candidates = evidence["candidates"]
+        criteria = tuple(
+            AcceptanceCriterion(
+                id=str(item["id"]),
+                statement=str(item["statement"]),
+                evidence_kind=str(item["evidence_kind"]),
+                node_ids=tuple(item.get("node_ids") or ()),
+            )
+            for item in declared
+        )
+        claimed = self._call_goal_judge(
+            workspace_id,
+            run_id,
+            run,
+            flow_version,
+            criteria=criteria,
+            candidates=candidates,
+        )
+        offered = {
+            record["id"]
+            for records in candidates.values()
+            for record in records
+        }
+        # Gate one: anti-fabrication. Code decided what this Run contains, and
+        # the judge may only speak about that. An anchor outside it is not a
+        # weak claim to be filtered later — it is a broken contract, because
+        # the judge cited something code never offered.
+        for anchors in claimed.values():
+            outside = [anchor for anchor in anchors if anchor not in offered]
+            if outside:
+                raise ContractViolation(
+                    "Goal-Judge cited evidence outside the code-owned candidate"
+                )
+        # Gate two: anti-irrelevance, independently and over a bundle that can
+        # actually see what was claimed.
+        #
+        # The evidence is fetched a second time, now with the claimed ids, and
+        # this is not redundant I/O. The first fetch is scoped to this Run
+        # because that is what the judge may speak about; resolving against it
+        # would make ownership true by construction, so `anchor_foreign_run`
+        # could never fire, deleting the ownership check would break no test,
+        # and a borrowed anchor would be reported as merely unresolvable. That
+        # collapse is the one this design named as forbidden, and it arrived
+        # anyway — through a parameter that existed and simply was not passed.
+        #
+        # Gate one still refuses a borrowed anchor first, so this gate's
+        # ownership check is defence in depth by construction rather than by
+        # accident: it is what remains correct, and correctly *diagnosed*, if
+        # gate one is ever removed.
+        resolved = self.repository.adjudication_evidence(
+            workspace_id,
+            run_id,
+            anchor_ids=[anchor for anchors in claimed.values() for anchor in anchors],
+        )
+        bundle = self._evidence_bundle(run_id, resolved["records"])
+        return adjudicate(criteria, claimed, bundle)
+
+    @staticmethod
+    def _evidence_bundle(
+        run_id: str, records: Mapping[str, Sequence[Mapping[str, Any]]]
+    ) -> EvidenceBundle:
+        def collection(name: str) -> tuple[EvidenceRecord, ...]:
+            return tuple(
+                EvidenceRecord(
+                    id=str(item["id"]),
+                    run_id=str(item["run_id"]),
+                    state=item["state"],
+                    node_id=item["node_id"],
+                )
+                for item in records.get(name, ())
+            )
+
+        return EvidenceBundle(
+            run_id=run_id,
+            effects=collection("effects"),
+            receipts=collection("receipts"),
+            approvals=collection("approvals"),
+            steps=collection("steps"),
+        )
+
+    def _call_goal_judge(
+        self,
+        workspace_id: str,
+        run_id: str,
+        run: Mapping[str, Any],
+        flow_version: Mapping[str, Any],
+        *,
+        criteria: Sequence[AcceptanceCriterion],
+        candidates: Mapping[str, Sequence[Mapping[str, Any]]],
+    ) -> dict[str, tuple[str, ...]]:
+        """Ask the pinned judge which criteria are *unevidenced*, adversarially."""
+
+        agent = self.repository.get_agent_runtime(
+            workspace_id, flow_version["judge_agent_version_id"]
+        )
+        step_id = self._adjudication_step_id(run)
+        if step_id is None:
+            raise ContractViolation("a Run with no Step cannot be adjudicated")
+        question = {
+            "acceptance_criteria": [
+                {
+                    "criterion_id": item.id,
+                    "statement": item.statement,
+                    "evidence_kind": item.evidence_kind,
+                    "declared_sites": list(item.node_ids),
+                }
+                for item in criteria
+            ],
+            "run_evidence": {
+                name: [
+                    {
+                        "id": record["id"],
+                        "kind": record["kind"],
+                        "site": record["node_id"],
+                        "state": record["state"],
+                    }
+                    for record in records
+                ]
+                for name, records in candidates.items()
+            },
+        }
+        payload = {
+            "model": self._effective_model(workspace_id, run_id, agent),
+            "instructions": (
+                "You are the pinned Kyn.ist Goal-Judge at the stop seam. The Run "
+                "claims it is finished; that claim is evidence, not proof. For "
+                "each acceptance criterion decide whether the supplied Run "
+                "evidence actually shows the declared work was performed at a "
+                "declared site. Ask which criteria are UNEVIDENCED and what was "
+                "claimed but not performed. Anchor every criterion you consider "
+                "satisfied to supplied evidence IDs; never invent an ID, never "
+                "cite evidence from another Run, and prefer marking a criterion "
+                "unevidenced over anchoring it to evidence that does not show "
+                "the declared work. Refusing costs a rerun; wrongly admitting "
+                "lets unfinished work be recorded as finished."
+            ),
+            "input": [{"role": "user", "content": canonical_json(question)}],
+            "tool_choice": "none",
+            "parallel_tool_calls": False,
+            "max_output_tokens": min(self.max_output_tokens, 1_400),
+            "store": False,
+            "reasoning": {"effort": "medium"},
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "kyn_completion_adjudication",
+                    "schema": dict(self.ADJUDICATION_SCHEMA),
+                    "strict": True,
+                }
+            },
+            "metadata": {
+                "kyn_surface": "agent-studio",
+                "run_id": run_id,
+                "step_id": step_id,
+                "agent_version_id": agent["id"],
+                "operation": "adjudication",
+            },
+        }
+        response = self._call_and_record(
+            workspace_id, run_id, step_id, agent, payload
+        )
+        try:
+            parsed = json.loads(extract_output_text(response))
+        except json.JSONDecodeError:
+            raise ContractViolation("Goal-Judge output is not valid JSON") from None
+        validated = validate_json_schema(
+            parsed, dict(self.ADJUDICATION_SCHEMA), "Goal-Judge output"
+        )
+        claimed: dict[str, tuple[str, ...]] = {}
+        for item in validated["criteria"]:
+            # A criterion the judge marked unevidenced contributes no anchors
+            # even if it supplied some, so a judge cannot hedge its way to an
+            # admission by refusing in prose while anchoring in data.
+            anchors = () if item["unevidenced"] else tuple(item["anchors"])
+            claimed[str(item["criterion_id"])] = anchors
+        return claimed
+
     def _complete_run(
         self,
         workspace_id: str,
@@ -853,6 +1254,9 @@ class StudioRuntime:
         try:
             if flow_version["output_schema"] is not None:
                 validate_json_schema(output, flow_version["output_schema"], "Flow output")
+            adjudication = self._adjudicate_completion(
+                workspace_id, run_id, flow_version
+            )
         except ContractViolation as error:
             return self._fail_run(
                 workspace_id,
@@ -860,6 +1264,20 @@ class StudioRuntime:
                 error.code,
                 _public_error_message(error),
             )
+        if adjudication is not None:
+            self._record_adjudication(workspace_id, run_id, adjudication)
+            if not adjudication.admitted:
+                return self._fail_run(
+                    workspace_id,
+                    run_id,
+                    "completion_unevidenced",
+                    "The completion claim is not covered by resolved evidence: "
+                    + ", ".join(adjudication.unevidenced)
+                    + " went unevidenced.",
+                    node_id=self.repository.get_run(workspace_id, run_id)[
+                        "current_node_id"
+                    ],
+                )
         self.repository.transition_run(
             workspace_id,
             run_id,
@@ -1219,7 +1637,7 @@ class StudioRuntime:
                     output={"outcome": selected, "actual": actual},
                     route_outcome=selected,
                 )
-            elif kind == "approval":
+            elif kind == APPROVAL_ACTION_KIND:
                 template = action["config"]["message_template"]
                 variables = sorted(set(PLACEHOLDER_RE.findall(template)))
                 message = render_prompt(
@@ -1234,7 +1652,7 @@ class StudioRuntime:
                     paused=True,
                     approval_message=message,
                 )
-            elif kind in {"sandbox", "data_store"}:
+            elif kind in EFFECT_MINTING_ACTION_KINDS:
                 if action["config"].get("write_enabled", True) is not True:
                     raise ActionBlocked(
                         "The pinned Data Store Action policy does not authorize this write."

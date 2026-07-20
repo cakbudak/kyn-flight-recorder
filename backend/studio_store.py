@@ -6,6 +6,7 @@ import json
 import secrets
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from .contracts import (
@@ -36,7 +37,15 @@ from .contracts import (
     verify_event_chain,
 )
 from .repair_policy import ResolvedRepair, resolve_repair
+from .stop_seam import EVIDENCE_KINDS
 from .store import Store
+
+
+# Derived from the evidence vocabulary rather than restated beside it, so a kind
+# added there cannot be silently missing here.
+_EVIDENCE_KIND_BY_COLLECTION: Mapping[str, str] = MappingProxyType(
+    {kind.collection: kind.name for kind in EVIDENCE_KINDS}
+)
 
 
 TERMINAL_STATUSES = frozenset({"completed", "blocked", "failed", "cancelled"})
@@ -44,6 +53,28 @@ TERMINAL_STATUSES = frozenset({"completed", "blocked", "failed", "cancelled"})
 
 def _decode(value: str | None) -> Any:
     return json.loads(value) if value is not None else None
+
+
+def _acceptance_material(
+    acceptance_criteria: Sequence[Mapping[str, Any]],
+    judge_agent_version_id: str | None,
+) -> dict[str, Any]:
+    """Contribute the acceptance contract to the version material, or nothing.
+
+    The keys are omitted entirely when no contract is declared, so a Flow that
+    declares none hashes byte-identical material to the one it hashed before
+    this feature existed. Emitting `[]` and `None` unconditionally would move
+    every pinned fingerprint in the workspace — a silent, irreversible break of
+    every version already published — to record the absence of a declaration
+    that was already the default.
+    """
+
+    if not acceptance_criteria:
+        return {}
+    return {
+        "acceptance_criteria": [dict(item) for item in acceptance_criteria],
+        "judge_agent_version_id": judge_agent_version_id,
+    }
 
 
 def _after_minutes(minutes: int) -> str:
@@ -401,6 +432,8 @@ class StudioStore:
         start_node_id: str,
         nodes: Sequence[Mapping[str, Any]],
         routes: Sequence[Mapping[str, Any]],
+        acceptance_criteria: Sequence[Mapping[str, Any]] = (),
+        judge_agent_version_id: str | None = None,
         created_by: str = "user",
     ) -> dict[str, Any]:
         with self.store.write() as connection:
@@ -416,6 +449,8 @@ class StudioStore:
                 start_node_id=start_node_id,
                 nodes=nodes,
                 routes=routes,
+                acceptance_criteria=acceptance_criteria,
+                judge_agent_version_id=judge_agent_version_id,
                 created_by=created_by,
             )
         return self.get_flow(workspace_id, flow_id)
@@ -435,11 +470,17 @@ class StudioStore:
         nodes: Sequence[Mapping[str, Any]],
         routes: Sequence[Mapping[str, Any]],
         created_by: str,
+        acceptance_criteria: Sequence[Mapping[str, Any]] = (),
+        judge_agent_version_id: str | None = None,
     ) -> str:
         self.store._require_workspace(connection, workspace_id)
         flow_id = new_id("aflow")
         pinned, requires_model = self._resolve_flow_pins(
-            connection, workspace_id, nodes, owner_flow_id=flow_id
+            connection,
+            workspace_id,
+            nodes,
+            owner_flow_id=flow_id,
+            judge_agent_version_id=judge_agent_version_id,
         )
 
         material = {
@@ -450,6 +491,7 @@ class StudioStore:
             "nodes": [dict(node) for node in nodes],
             "routes": [dict(route) for route in routes],
             "pinned_resources": pinned,
+            **_acceptance_material(acceptance_criteria, judge_agent_version_id),
         }
         version_id = new_id("aflowv")
         now = utc_now()
@@ -466,10 +508,11 @@ class StudioStore:
             """
             INSERT INTO automation_flow_versions
                 (id, workspace_id, flow_id, version, input_schema_json, output_schema_json,
-                 outcomes_json, start_node_id, nodes_json, routes_json,
+                 outcomes_json, acceptance_criteria_json, judge_agent_version_id,
+                 start_node_id, nodes_json, routes_json,
                  pinned_resources_json, requires_model,
                  fingerprint, parent_version_id, created_by, created_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             """,
             (
                 version_id,
@@ -478,6 +521,8 @@ class StudioStore:
                 canonical_json(dict(input_schema)),
                 canonical_json(dict(output_schema)),
                 canonical_json([dict(item) for item in outcomes]),
+                canonical_json([dict(item) for item in acceptance_criteria]),
+                judge_agent_version_id,
                 start_node_id,
                 canonical_json([dict(node) for node in nodes]),
                 canonical_json([dict(route) for route in routes]),
@@ -497,9 +542,16 @@ class StudioStore:
         nodes: Sequence[Mapping[str, Any]],
         *,
         owner_flow_id: str | None = None,
+        judge_agent_version_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         pinned: list[dict[str, Any]] = []
-        requires_model = False
+        # A declared Goal-Judge is a model call the node graph cannot see,
+        # because the judge is cast on the Flow and never on a node. Without
+        # this a judge-only Flow reports itself deterministic, the Run modal
+        # tells the operator no key is needed, and the Run then fails at the
+        # stop seam for want of the credential it said it did not want. A Flow
+        # that will consult a model requires a model, whoever calls it.
+        requires_model = bool(judge_agent_version_id)
         expanded_nodes = len(nodes)
         for node in nodes:
             version_id = str(node["version_id"])
@@ -600,6 +652,67 @@ class StudioStore:
         active.remove(version_id)
         return total
 
+    def flow_version_cast_agents(
+        self, workspace_id: str, version_id: str
+    ) -> frozenset[str]:
+        """Every Agent version a pinned Flow version casts, transitively.
+
+        A Flow version pins its whole resource set, so the casting of a subflow
+        is part of the casting of its parent. Both shapes count: an Agent pinned
+        directly by a node, and an Agent pinned one indirection deep by an AI
+        Action. Read from the pinned material rather than resolved afresh, so
+        this answers for the version exactly as it was published.
+        """
+
+        with self.store.read() as connection:
+            return frozenset(
+                self._collect_cast_agents(connection, workspace_id, version_id, set())
+            )
+
+    @staticmethod
+    def _collect_cast_agents(
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        version_id: str,
+        visited: set[str],
+    ) -> set[str]:
+        """Walk one pinned version's casting, following its subflows.
+
+        `visited` bounds the recursion: a version is walked at most once, so the
+        walk is bounded by the number of Flow versions in the workspace and
+        terminates on a diamond — or on a cycle — without depending on the
+        acyclicity that publication separately enforces. Depth is bounded far
+        below that by the two-hundred-node expansion ceiling on pinned subflows.
+        """
+
+        if version_id in visited:
+            return set()
+        visited.add(version_id)
+        row = connection.execute(
+            "SELECT pinned_resources_json FROM automation_flow_versions "
+            "WHERE id = ? AND workspace_id = ?",
+            (version_id, workspace_id),
+        ).fetchone()
+        if row is None:
+            raise ContractViolation("Pinned subflow version is missing")
+        cast: set[str] = set()
+        for pin in _decode(row["pinned_resources_json"]):
+            pinned_version = str(pin["version_id"])
+            if pin.get("type") == "agent":
+                cast.add(pinned_version)
+            elif pin.get("type") == "action":
+                action = connection.execute(
+                    "SELECT agent_version_id FROM action_versions WHERE id = ?",
+                    (pinned_version,),
+                ).fetchone()
+                if action is not None and action["agent_version_id"]:
+                    cast.add(str(action["agent_version_id"]))
+            elif pin.get("type") == "flow":
+                cast |= StudioStore._collect_cast_agents(
+                    connection, workspace_id, pinned_version, visited
+                )
+        return cast
+
     @staticmethod
     def _flow_version_reaches_flow(
         connection: sqlite3.Connection,
@@ -641,6 +754,8 @@ class StudioStore:
         start_node_id: str,
         nodes: Sequence[Mapping[str, Any]],
         routes: Sequence[Mapping[str, Any]],
+        acceptance_criteria: Sequence[Mapping[str, Any]] = (),
+        judge_agent_version_id: str | None = None,
         created_by: str = "user",
     ) -> dict[str, Any]:
         with self.store.write() as connection:
@@ -659,7 +774,11 @@ class StudioStore:
             if parent is None:
                 raise RuntimeError("Automation Flow current version is missing")
             pinned, requires_model = self._resolve_flow_pins(
-                connection, workspace_id, nodes, owner_flow_id=flow_id
+                connection,
+                workspace_id,
+                nodes,
+                owner_flow_id=flow_id,
+                judge_agent_version_id=judge_agent_version_id,
             )
             next_version = int(flow["current_version"]) + 1
             version_id = new_id("aflowv")
@@ -673,15 +792,17 @@ class StudioStore:
                 "routes": [dict(route) for route in routes],
                 "pinned_resources": pinned,
                 "parent_version_id": parent["id"],
+                **_acceptance_material(acceptance_criteria, judge_agent_version_id),
             }
             connection.execute(
                 """
                 INSERT INTO automation_flow_versions
                     (id, workspace_id, flow_id, version, input_schema_json,
-                     output_schema_json, outcomes_json, start_node_id,
+                     output_schema_json, outcomes_json, acceptance_criteria_json,
+                     judge_agent_version_id, start_node_id,
                      nodes_json, routes_json, pinned_resources_json, requires_model,
                      fingerprint, parent_version_id, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     version_id,
@@ -691,6 +812,8 @@ class StudioStore:
                     canonical_json(dict(input_schema)),
                     canonical_json(dict(output_schema)),
                     canonical_json([dict(item) for item in outcomes]),
+                    canonical_json([dict(item) for item in acceptance_criteria]),
+                    judge_agent_version_id,
                     start_node_id,
                     canonical_json([dict(node) for node in nodes]),
                     canonical_json([dict(route) for route in routes]),
@@ -727,12 +850,26 @@ class StudioStore:
             if "outcomes_json" in row.keys() and row["outcomes_json"]
             else default_outcomes_for_kind("flow")
         )
+        # A version published before the acceptance contract existed declares
+        # none, which is the inert default rather than a missing value.
+        acceptance_criteria = (
+            _decode(row["acceptance_criteria_json"])
+            if "acceptance_criteria_json" in row.keys()
+            and row["acceptance_criteria_json"]
+            else []
+        )
         return {
             "id": row["id"],
             "version": row["version"],
             "input_schema": _decode(row["input_schema_json"]),
             "output_schema": output_schema,
             "outcomes": outcomes,
+            "acceptance_criteria": acceptance_criteria,
+            "judge_agent_version_id": (
+                row["judge_agent_version_id"]
+                if "judge_agent_version_id" in row.keys()
+                else None
+            ),
             "start_node_id": row["start_node_id"],
             "nodes": _decode(row["nodes_json"]),
             "routes": _decode(row["routes_json"]),
@@ -3813,3 +3950,124 @@ class StudioStore:
                 "diagnosis": diagnosis,
                 "repair": repair,
             }
+
+    # -- Stop-seam adjudication evidence -----------------------------------
+    #
+    # One SELECT per evidence kind, written once and reused for both halves
+    # below. Every kind is reduced to the four facts adjudication reasons
+    # about: the record's id, the Run that owns it, the site it is
+    # attributable to, and the state token its kind predicates on. Two kinds
+    # reach their site transitively — an effect through its step, an approval
+    # decision through its request — and those joins live here rather than in
+    # the resolver, because the resolver is pure and must not know a schema.
+    _ADJUDICATION_SOURCES: Mapping[str, tuple[str, str, str]] = MappingProxyType(
+        {
+            "steps": (
+                "SELECT s.id AS id, s.run_id AS run_id, s.node_id AS node_id, "
+                "s.status AS state FROM automation_run_steps s "
+                "JOIN automation_runs r ON r.id = s.run_id",
+                "s.run_id",
+                "s.id",
+            ),
+            "receipts": (
+                "SELECT c.id AS id, c.run_id AS run_id, c.node_id AS node_id, "
+                "c.outcome AS state FROM automation_action_receipts c "
+                "JOIN automation_runs r ON r.id = c.run_id",
+                "c.run_id",
+                "c.id",
+            ),
+            "approvals": (
+                "SELECT d.id AS id, q.run_id AS run_id, q.node_id AS node_id, "
+                "d.approved AS state FROM automation_approval_decisions d "
+                "JOIN automation_approval_requests q ON q.id = d.request_id "
+                "JOIN automation_runs r ON r.id = q.run_id",
+                "q.run_id",
+                "d.id",
+            ),
+            "effects": (
+                "SELECT e.id AS id, e.run_id AS run_id, s.node_id AS node_id, "
+                "NULL AS state FROM automation_effects e "
+                "JOIN automation_run_steps s ON s.id = e.step_id "
+                "JOIN automation_runs r ON r.id = e.run_id",
+                "e.run_id",
+                "e.id",
+            ),
+        }
+    )
+
+    @staticmethod
+    def _adjudication_record(row: sqlite3.Row, collection: str) -> dict[str, Any]:
+        """Reduce one row to the facts resolution needs, with its state typed.
+
+        `approved` is stored as an integer and the resolver compares states
+        type-strictly, so it is widened to a bool here. Doing it at the seam
+        between SQLite and the pure layer keeps the resolver ignorant of how
+        this database happens to spell a boolean.
+        """
+
+        state = row["state"]
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "node_id": row["node_id"],
+            "state": bool(state) if collection == "approvals" else state,
+            "kind": _EVIDENCE_KIND_BY_COLLECTION[collection],
+        }
+
+    def adjudication_evidence(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        anchor_ids: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        """Assemble what a completion adjudication is allowed to reason about.
+
+        Two halves, deliberately different in scope.
+
+        `candidates` is this Run's own evidence — all of it, in whatever state
+        it is in. It is what the Goal-Judge is shown and what the seam's
+        anti-fabrication gate admits from. It is emphatically *not* pre-filtered
+        to records that already satisfy something: handing over only qualifying
+        evidence would pre-decide the question the judge exists to answer, and
+        would make the site and state checks unreachable, so both would ablate
+        as redundant while looking load-bearing.
+
+        `records` resolves the *claimed* ids workspace-wide. A bundle assembled
+        only from this Run's rows would make ownership true by construction —
+        the check could never fire, deleting it would break no test, and a
+        foreign-Run anchor would disappear into `anchor_unresolvable` instead of
+        being named for what it is. Claimed ids are bounded by the judge's
+        schema, so this is a keyed lookup and never a scan.
+        """
+
+        wanted = tuple(dict.fromkeys(str(item) for item in anchor_ids))
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            candidates: dict[str, list[dict[str, Any]]] = {}
+            records: dict[str, list[dict[str, Any]]] = {}
+            for collection, (select, run_column, id_column) in (
+                self._ADJUDICATION_SOURCES.items()
+            ):
+                owned = [
+                    self._adjudication_record(row, collection)
+                    for row in connection.execute(
+                        f"{select} WHERE r.workspace_id = ? AND {run_column} = ? "
+                        f"ORDER BY {id_column}",
+                        (workspace_id, run_id),
+                    )
+                ]
+                candidates[collection] = owned
+                found = {item["id"]: item for item in owned}
+                missing = [item for item in wanted if item not in found]
+                if missing:
+                    placeholders = ",".join("?" for _ in missing)
+                    for row in connection.execute(
+                        f"{select} WHERE r.workspace_id = ? "
+                        f"AND {id_column} IN ({placeholders})",
+                        (workspace_id, *missing),
+                    ):
+                        item = self._adjudication_record(row, collection)
+                        found[item["id"]] = item
+                records[collection] = list(found.values())
+            return {"candidates": candidates, "records": records}

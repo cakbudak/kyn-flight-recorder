@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
 from unittest import mock
 
-from backend import contracts
+from backend import contracts, stop_seam
 from backend.contracts import (
     BrakeEngaged,
     Conflict,
@@ -94,6 +94,9 @@ GUARD_ORDER: tuple[str, ...] = (
     "Terminal absorption (database status triggers)",
     "Event hash chain",
     "Ratification brake",
+    "Goal-Judge anti-fabrication gate",
+    "Anchor site check",
+    "Anchor state check",
 )
 
 
@@ -211,6 +214,25 @@ SUMMARY_SCHEMA = {
     "required": ["summary"],
     "additionalProperties": False,
 }
+CONDITION_SCHEMA = {
+    "type": "object",
+    "properties": {"matched": {"type": "boolean"}, "actual": {"type": "string"}},
+    "required": ["matched", "actual"],
+    "additionalProperties": False,
+}
+CONDITION_OUTCOMES = [
+    {"id": "true", "label": "True", "description": "", "tone": "success"},
+    {"id": "false", "label": "False", "description": "", "tone": "warning"},
+    {"id": "error", "label": "Error", "description": "", "tone": "danger"},
+]
+NO_RETRY = {"max_attempts": 1, "backoff_seconds": 0, "retry_on": [], "on_error": "fail"}
+CONTINUE_ON_ERROR = {
+    "max_attempts": 1,
+    "backoff_seconds": 0,
+    "retry_on": [],
+    "on_error": "continue",
+}
+VALUE_MAPPING = {"value": {"source": "input", "path": "value"}}
 
 
 class NoModelClient:
@@ -270,6 +292,93 @@ class ScriptedResponsesClient:
             }
         ]
         return base
+
+
+@dataclass
+class ScriptedGoalJudgeClient:
+    """A Goal-Judge that anchors whatever the experiment tells it to anchor.
+
+    `chooser(criterion, run_evidence)` returns the anchor ids the judge claims.
+    The seam never consults the judge's honesty, which is the point: a completion
+    must be admitted by resolved evidence, not by the judge's cooperation.
+    """
+
+    chooser: Callable[[dict[str, Any], dict[str, Any]], Sequence[str]]
+    requests: list[dict[str, Any]] = field(default_factory=list)
+
+    def create(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.requests.append(json.loads(json.dumps(payload)))
+        if payload.get("metadata", {}).get("operation") != "adjudication":
+            raise AssertionError("this experiment makes no model call but the adjudication")
+        question = json.loads(payload["input"][0]["content"])
+        verdict = {
+            "assessment": "A scripted adjudication replayed by the ablation suite.",
+            "criteria": [
+                {
+                    "criterion_id": item["criterion_id"],
+                    "unevidenced": False,
+                    "anchors": list(self.chooser(item, question["run_evidence"])),
+                    "reason": "A scripted judgement pinned by the experiment.",
+                }
+                for item in question["acceptance_criteria"]
+            ],
+        }
+        return {
+            "id": f"resp_judge_{len(self.requests)}",
+            "status": "completed",
+            "model": "gpt-5.6",
+            "usage": {"input_tokens": 20, "output_tokens": 12, "total_tokens": 32},
+            "output": [
+                {
+                    "id": f"msg_judge_{len(self.requests)}",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": json.dumps(verdict),
+                            "annotations": [],
+                        }
+                    ],
+                }
+            ],
+        }
+
+
+def anchors_of_kind_anywhere(
+    criterion: dict[str, Any], evidence: dict[str, Any]
+) -> list[str]:
+    """Site-blind: every record of the declared kind, wherever it was minted."""
+
+    return [
+        record["id"]
+        for records in evidence.values()
+        for record in records
+        if record["kind"] == criterion["evidence_kind"]
+    ]
+
+
+def anchors_at_site_in_any_state(
+    criterion: dict[str, Any], evidence: dict[str, Any]
+) -> list[str]:
+    """State-blind: every record of the declared kind at a declared site."""
+
+    return [
+        record["id"]
+        for records in evidence.values()
+        for record in records
+        if record["kind"] == criterion["evidence_kind"]
+        and record["site"] in criterion["declared_sites"]
+    ]
+
+
+def anchors_fabricated(
+    criterion: dict[str, Any], evidence: dict[str, Any]
+) -> list[str]:
+    """An id no record in this workspace carries. Text, not evidence."""
+
+    del criterion, evidence
+    return ["astep_" + "0" * 32]
 
 
 @dataclass
@@ -479,7 +588,118 @@ class Harness:
             routes=[],
         )
 
+    # -- stop-seam building blocks ------------------------------------------
+
+    def condition_action(self, *, slug: str, matches: str) -> dict[str, Any]:
+        """A branch point, so a Flow can route *away* from a criterion's site."""
+
+        return self.plane.create_action(
+            self.workspace_id,
+            name=slug.replace("-", " ").title(),
+            slug=slug,
+            description="A deterministic branch used by the ablation suite.",
+            kind="condition",
+            input_schema=VALUE_SCHEMA,
+            output_schema=CONDITION_SCHEMA,
+            outcomes=copy.deepcopy(CONDITION_OUTCOMES),
+            config={"path": "value", "operator": "equals", "value": matches},
+            agent_version_id=None,
+        )
+
+    def failing_action(self, *, slug: str) -> dict[str, Any]:
+        """Reads a path its validated input never carries, so the Step fails.
+
+        The Step is minted, runs, and finishes `failed`; the receipt is minted
+        `failed` rather than merely absent. That is exactly the record a state
+        check exists to refuse.
+        """
+
+        return self.plane.create_action(
+            self.workspace_id,
+            name=slug.replace("-", " ").title(),
+            slug=slug,
+            description="An Action that always fails inside its own executor.",
+            kind="transform",
+            input_schema=VALUE_SCHEMA,
+            output_schema=TEXT_SCHEMA,
+            config={
+                "operation": "map",
+                "mappings": {"text": {"source": "input", "path": "absent"}},
+            },
+            agent_version_id=None,
+        )
+
+    def judge_agent(self, *, slug: str = "stop-seam-judge") -> str:
+        prompt = self.plane.create_prompt(
+            self.workspace_id,
+            name=f"{slug} prompt",
+            slug=f"{slug}-prompt",
+            template="Adjudicate the completion claim against the supplied evidence.",
+            variables=[],
+        )
+        agent = self.plane.create_agent(
+            self.workspace_id,
+            name=f"{slug} agent",
+            slug=slug,
+            role="executor",
+            model="gpt-5.6",
+            instructions="Judge completion claims against supplied Run evidence only.",
+            prompt_version_id=prompt["version"]["id"],
+            skill_version_ids=[],
+        )
+        return str(agent["version"]["id"])
+
+    @staticmethod
+    def action_node(
+        node_id: str, version_id: str, *, settings: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        return {
+            "id": node_id,
+            "type": "action",
+            "version_id": version_id,
+            "input_mapping": dict(VALUE_MAPPING),
+            "settings": dict(settings or NO_RETRY),
+        }
+
+    def contracted_flow(
+        self,
+        *,
+        slug: str,
+        nodes: list[dict[str, Any]],
+        routes: list[dict[str, Any]],
+        criteria: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return self.plane.create_studio_flow(
+            self.workspace_id,
+            name=slug.replace("-", " ").title(),
+            slug=slug,
+            description="A Flow declaring an acceptance contract over its own work.",
+            input_schema=VALUE_SCHEMA,
+            start_node_id=nodes[0]["id"],
+            nodes=nodes,
+            routes=routes,
+            acceptance_criteria=criteria,
+            judge_agent_version_id=self.judge_agent(),
+        )
+
     # -- observation --------------------------------------------------------
+
+    def status_history(self, run_id: str) -> list[str]:
+        """Every status a Run was ever in, read off its append-only ledger."""
+
+        run = self.plane.get_studio_run(self.workspace_id, run_id)
+        return [
+            event["payload"]["to"]
+            for event in run["events"]
+            if event["type"] == "run.status_changed"
+        ]
+
+    @staticmethod
+    def completion_event(run: dict[str, Any]) -> dict[str, Any] | None:
+        for event in run["events"]:
+            if event["type"].startswith("completion."):
+                return event
+        return None
 
     def effects(self) -> list[dict[str, Any]]:
         with self.store.read() as connection:
@@ -1425,6 +1645,538 @@ class RatificationBrakeAblation(AblationCase):
                     "path three Runs had already proven fails"
                 ),
                 load_bearing=True,
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Guards 8-10 — the stop seam. Three checks stand between a model saying it is
+# finished and a Run being recorded as finished. Each is ablated separately, and
+# the violation is stated once, in product terms, for all three:
+#
+#     A Run reports `completed` while a declared acceptance criterion is unmet.
+#
+# Two of the three make that reachable. One does not, and this suite says so.
+# ---------------------------------------------------------------------------
+
+
+STOP_SEAM_VIOLATION = "A Run reports completed while a declared acceptance criterion is unmet"
+
+
+def criterion(
+    criterion_id: str, evidence_kind: str, *node_ids: str, statement: str
+) -> dict[str, Any]:
+    return {
+        "id": criterion_id,
+        "statement": statement,
+        "evidence_kind": evidence_kind,
+        "node_ids": list(node_ids),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Guard 8 — the seam's anti-fabrication gate (narrowing gate).
+# ---------------------------------------------------------------------------
+
+
+FABRICATION_GATE_EDITS = (
+    (
+        "        for anchors in claimed.values():\n"
+        "            outside = [anchor for anchor in anchors if anchor not in offered]\n"
+        "            if outside:\n"
+        "                raise ContractViolation(\n"
+        '                    "Goal-Judge cited evidence outside the code-owned candidate"\n'
+        "                )\n",
+        "",
+    ),
+)
+
+
+class GoalJudgeFabricationGateAblation(AblationCase):
+    """The judge may only speak about evidence code handed it.
+
+    This is a **redundancy probe**, and the design says so in advance: gates four
+    and five are deliberately overlapping, one narrow check against what code
+    offered and one independent check against ground truth. The experiment below
+    measures whether that overlap is real, and it is: with the seam's gate gone,
+    a fabricated anchor reaches the resolver and the resolver refuses it, so the
+    product-level violation stays out of reach.
+
+    What the ablation *does* change is legibility. With the gate intact a
+    fabricated anchor is a broken contract and the Run says so. With it removed
+    the Run fails for the blander reason that its completion went unevidenced,
+    and a reader can no longer tell a judge that invented an id from a judge that
+    honestly found nothing.
+    """
+
+    def _fixture(
+        self, chooser: Callable[..., Sequence[str]]
+    ) -> tuple[Harness, dict[str, Any], ScriptedGoalJudgeClient]:
+        harness = self.harness()
+        work = harness.template_action(slug="declared-work", template="Done {{value}}")
+        flow = harness.contracted_flow(
+            slug="fabrication-probe",
+            nodes=[harness.action_node("work", work["version"]["id"])],
+            routes=[],
+            criteria=[
+                criterion(
+                    "work-completed",
+                    "step",
+                    "work",
+                    statement="The work node completed its pinned Action.",
+                )
+            ],
+        )
+        return harness, flow, ScriptedGoalJudgeClient(chooser=chooser)
+
+    def _attempt(
+        self,
+        harness: Harness,
+        flow: dict[str, Any],
+        client: ScriptedGoalJudgeClient,
+        *,
+        value: str = "release-1",
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        return harness.plane.start_studio_run(
+            harness.workspace_id,
+            flow["id"],
+            input_data={"value": value},
+            client=client,
+            idempotency_key=idempotency_key,
+        )
+
+    def test_the_anti_fabrication_gate_is_redundant_with_the_resolver(self) -> None:
+        # BASELINE ---------------------------------------------------------
+        harness, flow, client = self._fixture(anchors_fabricated)
+        baseline_run = self._attempt(harness, flow, client)
+
+        self.assertEqual(baseline_run["status"], "failed")
+        self.assertEqual(baseline_run["error_code"], "contract_violation")
+        self.assertNotIn("completed", harness.status_history(baseline_run["id"]))
+        self.assertIsNone(
+            harness.completion_event(baseline_run),
+            "a contract violation is refused before any adjudication is recorded",
+        )
+        baseline = (
+            "prevented — Run failed/contract_violation, never 'completed', "
+            "no adjudication recorded"
+        )
+
+        # ABLATED ----------------------------------------------------------
+        harness, flow, client = self._fixture(anchors_fabricated)
+        with ablated(StudioRuntime, "_adjudicate_completion", FABRICATION_GATE_EDITS):
+            ablated_run = self._attempt(harness, flow, client)
+
+        # The violation is NOT reachable. The fabricated anchor reached the
+        # resolver, which is what the ablation was meant to prove — and the
+        # resolver refused it, because an id no record carries resolves to
+        # nothing.
+        self.assertEqual(
+            ablated_run["status"],
+            "failed",
+            "the resolver independently refuses a fabricated anchor",
+        )
+        self.assertEqual(ablated_run["error_code"], "completion_unevidenced")
+        self.assertNotIn("completed", harness.status_history(ablated_run["id"]))
+
+        recorded = harness.completion_event(ablated_run)
+        self.assertIsNotNone(recorded)
+        self.assertEqual(recorded["type"], "completion.refused")
+        resolved = recorded["payload"]["criteria"][0]
+        self.assertEqual(resolved["surviving"], [])
+        self.assertEqual(
+            [item["refusal"] for item in resolved["discarded"]],
+            [stop_seam.ANCHOR_UNRESOLVABLE],
+            "the fabricated anchor did reach the resolver, and was refused there",
+        )
+
+        # Defense in depth, second case: an anchor belonging to a *different*
+        # Run of the same Flow. With this gate gone the resolver still refuses
+        # it, so this narrower violation is not this guard's to prevent either —
+        # and it now refuses it *by name*, because the seam resolves the claimed
+        # ids workspace-wide and the resolver can therefore see the record whose
+        # ownership it is rejecting. Asserting the refusal code rather than only
+        # the outcome is what makes that difference visible here: before the
+        # anchor-aware lookup existed, this same borrowed anchor reported the
+        # misleading `anchor_unresolvable`.
+        harness, flow, client = self._fixture(anchors_at_site_in_any_state)
+        first = self._attempt(harness, flow, client, idempotency_key="first")
+        self.assertEqual(first["status"], "completed")
+        borrowed = harness.plane.studio.adjudication_evidence(
+            harness.workspace_id, first["id"]
+        )["candidates"]["steps"][0]["id"]
+
+        foreign_client = ScriptedGoalJudgeClient(
+            chooser=lambda item, evidence: [borrowed]
+        )
+        with ablated(StudioRuntime, "_adjudicate_completion", FABRICATION_GATE_EDITS):
+            second = self._attempt(
+                harness, flow, foreign_client, idempotency_key="second"
+            )
+        self.assertNotEqual(second["id"], first["id"])
+        self.assertEqual(second["status"], "failed")
+        self.assertEqual(second["error_code"], "completion_unevidenced")
+        self.assertNotIn("completed", harness.status_history(second["id"]))
+
+        borrowed_refusal = harness.completion_event(second)
+        self.assertEqual(borrowed_refusal["type"], "completion.refused")
+        borrowed_resolved = borrowed_refusal["payload"]["criteria"][0]
+        self.assertEqual(borrowed_resolved["surviving"], [])
+        self.assertEqual(
+            [item["refusal"] for item in borrowed_resolved["discarded"]],
+            [stop_seam.ANCHOR_FOREIGN_RUN],
+            "the resolver names the borrowed anchor for what is wrong with it",
+        )
+
+        record(
+            GuardOutcome(
+                guard="Goal-Judge anti-fabrication gate",
+                site="studio_runtime.StudioRuntime._adjudicate_completion (claimed ⊆ code-owned candidate)",
+                violation=STOP_SEAM_VIOLATION,
+                baseline=baseline,
+                ablated=(
+                    "still prevented — the anchor reaches the resolver and "
+                    "stop_seam._resolve_one_anchor refuses it: a fabricated id as "
+                    "'anchor_unresolvable', an id borrowed from another Run as "
+                    "'anchor_foreign_run'; Run failed/completion_unevidenced, "
+                    "never 'completed'"
+                ),
+                load_bearing=False,
+                redundancy_probe=True,
+                note=(
+                    "REDUNDANT, not decorative, and deliberately so: the design "
+                    "double-gates this seam exactly as the diagnosis path is "
+                    "double-gated. The covering guard is the resolution gate in "
+                    "stop_seam._resolve_one_anchor — an id no record carries "
+                    "resolves to nothing, and an id another Run owns fails the "
+                    "ownership check — so no anchor the seam gate would have "
+                    "caught can survive resolution. Both asserted above. The "
+                    "ownership half is only measurable because the seam resolves "
+                    "the claimed ids workspace-wide before gate two: with a "
+                    "Run-scoped lookup a borrowed anchor reported the misleading "
+                    "'anchor_unresolvable' and this ablation could not tell the "
+                    "two apart. What gate one uniquely buys is the *earlier* "
+                    "diagnosis: with it a Run that cited evidence code never "
+                    "offered reports 'contract_violation' before any adjudication "
+                    "is recorded; without it the same Run reports the blander "
+                    "'completion_unevidenced' and reads like an honest "
+                    "empty-handed judgement."
+                ),
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Guard 9 — the anchor site check (anti-irrelevance).
+# ---------------------------------------------------------------------------
+
+
+ANCHOR_SITE_EDITS = (
+    (
+        "    if record.node_id not in node_ids:\n"
+        "        return ANCHOR_NODE_MISMATCH\n",
+        "",
+    ),
+)
+
+
+class AnchorSiteCheckAblation(AblationCase):
+    """A criterion is satisfied by work at the site it pinned, not by any work.
+
+    The Flow below branches to one of two writing nodes. The criterion pins the
+    node this Run routes *away* from, so the declared work genuinely did not
+    happen — and the Run genuinely wrote an effect somewhere else. Every property
+    of the anchor except its site is correct: real record, this Run's own, right
+    kind, minted by the runtime. Only the site check stands between an unrelated
+    write and a completion.
+    """
+
+    DECLARED_COLLECTION = "declared-launch-records"
+    DECOY_COLLECTION = "unrelated-scratch-writes"
+
+    def _fixture(self) -> tuple[Harness, dict[str, Any], ScriptedGoalJudgeClient]:
+        harness = self.harness()
+        gate = harness.condition_action(slug="route-gate", matches="declared")
+        declared = harness.sandbox_action(
+            slug="declared-writer", collection=self.DECLARED_COLLECTION
+        )
+        decoy = harness.sandbox_action(
+            slug="decoy-writer", collection=self.DECOY_COLLECTION
+        )
+        flow = harness.contracted_flow(
+            slug="site-probe",
+            nodes=[
+                harness.action_node("gate", gate["version"]["id"]),
+                harness.action_node("declared-writer", declared["version"]["id"]),
+                harness.action_node("decoy-writer", decoy["version"]["id"]),
+            ],
+            routes=[
+                {"from": "gate", "to": "declared-writer", "outcome": "true"},
+                {"from": "gate", "to": "decoy-writer", "outcome": "false"},
+            ],
+            criteria=[
+                criterion(
+                    "record-published",
+                    "effect",
+                    "declared-writer",
+                    statement="The launch record was published by the declared writer.",
+                )
+            ],
+        )
+        return harness, flow, ScriptedGoalJudgeClient(chooser=anchors_of_kind_anywhere)
+
+    def _attempt(
+        self,
+        harness: Harness,
+        flow: dict[str, Any],
+        client: ScriptedGoalJudgeClient,
+    ) -> dict[str, Any]:
+        return harness.plane.start_studio_run(
+            harness.workspace_id,
+            flow["id"],
+            input_data={"value": "decoy"},
+            client=client,
+        )
+
+    def test_site_check_is_the_reason_an_unrelated_write_cannot_satisfy_a_criterion(
+        self,
+    ) -> None:
+        # BASELINE ---------------------------------------------------------
+        harness, flow, client = self._fixture()
+        baseline_run = self._attempt(harness, flow, client)
+
+        # The declared site never executed, and the Run wrote somewhere else.
+        self.assertNotIn(
+            "declared-writer", [step["node_id"] for step in baseline_run["steps"]]
+        )
+        self.assertEqual(
+            [effect["collection"] for effect in harness.effects()],
+            [self.DECOY_COLLECTION],
+        )
+        self.assertEqual(baseline_run["status"], "failed")
+        self.assertEqual(baseline_run["error_code"], "completion_unevidenced")
+        self.assertNotIn("completed", harness.status_history(baseline_run["id"]))
+        refused = harness.completion_event(baseline_run)
+        self.assertEqual(refused["type"], "completion.refused")
+        self.assertEqual(
+            [item["refusal"] for item in refused["payload"]["criteria"][0]["discarded"]],
+            [stop_seam.ANCHOR_NODE_MISMATCH],
+        )
+        baseline = (
+            "prevented — Run failed/completion_unevidenced, never 'completed', "
+            f"the anchor refused 'anchor_node_mismatch', 0 writes in "
+            f"'{self.DECLARED_COLLECTION}'"
+        )
+
+        # ABLATED ----------------------------------------------------------
+        harness, flow, client = self._fixture()
+        with ablated(stop_seam, "_resolve_one_anchor", ANCHOR_SITE_EDITS):
+            ablated_run = self._attempt(harness, flow, client)
+
+        self.assertEqual(
+            ablated_run["status"],
+            "completed",
+            "the Run is recorded as finished with its declared work undone",
+        )
+        self.assertIsNone(ablated_run["error_code"])
+        self.assertIn("completed", harness.status_history(ablated_run["id"]))
+        self.assertNotIn(
+            "declared-writer",
+            [step["node_id"] for step in ablated_run["steps"]],
+            "the node whose work the criterion demanded never ran at all",
+        )
+        collections = [effect["collection"] for effect in harness.effects()]
+        self.assertEqual(collections, [self.DECOY_COLLECTION])
+        self.assertNotIn(self.DECLARED_COLLECTION, collections)
+
+        admitted = harness.completion_event(ablated_run)
+        self.assertEqual(admitted["type"], "completion.admitted")
+        resolved = admitted["payload"]["criteria"][0]
+        self.assertTrue(resolved["holds"])
+        self.assertEqual(resolved["declared_sites"], ["declared-writer"])
+        surviving = resolved["surviving"]
+        self.assertEqual(len(surviving), 1)
+        with harness.store.read() as connection:
+            minted_at = connection.execute(
+                "SELECT s.node_id AS node_id FROM automation_effects e "
+                "JOIN automation_run_steps s ON s.id = e.step_id WHERE e.id = ?",
+                (surviving[0],),
+            ).fetchone()["node_id"]
+        self.assertEqual(
+            minted_at,
+            "decoy-writer",
+            "the ledger admits a criterion pinned to one node on a write from another",
+        )
+
+        record(
+            GuardOutcome(
+                guard="Anchor site check",
+                site="stop_seam._resolve_one_anchor (record.node_id ∈ criterion.node_ids)",
+                violation=STOP_SEAM_VIOLATION,
+                baseline=baseline,
+                ablated=(
+                    "VIOLATED — Run completed, 'completion.admitted' in the ledger, "
+                    f"the criterion pinned to 'declared-writer' carried by an effect "
+                    f"minted at 'decoy-writer'; the declared node never executed and "
+                    f"'{self.DECLARED_COLLECTION}' holds 0 writes"
+                ),
+                load_bearing=True,
+                note=(
+                    "This is the irrelevance defect the pinned site exists to close. "
+                    "The seam's anti-fabrication gate cannot cover it: the anchor is "
+                    "this Run's own evidence and therefore inside the candidate set "
+                    "code offered. Nothing else in the system checks where a claim's "
+                    "evidence was minted."
+                ),
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Guard 10 — the anchor state check.
+# ---------------------------------------------------------------------------
+
+
+ANCHOR_STATE_EDITS = (
+    (
+        "    if not kind.admits_state(record.state):\n"
+        "        return ANCHOR_STATE_MISMATCH\n",
+        "",
+    ),
+)
+
+
+class AnchorStateCheckAblation(AblationCase):
+    """A Step survives its own failure; only a completed one evidences success.
+
+    The Flow below runs a node that fails inside its own executor and continues
+    down an error route, so the Run reaches the stop seam holding a Step that is
+    real, this Run's own, of the declared kind, minted at exactly the site the
+    criterion pinned — and `failed`. Every check but one admits it.
+    """
+
+    def _fixture(self) -> tuple[Harness, dict[str, Any], ScriptedGoalJudgeClient]:
+        harness = self.harness()
+        failing = harness.failing_action(slug="always-fails")
+        tail = harness.template_action(slug="tail-note", template="Noted {{value}}")
+        flow = harness.contracted_flow(
+            slug="state-probe",
+            nodes=[
+                harness.action_node(
+                    "deliver",
+                    failing["version"]["id"],
+                    settings=CONTINUE_ON_ERROR,
+                ),
+                harness.action_node("tail", tail["version"]["id"]),
+            ],
+            routes=[{"from": "deliver", "to": "tail", "outcome": "error"}],
+            criteria=[
+                criterion(
+                    "delivery-completed",
+                    "step",
+                    "deliver",
+                    statement="The delivery node completed its work rather than attempting it.",
+                )
+            ],
+        )
+        return harness, flow, ScriptedGoalJudgeClient(
+            chooser=anchors_at_site_in_any_state
+        )
+
+    def _attempt(
+        self,
+        harness: Harness,
+        flow: dict[str, Any],
+        client: ScriptedGoalJudgeClient,
+    ) -> dict[str, Any]:
+        return harness.plane.start_studio_run(
+            harness.workspace_id,
+            flow["id"],
+            input_data={"value": "release-1"},
+            client=client,
+        )
+
+    @staticmethod
+    def _delivery_step(run: dict[str, Any]) -> dict[str, Any]:
+        return next(step for step in run["steps"] if step["node_id"] == "deliver")
+
+    def test_state_check_is_the_reason_a_failed_step_cannot_evidence_success(
+        self,
+    ) -> None:
+        # BASELINE ---------------------------------------------------------
+        harness, flow, client = self._fixture()
+        baseline_run = self._attempt(harness, flow, client)
+
+        # The fixture must really contain a failed Step at the pinned site.
+        self.assertEqual(self._delivery_step(baseline_run)["status"], "failed")
+        self.assertEqual(baseline_run["status"], "failed")
+        self.assertEqual(baseline_run["error_code"], "completion_unevidenced")
+        self.assertNotIn("completed", harness.status_history(baseline_run["id"]))
+        refused = harness.completion_event(baseline_run)
+        self.assertEqual(refused["type"], "completion.refused")
+        self.assertEqual(
+            [item["refusal"] for item in refused["payload"]["criteria"][0]["discarded"]],
+            [stop_seam.ANCHOR_STATE_MISMATCH],
+        )
+        baseline = (
+            "prevented — Run failed/completion_unevidenced, never 'completed', "
+            "the failed Step refused 'anchor_state_mismatch'"
+        )
+
+        # ABLATED ----------------------------------------------------------
+        harness, flow, client = self._fixture()
+        with ablated(stop_seam, "_resolve_one_anchor", ANCHOR_STATE_EDITS):
+            ablated_run = self._attempt(harness, flow, client)
+
+        self.assertEqual(
+            ablated_run["status"],
+            "completed",
+            "the Run is recorded as finished on work that failed",
+        )
+        self.assertIsNone(ablated_run["error_code"])
+        self.assertIn("completed", harness.status_history(ablated_run["id"]))
+
+        failed_step = self._delivery_step(ablated_run)
+        self.assertEqual(failed_step["status"], "failed")
+        admitted = harness.completion_event(ablated_run)
+        self.assertEqual(admitted["type"], "completion.admitted")
+        resolved = admitted["payload"]["criteria"][0]
+        self.assertTrue(resolved["holds"])
+        self.assertEqual(
+            resolved["surviving"],
+            [failed_step["id"]],
+            "the admitted anchor is the Step the database still records as failed",
+        )
+        with harness.store.read() as connection:
+            persisted = connection.execute(
+                "SELECT status, error_code FROM automation_run_steps WHERE id = ?",
+                (failed_step["id"],),
+            ).fetchone()
+        self.assertEqual(persisted["status"], "failed")
+        self.assertIsNotNone(persisted["error_code"])
+
+        record(
+            GuardOutcome(
+                guard="Anchor state check",
+                site="stop_seam._resolve_one_anchor (EvidenceKind.admits_state)",
+                violation=STOP_SEAM_VIOLATION,
+                baseline=baseline,
+                ablated=(
+                    "VIOLATED — Run completed, 'completion.admitted' in the ledger, "
+                    "and the criterion demanding a completed Step is carried by the "
+                    "Step the database still records as 'failed' with an error code"
+                ),
+                load_bearing=True,
+                note=(
+                    "Not covered by the seam's anti-fabrication gate: the failed "
+                    "Step is this Run's own evidence, so it is inside the candidate "
+                    "set code offered. The candidate set is deliberately not "
+                    "pre-filtered to qualifying records — pre-filtering it there "
+                    "would pre-decide the question the judge exists to answer and "
+                    "would make this ablation report redundant while the property "
+                    "went unenforced."
+                ),
             )
         )
 

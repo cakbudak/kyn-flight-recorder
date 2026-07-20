@@ -408,7 +408,7 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
           flow={selectedFlow}
           mutate={mutate}
           onClose={() => setShowRun(false)}
-          onStarted={() => { setShowRun(false); setView("runs"); }}
+          onStarted={(run) => { setShowRun(false); focusRun(run.id); }}
         />
       ) : null}
     </section>
