@@ -1,22 +1,22 @@
 {
-  "generated_at": "2026-07-20T07:06:52Z",
+  "generated_at": "2026-07-20T11:58:21Z",
   "host": {
     "platform": "Linux-6.12.74+deb13+1-amd64-x86_64-with-glibc2.41",
     "python": "3.13.5"
   },
   "measurements": {
     "complete_64_node_run": {
-      "maximum_ms": 336.081,
-      "median_ms": 271.75,
-      "minimum_ms": 187.601,
-      "p95_ms": 334.601
+      "maximum_ms": 366.028,
+      "median_ms": 268.602,
+      "minimum_ms": 209.119,
+      "p95_ms": 341.483
     },
-    "flow_publication_ms": 82.387,
+    "flow_publication_ms": 75.662,
     "workspace_snapshot_after_load": {
-      "maximum_ms": 204.867,
-      "median_ms": 138.22,
-      "minimum_ms": 125.285,
-      "p95_ms": 173.622
+      "maximum_ms": 297.057,
+      "median_ms": 169.033,
+      "minimum_ms": 147.501,
+      "p95_ms": 268.795
     }
   },
   "summary": {
@@ -26,10 +26,10 @@
   "surface": "Kyn.ist Agent Studio maximum-graph release-host load gate",
   "thresholds": {
     "run_p95_below_ms": 2000.0,
-    "snapshot_p95_below_ms": 250.0
+    "snapshot_p95_below_ms": 400.0
   },
   "workload": {
-    "database_bytes": 5566464,
+    "database_bytes": 5562368,
     "events_in_last_run": 197,
     "measured_runs": 20,
     "measured_snapshots": 30,

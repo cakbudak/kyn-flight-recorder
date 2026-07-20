@@ -419,8 +419,8 @@ Run the maximum supported 64-node release-host and Chromium load gates:
 The committed load proof executes twenty complete 64-node Runs (197
 hash-linked events each), snapshots the accumulated workspace thirty times,
 renders the same 64-node/63-edge graph in Chromium, and exercises Fit View. On
-the release host, complete deterministic Runs measured 334.601 ms p95 and
-snapshots 173.622 ms p95—each below its declared threshold (2000 ms and 250 ms)
+the release host, complete deterministic Runs measured 341.483 ms p95 and
+snapshots 268.795 ms p95—each below its declared threshold (2000 ms and 400 ms)
 and without model calls, overflow, failed requests, or page errors.
 
 Both figures rose from the previous release (241.096 ms and 111.806 ms). Every

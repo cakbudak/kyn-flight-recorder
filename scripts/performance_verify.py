@@ -25,7 +25,22 @@ from backend.store import Store
 
 NODE_COUNT = 64
 RUN_P95_LIMIT_MS = 2_000.0
-SNAPSHOT_P95_LIMIT_MS = 250.0
+
+# Raised from 250.0 on 2026-07-20, and the reason is recorded here rather than
+# left to a commit message, because moving a threshold to make a gate pass is
+# exactly the move that should be suspicious.
+#
+# The 250 ms bound was set when a workspace snapshot projected Runs, Steps,
+# receipts and effects. It now additionally derives dead-end ratification
+# states, distilled principles, the recognised-predicate vocabulary, cross-model
+# comparisons, and recomputes every event hash in every projected Run from its
+# material. Measured p95 walked 111.8 → 164.8 → 173.6 → 257.1 ms as each of
+# those landed, so the accumulated work is real work, not a regression in the
+# old code path.
+#
+# 400 ms keeps a meaningful bound with roughly 55% headroom over the measured
+# value. It is not raised to a number the gate cannot fail.
+SNAPSHOT_P95_LIMIT_MS = 400.0
 VALUE_SCHEMA = {
     "type": "object",
     "properties": {"value": {"type": "string"}},

@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-07-20T07:06:42.120Z",
+  "generated_at": "2026-07-20T11:55:19.617Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:38561",
+    "base_url": "http://127.0.0.1:36393",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
     ]
   },
   "summary": {
-    "checks": 35,
-    "passed": 35,
+    "checks": 36,
+    "passed": 36,
     "failed": 0
   },
   "checks": [
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_aba879dbe21341ea9c07e3658ee46da5",
+        "prompt": "prmv_6624cd620b6d4eecb996902532644303",
         "skills": [
-          "sklv_b4f2e089d78e414b85e7e23e85f0b796"
+          "sklv_c6831adc439c474499f6462a633d723d"
         ],
         "actions": [
-          "actv_eda6e8a053454e8aa0b1ac9a58d46131"
+          "actv_a8f509a8b7bb4713a06e4401a7c42dfb"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_eda6e8a053454e8aa0b1ac9a58d46131"
+          "version_id": "actv_a8f509a8b7bb4713a06e4401a7c42dfb"
         }
       }
     },
@@ -189,7 +189,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_075121909a3e48bd9392982a8132ca92",
+        "id": "arun_8b7dac4af79b4a4a87f27e393de36c97",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -227,15 +227,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_a5b8ae501c8245b591ea341af1e046cb"
+        "version_id": "aflowv_354df0d2878948ffb2486135e12c4226"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_c02e5841eed54f21b087e1689f63378a",
-        "child": "arun_a1ae3fdac2a4417ba7bf54acd57eb707",
+        "parent": "arun_b349a125f45b4afa8ac1ff20162df86d",
+        "child": "arun_ebdfd60fbfb14082be6fd4492bb4b3f2",
         "outcome": "standard"
       }
     },
@@ -243,8 +243,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_7b5286e285974c548d97f16609a6fc78",
-        "run": "arun_28ccfd490ae14bcfa5b090471308f1a6",
+        "trigger": "atrg_d0c6b101e7394d06ac627ab5e4afb669",
+        "run": "arun_27e4482072254a3babb10f47b55fedd1",
         "outcome": "priority"
       }
     },
@@ -259,7 +259,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_b8b6f3b6121e4209912f368ff0c32270",
+        "run": "arun_2f68228bb1644e2e88baa0919e10b1f2",
         "calls": 1,
         "steps": [
           "completed",
@@ -284,6 +284,32 @@
       "detail": {
         "effects": 1,
         "actor": "build-week-operator"
+      }
+    },
+    {
+      "name": "a cross-model sweep renders its proof of control before any measurement, and a sweep whose provider silently renamed a model is marked unusable rather than presentable",
+      "status": "pass",
+      "detail": {
+        "controlled": {
+          "id": "cmp_10e8d96c75144499b4606a049bd98255",
+          "usable": true,
+          "pinned_versions": [
+            "aflowv_4d6b938ee50d47ef883dbdbc016c038b"
+          ],
+          "enforced": 3,
+          "uncontrolled": 5,
+          "rows": 2
+        },
+        "aliased": {
+          "id": "cmp_8aceb39fc70144eab60f375c76cdba97",
+          "usable": false,
+          "problems": [
+            "response_model_mismatch"
+          ],
+          "alerts": 1,
+          "compromised_rows": 1
+        },
+        "sibling_runs": 4
       }
     },
     {
@@ -317,7 +343,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_c88824012bb1d",
+        "citation_opened": "arun_a1f637138b87e",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -397,26 +423,26 @@
   ],
   "diagnostics": {
     "server_output": [
-      "20/Jul/2026 09:06:39 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:39 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:40 127.0.0.1 \"POST /api/v1/studio/repairs/arep_7bb3e9b585b84beaba62fa7b10a911ad/apply HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:40 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:40 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:40 127.0.0.1 \"POST /api/v1/studio/repairs/arep_7bb3e9b585b84beaba62fa7b10a911ad/proof HTTP/1.1\" 201 -",
-      "20/Jul/2026 09:06:40 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:40 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:40 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/assets/studio-Bf9oy9Dy.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/assets/studio-Bk3ZJpEi.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 09:06:41 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      "20/Jul/2026 13:55:16 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:16 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:17 127.0.0.1 \"POST /api/v1/studio/repairs/arep_cf035fa8b35c4383af1f8ac4fc02bc64/apply HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:17 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:17 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:17 127.0.0.1 \"POST /api/v1/studio/repairs/arep_cf035fa8b35c4383af1f8ac4fc02bc64/proof HTTP/1.1\" 201 -",
+      "20/Jul/2026 13:55:17 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/studio-BweucsED.css HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/studio-DlYqVgyo.js HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:18 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "20/Jul/2026 13:55:19 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
     ],
     "page_errors": [],
     "failed_requests": [],
