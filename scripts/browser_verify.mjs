@@ -109,6 +109,29 @@ async function waitForSnapshot(page, predicate, label, timeout = TIMEOUT_MS) {
   throw new Error(`timeout waiting for ${label}: ${JSON.stringify(latest)?.slice(0, 500)}`);
 }
 
+// A refused mutation leaves the modal open behind an error banner, so every wait
+// for the surface that a mutation was supposed to reveal would otherwise expire
+// as a bare locator timeout naming the surface rather than the refusal. Racing
+// the banner turns "the Runs view never appeared" back into the server's own
+// sentence. This only ever fails a journey earlier and with more truth; it never
+// admits one, because an unrefused mutation shows no banner at all.
+async function awaitSurface(page, selector, label) {
+  const surface = page.locator(selector);
+  const refusal = page.locator(".error-banner");
+  try {
+    await surface.waitFor({ state: "visible" });
+  } catch (error) {
+    // The surface never arrived. A banner standing here names why; a banner left
+    // over from an earlier step cannot be the reason, so it is only quoted, never
+    // trusted as the diagnosis on its own. Waiting for the surface first rather
+    // than racing it keeps a stale banner from failing a journey that succeeded.
+    if (await refusal.isVisible()) {
+      throw new Error(`${label} did not reveal ${selector}; the surface reported: ${await refusal.innerText()}`);
+    }
+    throw error;
+  }
+}
+
 function verifyChain(run) {
   return run.events.every((event, index) =>
     event.sequence === index + 1 &&
@@ -399,7 +422,7 @@ async function main() {
     await page.getByRole("button", { name: "Run", exact: true }).click();
     await fieldControl(page.locator(".modal"), "Run input", "textarea").fill(JSON.stringify({ value: "priority" }, null, 2));
     await page.getByRole("button", { name: "Pin and start Run" }).click();
-    await page.locator(".runs-page").waitFor({ state: "visible" });
+    await awaitSurface(page, ".runs-page", "starting the Run");
     snapshot = await waitForSnapshot(page, (value) => value.studio.runs.some((run) => run.flow_id === decisionFlow.id && run.status === "completed"), "deterministic Flow completion");
     const decisionRun = snapshot.studio.runs.find((run) => run.flow_id === decisionFlow.id);
     record(
@@ -441,7 +464,7 @@ async function main() {
     await page.getByRole("button", { name: "Run", exact: true }).click();
     await fieldControl(page.locator(".modal"), "Run input", "textarea").fill(JSON.stringify({ value: "standard" }, null, 2));
     await page.getByRole("button", { name: "Pin and start Run" }).click();
-    await page.locator(".runs-page").waitFor({ state: "visible" });
+    await awaitSurface(page, ".runs-page", "starting the Run");
     snapshot = await waitForSnapshot(page, (value) => value.studio.runs.some((run) => run.flow_id === parentFlow.id && run.status === "completed"), "parent and child Run completion");
     const parentRun = snapshot.studio.runs.find((run) => run.flow_id === parentFlow.id);
     const subflowRun = snapshot.studio.runs.find((run) => run.parent_run_id === parentRun.id && run.relation_kind === "subflow");
@@ -496,7 +519,7 @@ async function main() {
     await page.getByRole("button", { name: "Run", exact: true }).click();
     await fieldControl(page.locator(".modal"), "Run input", "textarea").fill(JSON.stringify({ brief: APPROVAL_DEMO_BRIEF }, null, 2));
     await page.getByRole("button", { name: "Pin and start Run" }).click();
-    await page.locator(".runs-page").waitFor({ state: "visible" });
+    await awaitSurface(page, ".runs-page", "starting the Run");
     snapshot = await waitForSnapshot(page, (value) => value.studio.runs.some((run) => run.flow_id === seededFlow.id && run.status === "waiting_approval"), "AI Run approval pause");
     let aiRun = snapshot.studio.runs.find((run) => run.flow_id === seededFlow.id && run.status === "waiting_approval");
     await page.getByRole("button", { name: "Approve and resume" }).waitFor({ state: "visible" });
@@ -669,7 +692,7 @@ async function main() {
     const recoveryFlow = snapshot.studio.flows.find((item) => item.slug === "browser-recovery-flow");
     await page.getByRole("button", { name: "Run", exact: true }).click();
     await page.getByRole("button", { name: "Pin and start Run" }).click();
-    await page.locator(".runs-page").waitFor({ state: "visible" });
+    await awaitSurface(page, ".runs-page", "starting the Run");
     snapshot = await waitForSnapshot(page, (value) => value.studio.runs.some((run) => run.flow_id === recoveryFlow.id && run.status === "blocked"), "blocked recovery Run");
     const recoveryRoot = snapshot.studio.runs.find((run) => run.flow_id === recoveryFlow.id && !run.parent_run_id);
 
@@ -683,7 +706,7 @@ async function main() {
     const blockedRoots = (value) => value.studio.runs.filter((run) => run.flow_id === recoveryFlow.id && !run.parent_run_id && run.status === "blocked");
     for (const attempt of [2, 3]) {
       await startRecoveryRun();
-      await page.locator(".runs-page").waitFor({ state: "visible" });
+      await awaitSurface(page, ".runs-page", "starting the Run");
       snapshot = await waitForSnapshot(page, (value) => blockedRoots(value).length >= attempt, `blocked recovery Run ${attempt}`);
     }
     const ratified = snapshot.studio.runs.find((run) => run.flow_id === recoveryFlow.id && !run.parent_run_id).dead_ends[0];
@@ -738,7 +761,7 @@ async function main() {
     const runSelectedFlow = async (flowId) => {
       await page.getByRole("button", { name: "Run", exact: true }).click();
       await clickAndWait(page, page.getByRole("button", { name: "Pin and start Run" }));
-      await page.locator(".runs-page").waitFor({ state: "visible" });
+      await awaitSurface(page, ".runs-page", "starting the Run");
       return waitForSnapshot(
         page,
         (value) => value.studio.runs.some((run) => run.flow_id === flowId && run.status === "blocked"),

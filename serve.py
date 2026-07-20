@@ -281,6 +281,7 @@ class DemoServer(ThreadingHTTPServer):
         model_configured: bool = False,
         workspace_model_call_limit: int = 12,
         global_model_call_limit_per_hour: int = 120,
+        address_model_call_limit_per_hour: int = 24,
     ) -> None:
         self.control_plane = control_plane
         self.database_ready = control_plane is not None
@@ -290,6 +291,7 @@ class DemoServer(ThreadingHTTPServer):
                 control_plane,
                 workspace_model_call_limit=workspace_model_call_limit,
                 global_model_call_limit_per_hour=global_model_call_limit_per_hour,
+                address_model_call_limit_per_hour=address_model_call_limit_per_hour,
             )
             if control_plane is not None
             else None
@@ -374,6 +376,15 @@ def main(argv: list[str] | None = None) -> int:
             workspace_model_call_limit=int(os.environ.get("KYN_WORKSPACE_MODEL_CALL_LIMIT", "24")),
             global_model_call_limit_per_hour=int(
                 os.environ.get("KYN_PUBLIC_MODEL_CALLS_PER_HOUR", "120")
+            ),
+            # The per-address hour cap has to be configurable alongside the other
+            # two budgets, and it must not sit below the per-workspace budget:
+            # a workspace granted N calls that one address may only spend 24 of
+            # per hour has a budget it cannot actually spend. Leaving this one
+            # unreachable from configuration is what let the deployed workspace
+            # limit be raised past a ceiling nobody could see.
+            address_model_call_limit_per_hour=int(
+                os.environ.get("KYN_ADDRESS_MODEL_CALLS_PER_HOUR", "24")
             ),
         )
     except (OSError, ValueError) as error:

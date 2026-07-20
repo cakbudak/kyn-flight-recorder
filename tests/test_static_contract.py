@@ -266,6 +266,60 @@ class StaticContractTests(unittest.TestCase):
             self.user_service,
         )
 
+    def test_deployed_model_budgets_form_a_spendable_ladder(self) -> None:
+        """A narrower budget nested inside a wider one makes the wider unspendable.
+
+        Three budgets bound model calls: per workspace, per address per hour, and
+        globally per hour. They are only coherent when each is at least as large
+        as the one it contains, because the tightest binds first no matter which
+        one an operator believes they are configuring. Raising the workspace
+        budget to 36 against an address ceiling of 24 is what produced a deployed
+        surface that refused its own advertised budget, and the refusal reached
+        the browser as a stalled view rather than as a stated limit. This asserts
+        the relation on the units that actually ship, so the next operator who
+        moves one number has to move the others or fail here.
+        """
+
+        defaults = {
+            name: int(match)
+            for name, match in re.findall(
+                r'os\.environ\.get\("(KYN_[A-Z_]+)", "(\d+)"\)',
+                (ROOT / "serve.py").read_text(encoding="utf-8"),
+            )
+        }
+        for unit_name, unit in (("system", self.service), ("user", self.user_service)):
+            overrides = {
+                key: int(value)
+                for key, value in re.findall(r"(?m)^Environment=(KYN_[A-Z_]+)=(\d+)$", unit)
+            }
+            effective = {**defaults, **overrides}
+            workspace = effective["KYN_WORKSPACE_MODEL_CALL_LIMIT"]
+            address = effective["KYN_ADDRESS_MODEL_CALLS_PER_HOUR"]
+            public = effective["KYN_PUBLIC_MODEL_CALLS_PER_HOUR"]
+            with self.subTest(unit=unit_name):
+                self.assertLessEqual(workspace, address, "a workspace budget one address may not spend")
+                self.assertLessEqual(address, public, "an address budget the host may not serve")
+
+    def test_every_model_budget_is_reachable_from_configuration(self) -> None:
+        """An unconfigurable budget is a ceiling nobody can see until it binds."""
+
+        server = (ROOT / "serve.py").read_text(encoding="utf-8")
+        signature = (ROOT / "backend" / "http_api.py").read_text(encoding="utf-8")
+        budgets = re.findall(r"(?m)^\s+(\w*model_call\w*): int = \d+", signature)
+        self.assertGreaterEqual(len(budgets), 3, "the model-call budgets were not located")
+        for budget in budgets:
+            # Forwarding alone is not reachability: DemoServer passes each budget
+            # through to ApiApplication under the same name, so asserting the name
+            # appears in serve.py is satisfied by the pass-through and would have
+            # held while the value stayed unconfigurable. The binding to an
+            # environment variable is the property that makes a budget adjustable.
+            with self.subTest(budget=budget):
+                self.assertRegex(
+                    server,
+                    rf"{budget}=int\(\s*os\.environ\.get\(",
+                    f"{budget} cannot be set from the environment",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
