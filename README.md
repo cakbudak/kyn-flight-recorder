@@ -442,10 +442,12 @@ run against the deployed OpenAI-backed service. The current local journey passes
 **36/36** checks; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 
-The same journey is currently **red** against the deployed public origin with real
-model calls; see
+The same journey passes **36/36** against the deployed public origin at
+`https://buildweek.kyn.ist` with real model calls, real provider latency, and no
+scripted responses; see
 [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
-and the archived screenshots under `evidence/live/`.
+and the archived screenshots under `evidence/live/`. The one refused HTTP
+response in that run is the brake's own asserted 409.
 
 Prove the guards are load-bearing rather than taking the green suite on trust:
 
