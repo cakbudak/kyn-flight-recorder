@@ -51,6 +51,11 @@ simulation.
   *different* Flows fail the same declared way. A principle only ever advises:
   it appears while you are authoring, publishing still succeeds, and the brake
   remains the only thing that refuses anything. Warn early, refuse late.
+- Run a **controlled cross-model sweep**. One immutable pinned Flow version, one
+  input, several models — and every sibling Run pins a byte-identical
+  `flow_version_id`, so the only recorded delta is the model. The question it
+  answers is whether the scaffolding behaves the same on every brain, not which
+  brain is best.
 - Work in **light or dark**. The theme follows your system by default and the
   choice is yours for the tab.
 
@@ -229,6 +234,54 @@ with `brake_engaged`, its Step closes, and a `subflow.brake_engaged` event
 carries the refusal's citations into the parent's own ledger. The parent proved
 nothing new, so that inherited refusal never ratifies a second dead end.
 
+### Comparison plane
+
+Anyone can run a prompt against several models and show a table. Nothing in that
+proves the comparison was fair.
+
+A comparison here runs one immutable pinned Flow version across several models.
+Every sibling Run pins a **byte-identical `flow_version_id`**, so every Action,
+Agent, Prompt, Skill, schema and route is provably the same and the only
+recorded delta is the model. The version pinning that already exists is what
+turns a table into a controlled experiment.
+
+The claim is deliberately not a ranking. The headline is **invariance** — same
+routed outcome, same terminal status, same guard behaviour across brains — with
+token and latency spread as the footnote. Ablation shows what breaks when a
+guard is removed; a sweep shows nothing breaks when the brain is swapped.
+
+Varying the model is the one deliberate hole in "everything is pinned", so it is
+contained: the override is settable only by the comparison command, must be in
+the supported set, is written on the Run row *and* into the hash-linked chain
+next to the pinned model it replaced, and marks the Run `relation_kind =
+"comparison"`. A sweep is its own evidence class and can never be a baseline —
+a baseline is model-pinned by definition.
+
+Two gates keep it from being theatre.
+
+**The model that actually answered is verified.** This is not hypothetical. On
+the live provider, requesting `gpt-5.6` returns `gpt-5.6-sol`. Without that check
+a sweep would compare a model against itself and report perfect agreement — the
+best-looking and most worthless result the system could produce. A mismatch
+marks the comparison unusable, and the surface says so above every number.
+
+**Controls that are not enforced are not claimed.** Sampling controls are not
+settable through this bounded invocation surface, so the payload names what is
+enforced-and-verified separately from what is not controllable here — each with
+its reason, as data rather than prose. Claiming an unenforced control is the
+fastest way to make an honest experiment dishonest.
+
+The instrument measures itself before it weighs anything. Repetitions of one
+model hold everything constant, so whatever they disagree by is the harness, not
+the brain: that spread is the noise band, and it costs no extra model calls.
+Differences below it report as `within_noise`, never as findings. And where a
+model disagrees with *itself* across its own repetitions, cross-model invariance
+is not stated at all — picking the run that agreed would manufacture the result.
+
+No dollar figure is printed. Tokens and latency are what the provider reports,
+so tokens and latency are what this reports; a price table would be stale the
+week it ships, and a wrong cost number is worse than none.
+
 ## Flat SQLite projection
 
 This repository contains conventional product tables—not Kyn.ist's internal
@@ -298,7 +351,7 @@ Optional non-secret settings:
 | --- | --- | --- |
 | `OPENAI_MODEL` | `gpt-5.6` | allow-listed model used by seeded Agent versions |
 | `KYN_DATABASE_PATH` | `var/kyn-agent-studio.sqlite3` | flat SQLite database path |
-| `KYN_WORKSPACE_MODEL_CALL_LIMIT` | `24` | recorded model-call budget per workspace |
+| `KYN_WORKSPACE_MODEL_CALL_LIMIT` | `24` (deployed: `36`, so a cross-model sweep fits) | recorded model-call budget per workspace |
 | `KYN_PUBLIC_MODEL_CALLS_PER_HOUR` | `120` | global public model-action forecast budget |
 
 ## Same-origin API
