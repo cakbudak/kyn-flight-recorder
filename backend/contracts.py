@@ -83,7 +83,13 @@ class ActionBlocked(RuntimeErrorBase):
 
 
 class BrakeEngaged(RuntimeErrorBase):
-    """A canonical dead end VETOES the exact pinned path a Run would traverse."""
+    """A canonical dead end VETOES the pinned Flow version a Run would execute.
+
+    Scope is the Flow version, not the traversed path: which nodes a Run visits
+    is decided by data that does not exist until it runs, so the path cannot be
+    known before the Run is created — and refusing before creation is what makes
+    "no Run row, no Step, no effect" true.
+    """
 
     code = "brake_engaged"
     http_status = 409
@@ -209,9 +215,14 @@ def ratification_state(distinct_runs: int) -> str:
     return "proposed"
 
 
+# Counting is only half the rule. *Which* failures are allowed to be counted at
+# all is the other half, and it is declared in `RATIFIABLE_FAULTS` below — it
+# lives after the policy-marker vocabulary it depends on.
+
+
 # -- Principle distillation -----------------------------------------------
 #
-# A `dead_end` VETOES one exact pinned path. A `principle` is the
+# A `dead_end` pins one exact `(flow_version, node)` site. A `principle` is the
 # generalization: the same *structural* failure observed across independent
 # Flows. It is advisory only — it surfaces while authoring, where being wrong
 # costs a reader two seconds. The brake stays the only thing that refuses, and
@@ -302,6 +313,236 @@ def principle_statement(
         "This is advisory: publishing and running stay allowed. Grant the "
         "policy on a successor Action version, or route the Flow around it."
     )
+
+
+# -- Ratifiable fault classes ---------------------------------------------
+#
+# Minting a `dead_end` is not free. Three citations make a pinned path
+# `canonical`, and the brake then refuses that Flow version for every future
+# input. That is only defensible for a **structural** defect: one where the
+# reason for the failure is a property of the *pinned definition*, so repeating
+# the same pinned path cannot succeed no matter what data arrives. For such a
+# defect the escape hatch is real — repairing it publishes a successor version
+# with a new `flow_version_id`, a new fingerprint, and therefore no brake.
+#
+# Two failure kinds look identical to a naive count and are not structural at
+# all. A validation gate rejecting bad input is the gate *working*; its message
+# is author-configured and static, so three rejections of three different bad
+# inputs collapse to one fingerprint, ratify, and refuse the Flow forever —
+# including for valid input, and no successor version can clear it because the
+# assertion is unchanged. A transient provider fault is a property of the
+# moment, not of the path; there is no defect to repair, so the escape hatch is
+# meaningless. Both would turn the brake from a memory into a trap.
+#
+# The two tables below are the entire membership rule and they are exposed
+# through `ratification_policy()` so a reader can audit them. Anything not named
+# in `RATIFIABLE_FAULTS` does not ratify: a brake that fires wrongly is worse
+# than one that fires rarely, so the default is closed.
+
+
+class RatifiableFault(NamedTuple):
+    """One admitted fault class and the exact structure it must present.
+
+    An empty `executor_kind` matches any kind. A `policy_marker` of `None` means
+    the class does not require one; naming a marker requires that exact declared
+    predicate from `POLICY_MARKERS`.
+    """
+
+    name: str
+    error_code: str
+    executor_kind: str
+    policy_marker: str | None
+    reason: str
+
+
+class NonRatifiableFault(NamedTuple):
+    """One deliberately refused fault class and why it is refused.
+
+    These entries enforce nothing — the allow-list already refuses everything it
+    does not name. They exist so the exclusions are auditable rather than
+    implied by absence, exactly as `REPAIR_REFUSALS` states the classes the
+    repair space will never touch.
+    """
+
+    name: str
+    error_code: str
+    executor_kind: str
+    reason: str
+
+
+RATIFIABLE_FAULTS: tuple[RatifiableFault, ...] = (
+    RatifiableFault(
+        name="data_store_write_denied",
+        error_code="action_blocked",
+        executor_kind="data_store",
+        policy_marker="write_enabled_denied",
+        reason=(
+            "The pinned Data Store Action version declares `write_enabled` "
+            "false, so the denial is a property of the definition and not of "
+            "the Run input. Every future Run down this exact path is denied "
+            "identically, which is precisely the claim a canonical dead end "
+            "makes. Granting the policy publishes a successor Action and Flow "
+            "version, so the escape hatch clears the brake by construction."
+        ),
+    ),
+)
+
+
+NON_RATIFIABLE_FAULTS: tuple[NonRatifiableFault, ...] = (
+    NonRatifiableFault(
+        name="assertion_rejected",
+        error_code="action_blocked",
+        executor_kind="assert",
+        reason=(
+            "An assertion is a validation gate and failing is its job. Its "
+            "message is author-configured and static, so three rejections of "
+            "three different bad inputs share one fingerprint and would ratify "
+            "a Flow-wide refusal that valid input can never pass. Publishing a "
+            "successor does not change the assertion, so it would simply "
+            "re-brake: a permanent trap with no defect to repair."
+        ),
+    ),
+    NonRatifiableFault(
+        name="undeclared_policy_denial",
+        error_code="action_blocked",
+        executor_kind="",
+        reason=(
+            "A bounded executor refused an effect without carrying any declared "
+            "predicate from `POLICY_MARKERS`, so nothing identifies the refusal "
+            "as a property of the pinned definition rather than of this Run's "
+            "data. Fail closed: an unrecognised denial is never ratified."
+        ),
+    ),
+    NonRatifiableFault(
+        name="transient_provider_fault",
+        error_code="provider_failure",
+        executor_kind="",
+        reason=(
+            "Transient by construction: `provider_failure` is a member of "
+            "`RETRYABLE_ERROR_CODES`, and `repair_policy.PROVIDER_FAILURE` "
+            "treats it as an under-provisioned retry budget, not a defect in "
+            "any contract. Detail normalization strips digit runs, so three "
+            "unrelated rate limits from one organisation collapse to one "
+            "fingerprint and would ratify a permanent refusal of a path that "
+            "never had anything wrong with it."
+        ),
+    ),
+    NonRatifiableFault(
+        name="run_data_contract_violation",
+        error_code="contract_violation",
+        executor_kind="",
+        reason=(
+            "A pinned input or output schema caught a value in *this* Run's "
+            "data. A different input may satisfy the same schema, so repetition "
+            "proves nothing about the path. Some contract violations are "
+            "structural wiring faults, but the terminal code cannot distinguish "
+            "them from data rejections, so the whole class fails closed."
+        ),
+    ),
+    NonRatifiableFault(
+        name="subflow_brake_refusal",
+        error_code="brake_engaged",
+        executor_kind="",
+        reason=(
+            "The parent of a braked subflow inherits a refusal, not a discovery. "
+            "The underlying dead end is already canonical at the site three Runs "
+            "actually proved it; letting one memory mint another would cascade "
+            "the brake up the call graph on evidence nobody independently "
+            "re-executed."
+        ),
+    ),
+    NonRatifiableFault(
+        name="subflow_terminal_summary",
+        error_code="subflow_failure",
+        executor_kind="",
+        reason=(
+            "The parent sees only the child's terminal summary. If the child's "
+            "fault is structural it ratifies at the child's own node, where the "
+            "evidence and the repair both live."
+        ),
+    ),
+    NonRatifiableFault(
+        name="graph_integrity_fault",
+        error_code="missing_node",
+        executor_kind="",
+        reason=(
+            "Publish-time validation already proves the graph is acyclic, that "
+            "every route target exists, and that every node is reachable from "
+            "the start node, so this and `flow_traversal_exhausted` are "
+            "defensive branches with no reachable instance. A fault class that "
+            "can never be observed is dead policy and the brake carries none."
+        ),
+    ),
+)
+
+
+_RATIFIABLE_BY_CODE: Mapping[str, tuple[RatifiableFault, ...]] = MappingProxyType(
+    {
+        code: tuple(
+            entry for entry in RATIFIABLE_FAULTS if entry.error_code == code
+        )
+        for code in {entry.error_code for entry in RATIFIABLE_FAULTS}
+    }
+)
+
+# A ratifiable class may only name a predicate the policy vocabulary declares,
+# so the two tables cannot drift into an entry that can never match.
+for _entry in RATIFIABLE_FAULTS:
+    if _entry.policy_marker is not None and _entry.policy_marker not in _MARKERS_BY_NAME:
+        raise RuntimeError(
+            f"ratifiable fault {_entry.name!r} names an undeclared policy marker"
+        )
+
+
+def is_ratifiable_fault(
+    *,
+    error_code: Any,
+    executor_kind: Any,
+    policy_marker: Any,
+) -> bool:
+    """Answer whether one terminal failure may mint dead-end evidence.
+
+    Fail closed: a failure matches only when a declared class names its exact
+    error code, admits its executor kind, and — where the class requires one —
+    finds the declared policy predicate it demands.
+    """
+
+    code = str(error_code or "")
+    kind = str(executor_kind or "")
+    marker = None if policy_marker is None else str(policy_marker)
+    for entry in _RATIFIABLE_BY_CODE.get(code, ()):
+        if entry.executor_kind and entry.executor_kind != kind:
+            continue
+        if entry.policy_marker is not None and entry.policy_marker != marker:
+            continue
+        return True
+    return False
+
+
+def ratification_policy() -> list[dict[str, Any]]:
+    """Render both tables as one auditable list, admissions first."""
+
+    return [
+        {
+            "name": entry.name,
+            "ratifiable": True,
+            "error_code": entry.error_code,
+            "executor_kind": entry.executor_kind or None,
+            "policy_marker": entry.policy_marker,
+            "reason": entry.reason,
+        }
+        for entry in RATIFIABLE_FAULTS
+    ] + [
+        {
+            "name": entry.name,
+            "ratifiable": False,
+            "error_code": entry.error_code,
+            "executor_kind": entry.executor_kind or None,
+            "policy_marker": None,
+            "reason": entry.reason,
+        }
+        for entry in NON_RATIFIABLE_FAULTS
+    ]
 
 
 JSON_SCHEMA_TYPES = frozenset(

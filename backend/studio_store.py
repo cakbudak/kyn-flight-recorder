@@ -20,11 +20,13 @@ from .contracts import (
     default_outcomes_for_kind,
     fingerprint,
     hash_text,
+    is_ratifiable_fault,
     new_id,
     normalize_failure_detail,
     policy_marker as derive_policy_marker,
     principle_signature,
     principle_statement,
+    ratification_policy,
     ratification_state,
     PRINCIPLE_MIN_DEAD_ENDS,
     PRINCIPLE_MIN_DISTINCT_FLOWS,
@@ -3135,7 +3137,6 @@ class StudioStore:
         workspace_id: str,
         *,
         flow_version_id: str | None = None,
-        node_ids: Sequence[str] | None = None,
         run_id: str | None = None,
         fingerprint_filter: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -3151,12 +3152,6 @@ class StudioStore:
         if flow_version_id is not None:
             clauses.append("flow_version_id = ?")
             parameters.append(flow_version_id)
-        if node_ids is not None:
-            unique = sorted({str(node) for node in node_ids})
-            if not unique:
-                return []
-            clauses.append(f"node_id IN ({', '.join('?' * len(unique))})")
-            parameters.extend(unique)
         if fingerprint_filter is not None:
             clauses.append("fingerprint = ?")
             parameters.append(fingerprint_filter)
@@ -3341,8 +3336,15 @@ class StudioStore:
         node_id: str,
         error_code: str,
         detail: str,
-    ) -> dict[str, Any]:
-        """Append one citation of the exact approach that just failed."""
+    ) -> dict[str, Any] | None:
+        """Append one citation of the exact approach that just failed.
+
+        Returns `None` when the failure is not a ratifiable fault class. This is
+        the single gate on what may ever be counted: an assertion doing its job
+        and a transient provider fault are terminal failures too, and counting
+        them would ratify a refusal of a path that has nothing wrong with it.
+        See `RATIFIABLE_FAULTS` for the admitted classes and their reasons.
+        """
 
         normalized_detail = normalize_failure_detail(detail)
         marker = dead_end_fingerprint(
@@ -3352,7 +3354,8 @@ class StudioStore:
             normalized_detail=normalized_detail,
         )
         # Resolved on a read connection before the write opens, so the structural
-        # columns cost the write transaction nothing.
+        # columns cost the write transaction nothing. The same structure decides
+        # admission, so the gate reads exactly what the evidence would record.
         with self.store.read() as connection:
             structure = self._failed_node_structure(
                 connection,
@@ -3360,6 +3363,12 @@ class StudioStore:
                 flow_version_id=flow_version_id,
                 node_id=str(node_id),
             )
+        if not is_ratifiable_fault(
+            error_code=error_code,
+            executor_kind=structure["executor_kind"],
+            policy_marker=structure["policy_marker"],
+        ):
+            return None
         with self.store.write() as connection:
             # One Run may not inflate a count: `UNIQUE (fingerprint, run_id)`
             # makes a repeated citation from the same Run a no-op.
@@ -3395,9 +3404,18 @@ class StudioStore:
         workspace_id: str,
         *,
         flow_version_id: str,
-        node_ids: Sequence[str],
     ) -> dict[str, Any]:
         """Return a read-only verdict; only a canonical dead end refuses a Run.
+
+        **Scope is the Flow version, not a traversal path.** Which nodes a Run
+        would visit depends on data that does not exist until the Run executes,
+        so no pre-execution check can know the path. The alternative — admitting
+        the Run and braking mid-traversal — would forfeit the stronger property
+        this system actually guarantees: a refused Run leaves no Run row, no
+        Step, no event, and no effect. A canonical dead end on any node of a
+        pinned version therefore refuses every candidate of that version, and
+        the escape hatch is unchanged: publishing a successor version yields a
+        new `flow_version_id` and clears the brake.
 
         This method must never write. A `proposed` or `confirmed` dead end is
         observed and reported but never brakes, so one bad execution can never
@@ -3410,16 +3428,17 @@ class StudioStore:
                 connection,
                 workspace_id,
                 flow_version_id=flow_version_id,
-                node_ids=node_ids,
             )
         matches = [
             record for record in observed if record["ratification_state"] == "canonical"
         ]
         return {
             "flow_version_id": flow_version_id,
+            "scope": "flow_version",
             "refused": bool(matches),
             "matches": matches,
             "observed": observed,
+            "fault_classes": ratification_policy(),
         }
 
     def list_dead_ends(

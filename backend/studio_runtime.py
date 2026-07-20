@@ -39,6 +39,10 @@ CALLABLE_ACTION_KINDS = frozenset(
 PROVIDER_DETAIL_FIELDS = frozenset(
     {"provider_code", "provider_type", "provider_param", "status", "request_id"}
 )
+# A parent inheriting a subflow refusal cites the dead ends behind it. The brake
+# refuses on the first canonical match, so this bound keeps one event small
+# without ever hiding the match that actually caused the refusal.
+MAX_CITED_DEAD_ENDS = 3
 
 
 @dataclass(frozen=True)
@@ -62,7 +66,7 @@ def _safe_provider_detail(error: ProviderFailure) -> dict[str, Any]:
 
 
 def _public_error_message(
-    error: ContractViolation | ProviderFailure | ActionBlocked,
+    error: ContractViolation | ProviderFailure | ActionBlocked | BrakeEngaged,
 ) -> str:
     if not isinstance(error, ProviderFailure):
         return str(error)
@@ -378,22 +382,23 @@ class StudioRuntime:
     def _enforce_brake(
         self, workspace_id: str, flow_version: Mapping[str, Any]
     ) -> None:
-        """Refuse a candidate Run whose pinned path a canonical dead end VETOES.
+        """Refuse a candidate Run of a Flow version a canonical dead end VETOES.
 
         The check runs after the Flow context resolves and before `create_run`,
         so a refused Run leaves no Run row, no Step, no event, and no effect.
+        That guarantee is exactly why the scope is the pinned Flow *version* and
+        not the traversed path: the path is chosen by data that does not exist
+        until the Run runs, so it cannot be known here.
         """
 
         verdict = self.repository.check_brake(
-            workspace_id,
-            flow_version_id=flow_version["id"],
-            node_ids=[str(node["id"]) for node in flow_version["nodes"]],
+            workspace_id, flow_version_id=flow_version["id"]
         )
         if not verdict["refused"]:
             return
         match = verdict["matches"][0]
         raise BrakeEngaged(
-            "A canonical dead end already proves this exact pinned path fails. "
+            "A canonical dead end already proves this pinned Flow version fails. "
             "Repair the Flow to publish a successor version.",
             detail={**match, "matches": verdict["matches"]},
         )
@@ -614,16 +619,42 @@ class StudioRuntime:
                             flow_version_id=node["version_id"],
                             input_data=mapped_input,
                         )
-                except (ContractViolation, ProviderFailure, ActionBlocked) as error:
+                except (
+                    ContractViolation,
+                    ProviderFailure,
+                    ActionBlocked,
+                    BrakeEngaged,
+                ) as error:
                     public_message = _public_error_message(error)
+                    # A refusal is a deliberate stop, not a fault: both
+                    # `ActionBlocked` and `BrakeEngaged` land the Run in
+                    # `blocked` so the surface reads the same either way.
+                    terminal_status = (
+                        "blocked"
+                        if isinstance(error, (ActionBlocked, BrakeEngaged))
+                        else "failed"
+                    )
+                    if isinstance(error, BrakeEngaged):
+                        # A braked subflow must terminate its parent legibly. Left
+                        # uncaught it escapes the drive loop entirely: the parent
+                        # Run and this Step strand in `running` on the synchronous
+                        # path, and the async worker reports it as an unexplained
+                        # `worker_failure`. Carry the refusal's citations into the
+                        # parent's own evidence before the Step closes, so the
+                        # parent cites the Runs that actually proved the dead end.
+                        self._record_subflow_refusal(
+                            workspace_id,
+                            run_id,
+                            node_id=node_id,
+                            step_id=step_id,
+                            error=error,
+                        )
                     try:
                         self.repository.finish_step(
                             workspace_id,
                             run_id,
                             step_id,
-                            status=(
-                                "blocked" if isinstance(error, ActionBlocked) else "failed"
-                            ),
+                            status=terminal_status,
                             output=None,
                             route_outcome="error",
                             error_code=error.code,
@@ -666,7 +697,7 @@ class StudioRuntime:
                         run_id,
                         error.code,
                         public_message,
-                        status="blocked" if isinstance(error, ActionBlocked) else "failed",
+                        status=terminal_status,
                         node_id=node_id,
                     )
                 if result.paused:
@@ -749,6 +780,53 @@ class StudioRuntime:
             output=last_output,
             outcome=terminal_resume_outcome or "success",
             flow_version=context["version"],
+        )
+
+    def _record_subflow_refusal(
+        self,
+        workspace_id: str,
+        run_id: str,
+        *,
+        node_id: str,
+        step_id: str | None,
+        error: BrakeEngaged,
+    ) -> None:
+        """Carry a braked subflow's citations into the parent's own evidence.
+
+        The parent inherits a legible refusal rather than an opaque failure: the
+        event names the Runs that proved the dead end, so the parent's ledger
+        can be audited without reading the child's. Only fields the refusal
+        already published are copied, and nothing here mints new evidence — the
+        parent re-proved nothing, so `brake_engaged` is deliberately outside
+        `RATIFIABLE_FAULTS`.
+        """
+
+        matches = error.detail.get("matches") or []
+        if not isinstance(matches, list):
+            matches = []
+        self.repository.append_event(
+            workspace_id,
+            run_id,
+            event_type="subflow.brake_engaged",
+            actor_type="runtime",
+            actor_id=None,
+            payload={
+                "node_id": node_id,
+                "step_id": step_id,
+                "matches": [
+                    {
+                        "fingerprint": match.get("fingerprint"),
+                        "flow_version_id": match.get("flow_version_id"),
+                        "node_id": match.get("node_id"),
+                        "error_code": match.get("error_code"),
+                        "ratification_state": match.get("ratification_state"),
+                        "distinct_runs": match.get("distinct_runs"),
+                        "citing_run_ids": list(match.get("citing_run_ids") or []),
+                    }
+                    for match in matches[:MAX_CITED_DEAD_ENDS]
+                    if isinstance(match, Mapping)
+                ],
+            },
         )
 
     def _complete_run(

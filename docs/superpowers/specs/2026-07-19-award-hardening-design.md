@@ -86,27 +86,67 @@ memory of what did not work, and that memory has veto power.
 
 **Mechanism.** Deterministic. No model participates in any part of it.
 
-1. On a terminal `failed` or `blocked` Run, derive a fingerprint over the exact
-   failed approach:
+1. On a terminal `failed` or `blocked` Run, decide whether the failure belongs to
+   a **ratifiable fault class** (below). If not, nothing is minted at all.
+2. Derive a fingerprint over the exact failed approach:
    `sha256(canonical_json({flow_version_id, node_id, error_code, normalized_detail}))`.
    Normalization strips volatile substrings (ids, timestamps, digits) so the same
    fault recurs to the same fingerprint.
-2. Append one `dead_end_evidence` row citing the Run. Append-only; never updated.
-3. `ratification_state` is **derived**, never stored as mutable state:
+3. Append one `dead_end_evidence` row citing the Run. Append-only; never updated.
+4. `ratification_state` is **derived**, never stored as mutable state:
    - `≥1` distinct Run → `proposed`
    - `≥2` distinct Runs → `confirmed`
    - `≥3` distinct Runs → `canonical`
    Counting is over *distinct* Runs, so one Run retried cannot ratify anything.
-4. `check_brake` runs before Run enqueue. It is read-only and returns a verdict.
-   It refuses **only** when a `canonical` dead_end matches the exact
-   `(flow_version_id, node_id)` path the candidate would traverse.
-5. A refused Run is not created. Zero Steps, zero effects. The refusal cites the
+5. `check_brake` runs before Run enqueue. It is read-only and returns a verdict.
+   It refuses **only** when a `canonical` dead_end exists on the candidate's
+   pinned `flow_version_id`.
+6. A refused Run is not created. Zero Steps, zero effects. The refusal cites the
    three prior Run IDs and their hash-linked events.
+
+**Ratifiable fault classes.** Ratification is expensive: three citations refuse a
+Flow version permanently. Only a *structural* defect earns that — one where the
+reason for the failure is a property of the pinned definition, so repeating the
+same pinned path cannot succeed whatever data arrives. Membership is a declared
+table in `backend/contracts.py`, written in the same style as `REPAIR_POLICIES`
+and `POLICY_MARKERS`, with a stated reason on every entry, and surfaced on the
+`check_brake` verdict as `fault_classes`:
+
+| Class | Ratifies | Reason |
+| --- | --- | --- |
+| `data_store_write_denied` | yes | The pinned Action version declares `write_enabled` false. The denial is a property of the definition, not of the input, and granting it publishes a successor that clears the brake by construction. |
+| `assertion_rejected` | no | A validation gate failing is the gate working. Its message is author-configured and static, so three rejections of three different bad inputs share one fingerprint; ratifying would refuse valid input forever and a successor cannot change the assertion. |
+| `undeclared_policy_denial` | no | A refusal carrying no declared `POLICY_MARKERS` predicate is not traceable to the definition. Fail closed. |
+| `transient_provider_fault` | no | Transient by construction, already handled as a retry-budget concern by `repair_policy.PROVIDER_FAILURE`. Digit stripping would collapse unrelated rate limits into one fingerprint. |
+| `run_data_contract_violation` | no | A pinned schema caught *this* Run's data; another input may pass. The terminal code cannot separate structural wiring faults from data rejections, so the class fails closed. |
+| `subflow_brake_refusal` | no | A parent inherits a refusal, not a discovery. One memory must not mint another up the call graph. |
+| `subflow_terminal_summary` | no | If the child's fault is structural it ratifies at the child's node, where the evidence and the repair live. |
+| `graph_integrity_fault` | no | Publish-time validation proves the graph acyclic, fully reachable, and every route target resolvable, so `missing_node` and `flow_traversal_exhausted` have no reachable instance. |
+
+Anything unrecognised does not ratify. A brake that fires wrongly is worse than
+one that fires rarely.
+
+**Scope is the Flow version, not the traversed path.** Publish-time validation
+already requires every node to be reachable from the start node, and which branch
+a Run takes depends on data that does not exist until it runs — so the traversed
+path is *not knowable before execution*. Refusal at version scope is therefore
+the only sound pre-execution semantic that preserves the stronger property: no
+Run row, no Step, no effect. `check_brake` accordingly takes no `node_ids`
+argument; a parameter the implementation must ignore would give the API a false
+appearance of path scoping.
 
 **Escape hatch.** A repair that publishes a successor Flow version produces a new
 `flow_version_id`, therefore a new fingerprint, therefore no brake. Fixing the
 problem always clears the brake; only repeating it unchanged is refused. This is
-the property that makes the brake safe rather than a trap.
+the property that makes the brake safe rather than a trap — and it is only true
+because the fault-class table keeps out failures that have no problem to fix.
+
+**Braked subflows.** `BrakeEngaged` is caught by the drive loop like any other
+bounded terminal error. A braked subflow ends its parent `blocked` with
+`brake_engaged`, closes the parent's Step, and emits `subflow.brake_engaged`
+carrying the refusal's citations into the parent's ledger. Left uncaught it would
+strand the parent in `running` on the synchronous path and degrade to
+`worker_failure` on the async path.
 
 **Surface.** The Run detail shows a dead_end panel with state, distinct-Run
 count, and links to the citing events. The refusal is returned as a typed error

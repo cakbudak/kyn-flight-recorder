@@ -140,27 +140,66 @@ successors. A linked proof child—not model prose—establishes the changed out
 Most agent systems have a memory of what they did. This one has a memory of what
 did not work, and that memory has veto power.
 
-When a Run terminates blocked or failed, the runtime mints append-only evidence
-of the exact approach that failed—the pinned Flow version, the node, the error
-code, and a normalized fault detail. Nothing increments a mutable counter.
-`ratification_state` is **derived** by counting distinct citing Runs:
+When a Run terminates blocked or failed **in a ratifiable fault class**, the
+runtime mints append-only evidence of the exact approach that failed—the pinned
+Flow version, the node, the error code, and a normalized fault detail. Nothing
+increments a mutable counter. `ratification_state` is **derived** by counting
+distinct citing Runs:
 
 ```text
 1 independent Run   → proposed    recorded; execution unaffected
 2 independent Runs  → confirmed   visible in the Run surface
-3 independent Runs  → canonical   check_brake refuses the path
+3 independent Runs  → canonical   check_brake refuses the Flow version
 ```
 
-At `canonical`, a further Run on that exact pinned path is refused **before it is
-created**: no Run row, no Step, no event, no effect. The refusal cites the prior
-Run IDs, and every citation resolves to a hash-linked event that already existed.
+#### What is allowed to ratify
+
+Counting is only half the rule. Only a **structural** defect may be counted—one
+where the reason for the failure is a property of the pinned definition, so
+repeating that definition cannot succeed whatever data arrives. The membership
+rule is a declared table (`RATIFIABLE_FAULTS` and `NON_RATIFIABLE_FAULTS` in
+`backend/contracts.py`), exposed on every `check_brake` verdict as
+`fault_classes` so it can be audited rather than inferred:
+
+```text
+ratifies      a Data Store Action whose pinned `write_enabled` policy denies
+              its own declared bounded write
+never         an assertion rejecting bad input — the gate doing its job; its
+              message is static, so distinct bad inputs share one fingerprint
+never         a transient provider fault — a property of the moment, not the
+              path, and already a retry-policy concern
+never         a schema rejection of this Run's data, an inherited subflow
+              refusal, or anything the table does not name
+```
+
+Anything unrecognised **fails closed and does not ratify**. A brake that fires
+wrongly is worse than one that fires rarely.
+
+#### Scope of the refusal
+
+At `canonical`, a further Run of that **pinned Flow version** is refused *before
+it is created*: no Run row, no Step, no event, no effect. The refusal cites the
+prior Run IDs, and every citation resolves to a hash-linked event that already
+existed.
+
+The scope is the Flow version, not a traversal path, and that is deliberate.
+Which nodes a Run visits is decided by data that does not exist until the Run
+executes, so no pre-execution check can know the path. Admitting the Run and
+braking mid-traversal would forfeit the stronger guarantee—no Run row, no Step,
+no effect—so a canonical dead end on any node of a version refuses every
+candidate of that version.
 
 No model participates in any part of this. It is a count over append-only rows,
 so an Agent cannot argue its way past it.
 
-Publishing a repaired successor Flow version produces a new pinned path and
-therefore a new fingerprint. Fixing the problem always clears the brake; only
+Publishing a repaired successor Flow version produces a new `flow_version_id`
+and therefore a new fingerprint. Fixing the problem always clears the brake; only
 repeating it unchanged is refused. The brake is a memory, not a trap.
+
+A braked subflow does not escape its parent: the parent Run terminates `blocked`
+with `brake_engaged`, its Step closes, and a `subflow.brake_engaged` event
+carries the refusal's citations into the parent's own ledger. The parent proved
+nothing new, so that inherited refusal never ratifies a second dead end.
 
 ## Flat SQLite projection
 

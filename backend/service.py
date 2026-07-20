@@ -1291,14 +1291,17 @@ class ControlPlane:
         return self.studio.snapshot(workspace_id)
 
     def check_brake(self, workspace_id: str, flow_id: str) -> dict[str, Any]:
-        """Report, without writing, whether a canonical dead end VETOES this Flow."""
+        """Report, without writing, whether a canonical dead end VETOES this Flow.
+
+        The verdict is scoped to the Flow's current pinned version, never to a
+        traversal path: the path a Run takes is decided by data that does not
+        exist yet. The verdict carries `fault_classes` so a reader can audit
+        which failures are allowed to ratify in the first place.
+        """
 
         context = self.studio.flow_context(workspace_id, flow_id)
-        version = context["version"]
         return self.studio.check_brake(
-            workspace_id,
-            flow_version_id=version["id"],
-            node_ids=[str(node["id"]) for node in version["nodes"]],
+            workspace_id, flow_version_id=context["version"]["id"]
         )
 
     def list_dead_ends(self, workspace_id: str) -> list[dict[str, Any]]:
