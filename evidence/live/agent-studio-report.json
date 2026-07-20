@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-20T20:16:53.425Z",
+  "generated_at": "2026-07-20T20:28:27.719Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_90a8ef854cb844099cb54afceff15112",
+        "prompt": "prmv_8834dc5249b74390ae60f9fd2ca347e5",
         "skills": [
-          "sklv_97f84cf09e874c6aa369778625e0d26a"
+          "sklv_85b9221a8e7747d7b2f456dbca0dcd8d"
         ],
         "actions": [
-          "actv_1f8f61858b27405abaa2810864cf15db"
+          "actv_fe654f92cab84a4c8ba75ae0b78e38e2"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_1f8f61858b27405abaa2810864cf15db"
+          "version_id": "actv_fe654f92cab84a4c8ba75ae0b78e38e2"
         }
       }
     },
@@ -199,7 +199,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_030314b90e0f40a581612576145fdbed",
+        "id": "arun_5c48bfd51b774823a15ec67156c99ca4",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -237,15 +237,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_8a6729e2f3e8453692811f1efc6b8747"
+        "version_id": "aflowv_582c4dc5e23c41b888ef90142ede869a"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_cf3b578ee4d54ed2b9049c1c378b4c28",
-        "child": "arun_ffc2effe2c4543828e0561c6ab8ceaf8",
+        "parent": "arun_382fd0f1ec3140faba14fa80959d032a",
+        "child": "arun_6f7299cc547d40fdbb94693bdfbff6d5",
         "outcome": "standard"
       }
     },
@@ -253,8 +253,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_088636a109b54a62a71efeceaa5a83d4",
-        "run": "arun_e0236e30f7fa4292b6425e4ac7f65a22",
+        "trigger": "atrg_f3b8f67875394176b9c73b7b8f5bb2fe",
+        "run": "arun_b660c24ed5854f9bba546e6fe17cb8d8",
         "outcome": "priority"
       }
     },
@@ -269,7 +269,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_c6c8170c1c5b42329ca81f1d4b394a85",
+        "run": "arun_78be838324a94d8280b210f76d0c6f43",
         "calls": 1,
         "steps": [
           "completed",
@@ -301,17 +301,17 @@
       "status": "pass",
       "detail": {
         "controlled": {
-          "id": "cmp_0921055ce1b14347a49d8bbc7d8fb47b",
+          "id": "cmp_06d635a3c2dc46819cd2c968b0986966",
           "usable": true,
           "pinned_versions": [
-            "aflowv_fb7f49e0fc2048b4b1fe568961b8d492"
+            "aflowv_f8353eef5ea74490a82108d5e32ded47"
           ],
           "enforced": 4,
           "uncontrolled": 5,
           "rows": 2
         },
         "aliased": {
-          "id": "cmp_74d822dc9c204d14a8551b7b1691dcc2",
+          "id": "cmp_ffd1a88dcfa6450e98cc1472452afa60",
           "usable": false,
           "problems": [
             "response_model_mismatch"
@@ -353,7 +353,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_0ffe30beb715c",
+        "citation_opened": "arun_34e690444a2dd",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -377,7 +377,7 @@
       "name": "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
       "status": "pass",
       "detail": {
-        "judge": "agtv_ea7547f41fe54b799e38f7de15dee7e5",
+        "judge": "agtv_6530098eb38f47f2a964073f550ced9f",
         "criteria": [
           {
             "evidence_kind": "effect",
@@ -410,9 +410,9 @@
       "name": "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
       "status": "fail",
       "detail": {
-        "run": "arun_0441b63912074205909b475b4e89374e",
+        "run": "arun_4e9ee0ace1514f7b8ef76e1256a4a893",
         "status": "failed",
-        "error_code": "worker_failure",
+        "error_code": "provider_failure",
         "status_history": [
           "running",
           "failed"

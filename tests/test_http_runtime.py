@@ -372,6 +372,46 @@ class RuntimeHttpTest(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"]["code"], "openai_key_required")
 
+    def test_judge_only_studio_flow_requires_and_uses_the_browser_key(self) -> None:
+        cookie, bootstrap = self.create_workspace()
+        contracted = next(
+            flow
+            for flow in bootstrap["snapshot"]["studio"]["flows"]
+            if flow["slug"] == "contracted-evidence-publication"
+        )
+        body = {
+            "input": {
+                "record": "HTTP stop-seam evidence contract.",
+                "readiness": 0.31,
+            },
+            "idempotency_key": "http-judge-only-flow",
+        }
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/flows/{contracted['id']}/runs",
+            body=body,
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"]["code"], "openai_key_required")
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/flows/{contracted['id']}/runs",
+            body=body,
+            cookie=cookie,
+            origin=self.base_url,
+            api_key="test-browser-owned-key-for-judge-only-http",
+        )
+        self.assertEqual(status, 201)
+        run = payload["data"]
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["error_code"], "completion_unevidenced")
+        self.assertEqual(len(run["model_calls"]), 1)
+        self.assertEqual(run["model_calls"][0]["status"], "completed")
+
     def test_mutations_reject_cross_origin_missing_cookie_and_oversize_body(self) -> None:
         status, _headers, payload = self.request(
             "POST", "/api/v1/workspaces", body={}, origin="https://attacker.invalid"

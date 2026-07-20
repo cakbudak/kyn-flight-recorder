@@ -2073,6 +2073,7 @@ class ControlPlane:
         nodes = {node["id"]: node for node in flow_version["nodes"]}
         if start is None or start not in nodes:
             return 0
+        completion_calls = 1 if flow_version["judge_agent_version_id"] else 0
         adjacency: dict[str, list[str]] = {node_id: [] for node_id in nodes}
         for route in flow_version["routes"]:
             adjacency[route["from"]].append(route["to"])
@@ -2107,7 +2108,12 @@ class ControlPlane:
             memo[node_id] = weights[node_id] + downstream
             return memo[node_id]
 
-        return maximum_path(start)
+        # A Goal-Judge is cast by the Flow at its terminal stop seam, not by a
+        # graph node. Charge it in addition to the maximum executable node path
+        # so the HTTP boundary keeps the browser-owned client and reserves the
+        # call before execution. Recursive subflow forecasts carry their own
+        # terminal judge into the parent node's weight by the same rule.
+        return maximum_path(start) + completion_calls
 
     def studio_approval_model_call_forecast(
         self, workspace_id: str, request_id: str

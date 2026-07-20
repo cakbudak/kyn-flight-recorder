@@ -172,6 +172,49 @@ class SeededDeclarationTest(SeededContractCase):
 
         self.assertTrue(self.flow(CONTRACTED_SLUG)["version"]["requires_model"])
 
+    def test_the_model_call_forecast_charges_the_judge_only_flow_once(self) -> None:
+        """Credential and budget checks must see the Flow-level model call.
+
+        The judge is not a graph node, so a path-only forecast otherwise returns
+        zero, discards the browser client at the HTTP boundary, and strands the
+        stop seam on the deliberately unavailable default transport.
+        """
+
+        contracted = self.flow(CONTRACTED_SLUG)
+        self.assertEqual(
+            self.plane.studio_flow_model_call_forecast(
+                self.workspace_id, contracted["id"]
+            ),
+            1,
+        )
+        parent = self.plane.create_studio_flow(
+            self.workspace_id,
+            name="Judge-only child wrapper",
+            slug="judge-only-child-wrapper",
+            description="Proves a nested stop-seam call remains visible to forecasting.",
+            input_schema=contracted["version"]["input_schema"],
+            start_node_id="contracted-child",
+            nodes=[
+                {
+                    "id": "contracted-child",
+                    "type": "flow",
+                    "version_id": contracted["version"]["id"],
+                    "input_mapping": {
+                        name: {"source": "input", "path": name}
+                        for name in contracted["version"]["input_schema"]["required"]
+                    },
+                }
+            ],
+            routes=[],
+        )
+        self.assertTrue(parent["version"]["requires_model"])
+        self.assertEqual(
+            self.plane.studio_flow_model_call_forecast(
+                self.workspace_id, parent["id"]
+            ),
+            1,
+        )
+
     def test_the_judge_only_flow_exposes_its_pinned_brain_to_model_sweeps(self) -> None:
         """The stop-seam call is a real model call even though no node makes it."""
 
