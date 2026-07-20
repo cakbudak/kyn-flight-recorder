@@ -352,9 +352,9 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
               snapGrid={[16, 16]}
               proOptions={{ hideAttribution: true }}
             >
-              <Background gap={24} size={1.2} color="#262a31" />
+              <Background gap={24} size={1.2} color="#39424f" />
               <Controls position="bottom-left" showInteractive={false} />
-              <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => node.data.color} maskColor="rgba(8,10,13,.76)" />
+              <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => node.data.color} maskColor="rgba(20,24,30,.72)" />
               <Panel position="top-left" className="canvas-hint"><span>{draft.nodes.length} nodes</span><span>{draft.routes.length} routes</span><span>{draft.outcomes.length} Flow outputs</span></Panel>
             </ReactFlow>
           ) : (
@@ -497,9 +497,9 @@ function EmptyCanvas({ onAddFirst }) {
 function KynNode({ data, selected }) {
   const inputCount = Math.max(1, data.inputs.length);
   const outputCount = Math.max(1, data.outcomes.length);
-  const portStart = 116;
-  const portGap = 28;
-  const height = portStart + (Math.max(inputCount, outputCount) - 1) * portGap + 28;
+  const portStart = 148;
+  const portGap = 30;
+  const height = portStart + (Math.max(inputCount, outputCount) - 1) * portGap + 30;
   return (
     <article className={`kyn-node ${selected ? "is-selected" : ""} ${data.isStart ? "is-start" : ""}`} style={{ minHeight: height }}>
       <header>
@@ -511,11 +511,11 @@ function KynNode({ data, selected }) {
       <div className="node-contract"><span>{data.inputCount} in</span><span>{data.outputCount} out</span><span>{data.effect}</span></div>
       {(data.inputs.length ? data.inputs : [{ id: "in:default", label: "input" }]).map((input, index) => {
         const top = portStart + index * portGap;
-        return <React.Fragment key={input.id}><Handle type="target" id={input.id} position={Position.Left} className="kyn-handle target-handle" style={{ top }} /><span className="port-label port-label-in" style={{ top: top - 8 }}>{input.label}</span></React.Fragment>;
+        return <React.Fragment key={input.id}><Handle type="target" id={input.id} position={Position.Left} className="kyn-handle target-handle" style={{ top }} /><span className="port-label port-label-in" style={{ top: top - 9 }}>{input.label}</span></React.Fragment>;
       })}
       {data.outcomes.map((outcome, index) => {
         const top = portStart + index * portGap;
-        return <React.Fragment key={outcome.id}><span className={`port-label port-label-out tone-${outcome.tone}`} style={{ top: top - 8 }}>{outcome.label}</span><Handle type="source" id={outcome.id} position={Position.Right} className={`kyn-handle source-handle tone-${outcome.tone}`} style={{ top }} /></React.Fragment>;
+        return <React.Fragment key={outcome.id}><span className={`port-label port-label-out tone-${outcome.tone}`} style={{ top: top - 9 }}>{outcome.label}</span><Handle type="source" id={outcome.id} position={Position.Right} className={`kyn-handle source-handle tone-${outcome.tone}`} style={{ top }} /></React.Fragment>;
       })}
     </article>
   );
@@ -569,11 +569,11 @@ function hydrateEdges(draft) {
 function edgeId(route) { return `${route.from}:${route.outcome}:${route.to}`; }
 
 function colorForKind(kind) {
-  if (kind === "ai" || kind === "agent") return "#a892ff";
-  if (kind === "approval") return "#f6ca6a";
-  if (kind === "router" || kind === "condition" || kind === "assert") return "#70d8d0";
-  if (kind === "data_store" || kind === "sandbox") return "#ff8d72";
-  if (kind === "subflow") return "#7fb1ff";
+  if (kind === "ai" || kind === "agent") return "#b3a2ff";
+  if (kind === "approval") return "#f8d179";
+  if (kind === "router" || kind === "condition" || kind === "assert") return "#7fdfd7";
+  if (kind === "data_store" || kind === "sandbox") return "#ff9c83";
+  if (kind === "subflow") return "#8fbcff";
   return "#c9ff73";
 }
 
