@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useState } from "react";
+import { useThemeTokens } from "../theme.js";
 import {
   Background,
   Controls,
@@ -47,7 +48,7 @@ const RATIFICATION_TONE = { proposed: "neutral", confirmed: "warning", canonical
 const RATIFICATION_MEANING = {
   proposed: "One Run reproduced this exact approach. It is recorded and it does not brake — an honest second attempt is never refused.",
   confirmed: "Two independent Runs reproduced it. It still does not brake; one further independent reproduction ratifies it.",
-  canonical: "Three independent Runs reproduced it. This exact pinned path is now refused before any Run row exists. Publishing a successor Flow version changes the fingerprint and clears the brake."
+  canonical: "Three independent Runs reproduced it. This pinned Flow version is now refused before any Run row exists — which branch a Run would take is not knowable before it runs, so the version is the scope. Publishing a successor changes the fingerprint and clears the brake."
 };
 
 export default function RunsWorkbench({ snapshot, refresh, mutate, busy }) {
@@ -183,11 +184,12 @@ function RunGraph({ snapshot, run }) {
     animated: run.current_node_id === route.to && run.status === "running",
     className: route.outcome === "error" || route.outcome === "rejected" ? "edge-danger" : ""
   })), [run.flow_graph.routes, run.current_node_id, run.status]);
+  const graph = useThemeTokens(RUN_GRAPH_TOKENS);
   const [nodes, setNodes, onNodesChange] = useNodesState(derivedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(derivedEdges);
   useEffect(() => { setNodes((previous) => reconcileGraph(previous, derivedNodes)); }, [derivedNodes, setNodes]);
   useEffect(() => { setEdges((previous) => reconcileGraph(previous, derivedEdges)); }, [derivedEdges, setEdges]);
-  return <div className="run-graph"><ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={RUN_NODE_TYPES} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView fitViewOptions={{ padding: .3 }} minZoom={.2} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background gap={22} size={1} color="#39424f" /><Controls showInteractive={false} position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" maskColor="rgba(20,24,30,.72)" nodeColor={(node) => stateColor(node.data.state)} /></ReactFlow><div className="run-graph-label"><Badge tone="neutral"><Icon name="lock" size={12} />Pinned Flow v{run.flow_version}</Badge><LedgerState run={run} /></div></div>;
+  return <div className="run-graph"><ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={RUN_NODE_TYPES} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView fitViewOptions={{ padding: .3 }} minZoom={.2} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background gap={22} size={1} color={graph["graph-dot"]} /><Controls showInteractive={false} position="bottom-left" /><MiniMap pannable zoomable position="bottom-right" maskColor={graph["minimap-mask"]} nodeColor={(node) => graph[stateColor(node.data.state)]} /></ReactFlow><div className="run-graph-label"><Badge tone="neutral"><Icon name="lock" size={12} />Pinned Flow v{run.flow_version}</Badge><LedgerState run={run} /></div></div>;
 }
 
 function RunGraphNode({ data }) {
@@ -327,4 +329,19 @@ function RepairModal({ run, proposal, mutate, onClose }) {
   return <Modal title="Review bounded repair" description="This publishes successors. It never edits the failed Run or its pinned definitions." onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="repair-review"><p className="panel-kicker">Allowlisted patch</p><KeyValue data={proposal.patch} /><dl><div><dt>Expected Flow revision</dt><dd>{proposal.expected_flow_revision}</dd></div><div><dt>Expected Action version</dt><dd>{proposal.expected_action_version}</dd></div><div><dt>Proposal hash</dt><dd><code>{proposal.proposal_hash.slice(0, 24)}…</code></dd></div></dl></div><Field label="Maintainer"><input required value={actor} onChange={(event) => setActor(event.target.value)} /></Field><Field label="Reason"><textarea required minLength="20" rows="4" value={reason} onChange={(event) => setReason(event.target.value)} /></Field><label className="check-row"><input type="checkbox" required checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span><strong>I approve this exact successor patch</strong><small>The failed Run remains unchanged; proof requires a linked child Run.</small></span></label><div className="modal-actions"><Button tone="quiet" type="button" onClick={onClose}>Cancel</Button><Button tone="primary" icon="save" type="submit" disabled={!acknowledged}>Publish successors</Button></div></form></Modal>;
 }
 
-function stateColor(state) { return { completed: "#c9ff73", running: "#b3a2ff", waiting_approval: "#f8d179", blocked: "#ff9c83", failed: "#ff9c83" }[state] ?? "#97a2b0"; }
+// Graph chrome is set in JSX rather than CSS, so it reads the same tokens
+// the stylesheet uses instead of carrying a second colour list.
+const RUN_GRAPH_TOKENS = [
+  "graph-dot", "minimap-mask", "muted",
+  "tone-success-solid", "tone-ai-solid", "tone-warning-solid", "tone-danger-solid"
+];
+
+function stateColor(state) {
+  return {
+    completed: "tone-success-solid",
+    running: "tone-ai-solid",
+    waiting_approval: "tone-warning-solid",
+    blocked: "tone-danger-solid",
+    failed: "tone-danger-solid"
+  }[state] ?? "muted";
+}

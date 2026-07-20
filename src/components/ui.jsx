@@ -1,6 +1,50 @@
 import React, { useEffect, useId, useRef } from "react";
 import { Icon } from "../icons.jsx";
 import { STATUS_TONE, titleCase } from "../lib.js";
+import { setTheme, useTheme } from "../theme.js";
+
+export function ThemeToggle({ className = "" }) {
+  const theme = useTheme();
+  const next = theme === "light" ? "dark" : "light";
+  return (
+    <button
+      type="button"
+      className={`icon-button theme-toggle ${className}`.trim()}
+      onClick={() => setTheme(next)}
+      aria-label={`Switch to ${next} theme`}
+      title={`Switch to ${next} theme`}
+    >
+      <Icon name={theme === "light" ? "moon" : "sun"} size={17} />
+    </button>
+  );
+}
+
+const THEME_CHOICES = [
+  { value: "light", icon: "sun", label: "Light", hint: "Off-white surfaces, darkened semantic ink" },
+  { value: "dark", icon: "moon", label: "Dark", hint: "The default console palette" }
+];
+
+/** Explicit, labelled theme choice for Settings. */
+export function ThemeChoice() {
+  const theme = useTheme();
+  return (
+    <div className="choice-grid" role="radiogroup" aria-label="Interface theme">
+      {THEME_CHOICES.map((choice) => (
+        <label key={choice.value} className={`choice-card ${theme === choice.value ? "is-checked" : ""}`}>
+          <input
+            type="radio"
+            name="theme"
+            value={choice.value}
+            checked={theme === choice.value}
+            onChange={() => setTheme(choice.value)}
+          />
+          <span className="node-symbol"><Icon name={choice.icon} size={16} /></span>
+          <span><strong>{choice.label}</strong><small>{choice.hint}</small></span>
+        </label>
+      ))}
+    </div>
+  );
+}
 
 export function Button({ children, icon, tone = "default", className = "", type = "button", ...props }) {
   return (

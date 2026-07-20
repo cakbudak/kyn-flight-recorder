@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api, browserKey, health } from "./api.js";
 import { Icon } from "./icons.jsx";
 import { shortId } from "./lib.js";
-import { Badge, Button, IconButton, Spinner } from "./components/ui.jsx";
+import { Badge, Button, IconButton, Spinner, ThemeToggle } from "./components/ui.jsx";
 import FlowStudio from "./components/FlowStudio.jsx";
 import ResourceWorkbench from "./components/ResourceWorkbench.jsx";
 import RunsWorkbench, { BrakeRefusal } from "./components/RunsWorkbench.jsx";
@@ -182,6 +182,7 @@ function Topbar({ runtimeHealthy, workspaceId, keyConfigured, onSettings }) {
       </div>
       <div className="topbar-actions">
         <Badge tone="ai">OpenAI Build Week</Badge>
+        <ThemeToggle />
         <Button tone="quiet" icon="key" onClick={onSettings}>
           {keyConfigured ? "Key in this tab" : "Configure OpenAI"}
         </Button>

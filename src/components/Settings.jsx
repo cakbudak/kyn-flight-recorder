@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { browserKey, saveBrowserKey } from "../api.js";
 import { Icon } from "../icons.jsx";
 import { shortId } from "../lib.js";
-import { Badge, Button, Field, PageHeader } from "./ui.jsx";
+import { Badge, Button, Field, PageHeader, ThemeChoice } from "./ui.jsx";
 
 export default function Settings({ snapshot, keyConfigured, onKeyChanged, onNewWorkspace, busy }) {
   const [key, setKey] = useState(browserKey());
@@ -39,6 +39,11 @@ export default function Settings({ snapshot, keyConfigured, onKeyChanged, onNewW
           <div className="credential-path">
             <span>Browser tab</span><i>same-origin header</i><span>Bounded API operation</span><i>per-call client</i><span>OpenAI Responses</span>
           </div>
+        </section>
+        <section className="settings-card appearance-card">
+          <header><span className="settings-icon"><Icon name="sun" size={22} /></span><div><p className="panel-kicker">Interface</p><h2>Theme</h2></div></header>
+          <p>Follows your system preference until you choose here. The choice is stored in this browser.</p>
+          <div className="appearance-choice"><ThemeChoice /></div>
         </section>
         <section className="settings-card security-card">
           <header><span className="settings-icon"><Icon name="lock" size={22} /></span><div><p className="panel-kicker">Credential contract</p><h2>What the runtime guarantees</h2></div></header>

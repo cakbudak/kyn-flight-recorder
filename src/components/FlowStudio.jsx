@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useThemeTokens } from "../theme.js";
 import {
   Background,
   ConnectionLineType,
@@ -49,11 +50,20 @@ const EDGE_DEFAULTS = {
   style: { strokeWidth: 1.8 }
 };
 
+// Graph chrome is set in JSX rather than CSS, so it reads the same tokens
+// the stylesheet uses instead of carrying a second colour list.
+const GRAPH_TOKENS = [
+  "graph-dot", "minimap-mask", "accent-text",
+  "tone-success-solid", "tone-ai-solid", "tone-warning-solid",
+  "tone-danger-solid", "tone-cyan-solid", "tone-blue-solid"
+];
+
 export default function FlowStudio(props) {
   return <ReactFlowProvider><FlowStudioInner {...props} /></ReactFlowProvider>;
 }
 
 function FlowStudioInner({ snapshot, mutate, busy, setView }) {
+  const graph = useThemeTokens(GRAPH_TOKENS);
   const flows = snapshot.studio.flows;
   const [selectedFlowId, setSelectedFlowId] = useState(flows[0]?.id ?? null);
   const selectedFlow = flows.find((flow) => flow.id === selectedFlowId) ?? flows[0] ?? null;
@@ -342,7 +352,7 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
               onConnect={onConnect}
               isValidConnection={(connection) => connection.source !== connection.target && Boolean(connection.sourceHandle)}
               connectionLineType={ConnectionLineType.SmoothStep}
-              connectionLineStyle={{ stroke: "#c9ff73", strokeWidth: 2 }}
+              connectionLineStyle={{ stroke: graph["accent-text"], strokeWidth: 2 }}
               deleteKeyCode={["Backspace", "Delete"]}
               fitView
               fitViewOptions={{ padding: 0.22 }}
@@ -352,9 +362,9 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
               snapGrid={[16, 16]}
               proOptions={{ hideAttribution: true }}
             >
-              <Background gap={24} size={1.2} color="#39424f" />
+              <Background gap={24} size={1.2} color={graph["graph-dot"]} />
               <Controls position="bottom-left" showInteractive={false} />
-              <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => node.data.color} maskColor="rgba(20,24,30,.72)" />
+              <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => graph[node.data.color]} maskColor={graph["minimap-mask"]} />
               <Panel position="top-left" className="canvas-hint"><span>{draft.nodes.length} nodes</span><span>{draft.routes.length} routes</span><span>{draft.outcomes.length} Flow outputs</span></Panel>
             </ReactFlow>
           ) : (
@@ -569,12 +579,12 @@ function hydrateEdges(draft) {
 function edgeId(route) { return `${route.from}:${route.outcome}:${route.to}`; }
 
 function colorForKind(kind) {
-  if (kind === "ai" || kind === "agent") return "#b3a2ff";
-  if (kind === "approval") return "#f8d179";
-  if (kind === "router" || kind === "condition" || kind === "assert") return "#7fdfd7";
-  if (kind === "data_store" || kind === "sandbox") return "#ff9c83";
-  if (kind === "subflow") return "#8fbcff";
-  return "#c9ff73";
+  if (kind === "ai" || kind === "agent") return "tone-ai-solid";
+  if (kind === "approval") return "tone-warning-solid";
+  if (kind === "router" || kind === "condition" || kind === "assert") return "tone-cyan-solid";
+  if (kind === "data_store" || kind === "sandbox") return "tone-danger-solid";
+  if (kind === "subflow") return "tone-blue-solid";
+  return "tone-success-solid";
 }
 
 function Inspector({ draft, node, snapshot, replaceDraft, setSelectedNodeId, onCollapse }) {
