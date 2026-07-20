@@ -1283,35 +1283,35 @@ class Store:
             prompts = [
                 self._prompt_projection(connection, row)
                 for row in connection.execute(
-                    "SELECT * FROM prompts WHERE workspace_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM prompts WHERE workspace_id = ? ORDER BY created_at, rowid",
                     (workspace_id,),
                 )
             ]
             skills = [
                 self._skill_projection(connection, row)
                 for row in connection.execute(
-                    "SELECT * FROM skills WHERE workspace_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM skills WHERE workspace_id = ? ORDER BY created_at, rowid",
                     (workspace_id,),
                 )
             ]
             agents = [
                 self._agent_projection(connection, row)
                 for row in connection.execute(
-                    "SELECT * FROM agents WHERE workspace_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM agents WHERE workspace_id = ? ORDER BY created_at, rowid",
                     (workspace_id,),
                 )
             ]
             flows = [
                 self._flow_projection(connection, row)
                 for row in connection.execute(
-                    "SELECT * FROM flows WHERE workspace_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM flows WHERE workspace_id = ? ORDER BY created_at, rowid",
                     (workspace_id,),
                 )
             ]
             run_ids = [
                 row["id"]
                 for row in connection.execute(
-                    "SELECT id FROM runs WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 20",
+                    "SELECT id FROM runs WHERE workspace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 20",
                     (workspace_id,),
                 )
             ]
@@ -1824,7 +1824,7 @@ class Store:
                         (tool_name = 'inspect_release_policy' AND outcome = 'succeeded') OR
                         (tool_name = 'stage_release' AND outcome = 'denied' AND error_code = 'policy_mismatch')
                     )
-                    ORDER BY created_at, id
+                    ORDER BY created_at, rowid
                     """,
                     (run_id,),
                 )
@@ -2506,21 +2506,21 @@ class Store:
             model_calls = [
                 self._model_call_projection(call)
                 for call in connection.execute(
-                    "SELECT * FROM model_calls WHERE run_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM model_calls WHERE run_id = ? ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]
             receipts = [
                 self._tool_receipt_projection(receipt)
                 for receipt in connection.execute(
-                    "SELECT * FROM tool_receipts WHERE run_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM tool_receipts WHERE run_id = ? ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]
             effects = [
                 self._sandbox_release_projection(effect)
                 for effect in connection.execute(
-                    "SELECT * FROM sandbox_releases WHERE run_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM sandbox_releases WHERE run_id = ? ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]

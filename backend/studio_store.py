@@ -369,7 +369,7 @@ class StudioStore:
                 FROM agent_versions av
                 JOIN agents a ON a.id = av.agent_id AND a.current_version = av.version
                 WHERE av.workspace_id = ? AND av.role = ?
-                ORDER BY a.created_at, a.id
+                ORDER BY a.created_at, a.rowid
                 LIMIT 1
                 """,
                 (workspace_id, role),
@@ -1006,7 +1006,7 @@ class StudioStore:
                     SELECT * FROM automation_trigger_bindings
                     WHERE trigger_type = 'schedule' AND enabled = 1
                       AND next_fire_at IS NOT NULL AND next_fire_at <= ?
-                    ORDER BY next_fire_at, id
+                    ORDER BY next_fire_at, rowid
                     LIMIT ?
                     """,
                     (now, limit),
@@ -1461,28 +1461,28 @@ class StudioStore:
             actions = [
                 self._action_projection(connection, row)
                 for row in connection.execute(
-                    "SELECT * FROM actions WHERE workspace_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM actions WHERE workspace_id = ? ORDER BY created_at, rowid",
                     (workspace_id,),
                 )
             ]
             flows = [
                 self._flow_projection(connection, row)
                 for row in connection.execute(
-                    "SELECT * FROM automation_flows WHERE workspace_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM automation_flows WHERE workspace_id = ? ORDER BY created_at, rowid",
                     (workspace_id,),
                 )
             ]
             triggers = [
                 self._trigger_projection(row)
                 for row in connection.execute(
-                    "SELECT * FROM automation_trigger_bindings WHERE workspace_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM automation_trigger_bindings WHERE workspace_id = ? ORDER BY created_at, rowid",
                     (workspace_id,),
                 )
             ]
             run_ids = [
                 row["id"]
                 for row in connection.execute(
-                    "SELECT id FROM automation_runs WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30",
+                    "SELECT id FROM automation_runs WHERE workspace_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 30",
                     (workspace_id,),
                 )
             ]
@@ -1742,7 +1742,7 @@ class StudioStore:
                 """
                 SELECT * FROM automation_run_steps
                 WHERE run_id = ? AND status IN ('running', 'waiting_approval')
-                ORDER BY started_at DESC, id DESC LIMIT 1
+                ORDER BY started_at DESC, rowid DESC LIMIT 1
                 """,
                 (run_id,),
             ).fetchone()
@@ -3309,7 +3309,7 @@ class StudioStore:
             steps = [
                 self._step_projection(item)
                 for item in connection.execute(
-                    "SELECT * FROM automation_run_steps WHERE run_id = ? ORDER BY started_at, id",
+                    "SELECT * FROM automation_run_steps WHERE run_id = ? ORDER BY started_at, rowid",
                     (run_id,),
                 )
             ]
@@ -3323,28 +3323,28 @@ class StudioStore:
             calls = [
                 self._model_call_projection(item)
                 for item in connection.execute(
-                    "SELECT * FROM automation_model_calls WHERE run_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM automation_model_calls WHERE run_id = ? ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]
             receipts = [
                 self._receipt_projection(item)
                 for item in connection.execute(
-                    "SELECT * FROM automation_action_receipts WHERE run_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM automation_action_receipts WHERE run_id = ? ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]
             approvals = [
                 self._approval_projection(connection, item)
                 for item in connection.execute(
-                    "SELECT * FROM automation_approval_requests WHERE run_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM automation_approval_requests WHERE run_id = ? ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]
             effects = [
                 self._effect_projection(item)
                 for item in connection.execute(
-                    "SELECT * FROM automation_effects WHERE run_id = ? ORDER BY created_at, id",
+                    "SELECT * FROM automation_effects WHERE run_id = ? ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]
@@ -3363,7 +3363,7 @@ class StudioStore:
                 }
                 for item in connection.execute(
                     "SELECT * FROM automation_runs WHERE parent_run_id = ? "
-                    "ORDER BY created_at, id",
+                    "ORDER BY created_at, rowid",
                     (run_id,),
                 )
             ]

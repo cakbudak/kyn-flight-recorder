@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest import mock
 
 from backend.contracts import ContractViolation, ProviderFailure, verify_event_chain
 from backend.service import ControlPlane
@@ -215,6 +216,87 @@ class AgentStudioRuntimeContractTest(unittest.TestCase):
         self.assertEqual(rerun["id"], repeated["id"])
         self.assertEqual(rerun["parent_run_id"], completed["id"])
         self.assertEqual(rerun["flow_version_id"], completed["flow_version_id"])
+
+    def test_run_steps_stay_in_causal_order_when_their_timestamps_collide(self) -> None:
+        """A Run's Steps are ordered by execution, never by a random identifier.
+
+        `started_at` is millisecond precision while ids are random UUIDs, so two Steps
+        that start inside one millisecond must not be projected in id order. Freezing
+        the clock forces every Step to tie, which is the worst case of that collision.
+        """
+        chain_length = 12
+        action = self.plane.create_action(
+            self.workspace_id,
+            name="Echo step",
+            slug="echo-step",
+            description="Pass validated text through unchanged.",
+            kind="template",
+            input_schema={
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            config={"template": "{{text}}"},
+            agent_version_id=None,
+        )
+        node_ids = [f"step-{index:02d}" for index in range(chain_length)]
+        nodes = [
+            {
+                "id": node_id,
+                "type": "action",
+                "version_id": action["version"]["id"],
+                "input_mapping": {
+                    "text": (
+                        {"source": "input", "path": "text"}
+                        if index == 0
+                        else {
+                            "source": "step",
+                            "node_id": node_ids[index - 1],
+                            "path": "text",
+                        }
+                    )
+                },
+            }
+            for index, node_id in enumerate(node_ids)
+        ]
+        flow = self.plane.create_studio_flow(
+            self.workspace_id,
+            name="Collision chain",
+            slug="collision-chain",
+            description="A deterministic chain long enough to expose unstable Step order.",
+            input_schema={
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            start_node_id=node_ids[0],
+            nodes=nodes,
+            routes=[
+                {"from": node_ids[index], "to": node_ids[index + 1], "outcome": "success"}
+                for index in range(chain_length - 1)
+            ],
+        )
+
+        frozen = "2026-07-20T00:00:00.000Z"
+        with mock.patch("backend.studio_store.utc_now", return_value=frozen):
+            run = self.plane.start_studio_run(
+                self.workspace_id,
+                flow["id"],
+                input_data={"text": "ada"},
+            )
+
+        self.assertEqual(run["status"], "completed")
+        # The collision this guards against must actually be present.
+        self.assertEqual({step["started_at"] for step in run["steps"]}, {frozen})
+        self.assertEqual([step["node_id"] for step in run["steps"]], node_ids)
 
     def test_ai_action_keeps_tools_reasoning_and_strict_output_in_one_contract(self) -> None:
         client = ToolCallingStudioResponsesClient(self.store)
