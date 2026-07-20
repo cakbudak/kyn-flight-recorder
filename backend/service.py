@@ -5,11 +5,13 @@ from __future__ import annotations
 import re
 import json
 import threading
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .contracts import (
     ContractViolation,
+    NotFound,
     PLACEHOLDER_RE,
+    fingerprint,
     new_id,
     normalize_json_schema,
     normalize_outcomes,
@@ -19,6 +21,7 @@ from .contracts import (
     require_string_list,
     render_prompt,
 )
+from .model_comparison import build_comparison
 from .runtime import AgentRuntime, ResponseTransport
 from .store import Store
 from .studio_runtime import StudioRuntime, validate_flow_definition
@@ -86,7 +89,7 @@ class ControlPlane:
 
     def snapshot(self, workspace_id: str) -> dict[str, Any]:
         snapshot = self.store.workspace_snapshot(workspace_id)
-        snapshot["studio"] = self.studio.snapshot(workspace_id)
+        snapshot["studio"] = self.studio_snapshot(workspace_id)
         return snapshot
 
     @staticmethod
@@ -1077,6 +1080,242 @@ class ControlPlane:
     def get_studio_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         return self.studio.get_run(workspace_id, run_id)
 
+    # -- controlled model comparison ---------------------------------------
+
+    def compare_studio_models(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        input_data: Any,
+        models: Any,
+        repetitions: Any = 1,
+        client: ResponseTransport | None = None,
+    ) -> dict[str, Any]:
+        """Run one pinned Flow version against N models and derive the sweep.
+
+        This is the only path that may set a model override, which is the single
+        deliberate hole in "everything about a Run is pinned". Every sibling pins
+        the *same* immutable Flow version, so every Action, Agent, Prompt, Skill
+        and schema in the graph is byte-identical and the only recorded delta is
+        the model. That pinning is what makes this a controlled experiment rather
+        than a table of numbers.
+
+        Refusal is all-or-nothing on purpose. Every precondition — supported
+        models, at least two distinct ones, a Flow that actually calls a model,
+        and the whole forecast against the workspace budget — is checked before
+        the first Run row exists, so a refused comparison leaves no partial
+        evidence for someone to read as a result.
+        """
+
+        if not isinstance(input_data, dict):
+            raise ContractViolation("comparison input must be an object")
+        requested = require_string_list(
+            models, "comparison models", maximum_items=6, maximum_item_length=64
+        )
+        distinct = list(dict.fromkeys(requested))
+        if len(distinct) != len(requested):
+            raise ContractViolation("a comparison must not repeat a model")
+        if len(distinct) < 2:
+            raise ContractViolation("a comparison needs at least two distinct models")
+        unsupported = [model for model in distinct if model not in SUPPORTED_MODELS]
+        if unsupported:
+            # The override is a hole in the pinning, so its membership check is
+            # the fence around that hole. Refusing before anything is created is
+            # what keeps the hole from widening into "whatever string was sent".
+            raise ContractViolation(
+                f"model override is not in the supported set: {unsupported[0]}"
+            )
+        rounds = self._comparison_repetitions(repetitions)
+
+        context = self.studio.flow_context(workspace_id, flow_id)
+        flow_version = context["version"]
+        if not flow_version["requires_model"]:
+            raise ContractViolation(
+                "this pinned Flow version calls no model, so there is no brain to vary"
+            )
+        pinned_models = self.studio.flow_version_pinned_models(
+            workspace_id, flow_version["id"]
+        )
+        if len(pinned_models) != 1:
+            raise ContractViolation(
+                "a comparison needs exactly one pinned model to replace; this Flow "
+                "version pins " + str(len(pinned_models))
+            )
+        pinned_model = pinned_models[0]
+
+        comparison_id = new_id("cmp")
+        correlation_id = new_id("corr")
+        runtime = self._studio_runtime(client)
+        runs_by_model: list[tuple[str, list[dict[str, Any]]]] = []
+        for model in distinct:
+            executed: list[dict[str, Any]] = []
+            for round_index in range(1, rounds + 1):
+                executed.append(
+                    self._execute_comparison_sibling(
+                        runtime,
+                        workspace_id,
+                        flow_id,
+                        input_data=input_data,
+                        flow_version=int(flow_version["version"]),
+                        model=model,
+                        pinned_model=pinned_model,
+                        comparison_id=comparison_id,
+                        correlation_id=correlation_id,
+                        round_index=round_index,
+                    )
+                )
+            runs_by_model.append((model, executed))
+        return self._derive_comparison(workspace_id, comparison_id)
+
+    @staticmethod
+    def _comparison_repetitions(value: Any) -> int:
+        """Repetitions are how the harness measures its own noise before judging.
+
+        One run per model is noise rendered as a finding, so more than one is the
+        honest default wherever a caller can afford it. When only one is run the
+        derived record says so and refuses to classify any numeric difference as
+        a result rather than pretending the single sample was stable.
+        """
+
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ContractViolation("comparison repetitions must be a positive integer")
+        if value > 5:
+            raise ContractViolation("comparison repetitions are bounded to five")
+        return value
+
+    def studio_comparison_model_call_forecast(
+        self,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        models: Sequence[str],
+        repetitions: int,
+    ) -> int:
+        """Declare the whole sweep's cost before any of it is spent.
+
+        N models times R repetitions is N*R times a single Run's forecast. The
+        HTTP layer charges that total against the per-workspace, per-address and
+        global model budgets *before* the command is invoked, which is what makes
+        an over-budget comparison a refusal rather than a half-finished sweep
+        whose remaining siblings are silently missing.
+        """
+
+        per_run = self.studio_flow_model_call_forecast(workspace_id, flow_id)
+        return per_run * len(models) * repetitions
+
+    def _execute_comparison_sibling(
+        self,
+        runtime: StudioRuntime,
+        workspace_id: str,
+        flow_id: str,
+        *,
+        input_data: Mapping[str, Any],
+        flow_version: int,
+        model: str,
+        pinned_model: str,
+        comparison_id: str,
+        correlation_id: str,
+        round_index: int,
+    ) -> dict[str, Any]:
+        """Drive one sibling through the same fences a normal Run passes through.
+
+        The comparison command is not a privileged execution path: it still pins
+        the version, still registers in the active-Run set, and still takes a
+        bounded worker slot. Only the model differs.
+        """
+
+        run = runtime.prepare(
+            workspace_id,
+            flow_id,
+            input_data=input_data,
+            flow_version=flow_version,
+            relation_kind="comparison",
+            correlation_id=correlation_id,
+            idempotency_key=f"comparison:{comparison_id}:{model}:{round_index}",
+            model_override=model,
+            comparison_id=comparison_id,
+            pinned_model=pinned_model,
+        )
+        with self._active_studio_runs_lock:
+            if run["id"] in self._active_studio_runs:
+                return self.studio.get_run(workspace_id, run["id"])
+            self._active_studio_runs.add(run["id"])
+        try:
+            with self._studio_worker_slots:
+                return runtime.continue_run(workspace_id, run["id"])
+        finally:
+            with self._active_studio_runs_lock:
+                self._active_studio_runs.discard(run["id"])
+
+    def list_comparisons(
+        self, workspace_id: str, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Read every comparison back out of its siblings, newest first."""
+
+        groups = self.studio.comparison_groups(workspace_id)
+        if limit is not None:
+            groups = groups[:limit]
+        return [
+            self._derive_comparison(workspace_id, group["id"], group=group)
+            for group in groups
+        ]
+
+    def get_comparison(self, workspace_id: str, comparison_id: str) -> dict[str, Any]:
+        return self._derive_comparison(workspace_id, comparison_id)
+
+    def _derive_comparison(
+        self,
+        workspace_id: str,
+        comparison_id: str,
+        *,
+        group: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if group is None:
+            groups = self.studio.comparison_groups(workspace_id, comparison_id)
+            if not groups:
+                raise NotFound("model comparison was not found")
+            group = groups[0]
+        runs = [
+            self.studio.get_run(workspace_id, run_id) for run_id in group["run_ids"]
+        ]
+        ordered: dict[str, list[dict[str, Any]]] = {}
+        for run in runs:
+            ordered.setdefault(str(run["model_override"]), []).append(run)
+        first = runs[0]
+        return build_comparison(
+            comparison_id=comparison_id,
+            created_at=group["created_at"],
+            flow_id=first["flow_id"],
+            flow_version_id=first["flow_version_id"],
+            flow_version=first["flow_version"],
+            flow_fingerprint=first["flow_fingerprint"],
+            pinned_model=self._comparison_pinned_model(workspace_id, first),
+            input_fingerprint=fingerprint(first["input"]),
+            repetitions=max(len(items) for items in ordered.values()),
+            runs_by_model=list(ordered.items()),
+        )
+
+    def _comparison_pinned_model(
+        self, workspace_id: str, run: Mapping[str, Any]
+    ) -> str:
+        """The model the sweep displaced, read back off the pinned version.
+
+        Derived rather than copied onto the comparison: the pinned Flow version
+        is immutable, so reading the model out of it can never disagree with what
+        the siblings actually replaced.
+        """
+
+        for event in run["events"]:
+            if event["type"] == "run.model_overridden":
+                recorded = event["payload"].get("pinned_model")
+                if isinstance(recorded, str):
+                    return recorded
+        pinned = self.studio.flow_version_pinned_models(
+            workspace_id, run["flow_version_id"]
+        )
+        return pinned[0] if pinned else ""
+
     def cancel_studio_run(
         self,
         workspace_id: str,
@@ -1288,7 +1527,9 @@ class ControlPlane:
         return self.studio.get_flow(workspace_id, flow_id)
 
     def studio_snapshot(self, workspace_id: str) -> dict[str, Any]:
-        return self.studio.snapshot(workspace_id)
+        snapshot = self.studio.snapshot(workspace_id)
+        snapshot["comparisons"] = self.list_comparisons(workspace_id, limit=10)
+        return snapshot
 
     def check_brake(self, workspace_id: str, flow_id: str) -> dict[str, Any]:
         """Report, without writing, whether a canonical dead end VETOES this Flow.

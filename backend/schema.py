@@ -307,7 +307,7 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     parent_run_id TEXT REFERENCES automation_runs(id) ON DELETE RESTRICT,
     parent_step_id TEXT REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
     relation_kind TEXT NOT NULL DEFAULT 'root' CHECK (
-        relation_kind IN ('root', 'rerun', 'proof', 'subflow')
+        relation_kind IN ('root', 'rerun', 'proof', 'subflow', 'comparison')
     ),
     correlation_id TEXT NOT NULL,
     idempotency_key TEXT,
@@ -321,10 +321,17 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     current_node_id TEXT,
     error_code TEXT,
     error_message TEXT,
+    model_override TEXT,
+    comparison_id TEXT,
     created_at TEXT NOT NULL,
     started_at TEXT,
     finished_at TEXT,
-    UNIQUE (workspace_id, idempotency_key)
+    UNIQUE (workspace_id, idempotency_key),
+    -- The override is the one deliberate hole in "everything is pinned", so the
+    -- storage layer itself refuses to let it appear anywhere but a comparison
+    -- sibling, and refuses a sibling that is not attached to a comparison.
+    CHECK (model_override IS NULL OR relation_kind = 'comparison'),
+    CHECK ((model_override IS NULL) = (comparison_id IS NULL))
 );
 
 CREATE TABLE IF NOT EXISTS automation_run_steps (
@@ -713,6 +720,46 @@ BEGIN SELECT RAISE(ABORT, 'illegal automation repair transition'); END;
 DEAD_END_STRUCTURE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS ix_automation_dead_ends_structure
 ON automation_dead_end_evidence(workspace_id, executor_kind, error_code, policy_marker);
+"""
+
+
+# Comparison siblings are read back by grouping on `comparison_id`, which is a
+# migrated column for the same reason: it does not exist when SCHEMA_SQL runs
+# against an already deployed database.
+RUN_COMPARISON_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS ix_automation_runs_comparison
+ON automation_runs(workspace_id, comparison_id, created_at)
+WHERE comparison_id IS NOT NULL;
+"""
+
+
+# The rebuilt `automation_runs` must carry byte-identical guards to the ones
+# SCHEMA_SQL installs, because `DROP TABLE` takes a table's triggers with it and
+# SCHEMA_SQL has already run by the time the migration executes. Sharing one
+# constant is what keeps the migrated table and a fresh table the same table.
+AUTOMATION_RUN_GUARDS_SQL = """
+CREATE INDEX IF NOT EXISTS ix_automation_runs_workspace_created
+ON automation_runs(workspace_id, created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_runs_terminal_absorbing
+BEFORE UPDATE OF status ON automation_runs
+WHEN NEW.status <> OLD.status AND OLD.status IN ('completed', 'blocked', 'failed', 'cancelled')
+BEGIN SELECT RAISE(ABORT, 'terminal automation run status is absorbing'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_runs_transition_shape
+BEFORE UPDATE OF status ON automation_runs
+WHEN NEW.status <> OLD.status
+AND NOT (
+    (OLD.status = 'created' AND NEW.status IN ('running', 'cancelled')) OR
+    (OLD.status = 'running' AND NEW.status IN ('waiting_approval', 'completed', 'blocked', 'failed', 'cancelled')) OR
+    (OLD.status = 'waiting_approval' AND NEW.status IN ('running', 'blocked', 'cancelled'))
+)
+BEGIN SELECT RAISE(ABORT, 'illegal automation run status transition'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_runs_revision_fence
+BEFORE UPDATE OF status ON automation_runs
+WHEN NEW.status <> OLD.status AND NEW.revision <> OLD.revision + 1
+BEGIN SELECT RAISE(ABORT, 'automation run transition must advance one revision'); END;
 """
 
 

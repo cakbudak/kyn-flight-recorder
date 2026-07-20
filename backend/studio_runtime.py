@@ -348,8 +348,17 @@ class StudioRuntime:
         relation_kind: str | None = None,
         correlation_id: str | None = None,
         idempotency_key: str | None = None,
+        model_override: str | None = None,
+        comparison_id: str | None = None,
+        pinned_model: str | None = None,
     ) -> dict[str, Any]:
-        """Persist a fully pinned Run before any worker or provider call starts."""
+        """Persist a fully pinned Run before any worker or provider call starts.
+
+        `model_override` is the one field that is not read off the pinned graph.
+        It is deliberately absent from `execute`, so the only way a Run acquires
+        one is a caller that reached this method directly and supplied the
+        comparison it belongs to.
+        """
 
         context = self.repository.flow_context(workspace_id, flow_id, flow_version)
         validated_input = validate_json_schema(
@@ -366,6 +375,9 @@ class StudioRuntime:
             relation_kind=relation_kind,
             correlation_id=correlation_id,
             idempotency_key=idempotency_key,
+            model_override=model_override,
+            comparison_id=comparison_id,
+            pinned_model=pinned_model,
         )
         if not created:
             return self.repository.get_run(workspace_id, run_id)
@@ -459,7 +471,7 @@ class StudioRuntime:
             "additionalProperties": False,
         }
         payload = {
-            "model": agent["model"],
+            "model": self._effective_model(workspace_id, run_id, agent),
             "instructions": (
                 "You are the pinned Kyn.ist diagnostician. Explain only the supplied "
                 "code-owned causal candidate. Every claim must cite supplied event IDs. "
@@ -1362,9 +1374,10 @@ class StudioRuntime:
         input_items: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         max_tool_calls = int(action["config"].get("max_tool_calls", 0))
         used_tool_calls = 0
+        effective_model = self._effective_model(workspace_id, run_id, agent)
         while True:
             payload: dict[str, Any] = {
-                "model": agent["model"],
+                "model": effective_model,
                 "instructions": instructions,
                 "input": input_items,
                 "parallel_tool_calls": False,
@@ -1477,7 +1490,7 @@ class StudioRuntime:
             values=input_data,
         )
         payload = {
-            "model": agent["model"],
+            "model": self._effective_model(workspace_id, run_id, agent),
             "instructions": self._agent_instructions(agent),
             "input": [{"role": "user", "content": prompt}],
             "tool_choice": "none",
@@ -1525,6 +1538,21 @@ class StudioRuntime:
                 }
             )
         return tools
+
+    def _effective_model(
+        self, workspace_id: str, run_id: str, agent: Mapping[str, Any]
+    ) -> str:
+        """Resolve the model for one call: the Run's override, else the pinned one.
+
+        This is the *only* place the pinned Agent is not taken literally, and it
+        substitutes exactly one field. Instructions, Prompt, Skills, granted
+        Actions, schemas and reasoning effort are read straight off the pinned
+        Agent at every call site, so a comparison sibling differs from a normal
+        Run in the model string and in nothing else.
+        """
+
+        override = self.repository.run_model_override(workspace_id, run_id)
+        return str(override) if override else str(agent["model"])
 
     @staticmethod
     def _agent_instructions(agent: Mapping[str, Any]) -> str:

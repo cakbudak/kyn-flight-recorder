@@ -1548,7 +1548,20 @@ class StudioStore:
         relation_kind: str | None = None,
         correlation_id: str | None = None,
         idempotency_key: str | None = None,
+        model_override: str | None = None,
+        comparison_id: str | None = None,
+        pinned_model: str | None = None,
     ) -> tuple[str, bool]:
+        if (model_override is None) != (comparison_id is None):
+            raise ContractViolation(
+                "a model override and a comparison id are only ever recorded together"
+            )
+        if model_override is not None and relation_kind != "comparison":
+            raise ContractViolation("only a comparison sibling may carry a model override")
+        if model_override is not None and pinned_model is None:
+            raise ContractViolation(
+                "a model override must record the pinned model it replaced"
+            )
         with self.store.write() as connection:
             flow = connection.execute(
                 "SELECT * FROM automation_flows WHERE id = ? AND workspace_id = ?",
@@ -1574,7 +1587,13 @@ class StudioStore:
             normalized_relation = relation_kind or (
                 "rerun" if parent_run_id is not None else "root"
             )
-            if normalized_relation not in {"root", "rerun", "proof", "subflow"}:
+            if normalized_relation not in {
+                "root",
+                "rerun",
+                "proof",
+                "subflow",
+                "comparison",
+            }:
                 raise ContractViolation("Run relation kind is invalid")
             if parent_run_id is not None:
                 parent = connection.execute(
@@ -1618,8 +1637,17 @@ class StudioStore:
                     )
                 if normalized_relation != "subflow" and parent_step_id is not None:
                     raise ContractViolation("only subflow Runs may pin a parent Step")
-            elif normalized_relation != "root" or parent_step_id is not None:
+            elif (
+                normalized_relation not in {"root", "comparison"}
+                or parent_step_id is not None
+            ):
+                # A comparison sibling is parentless by construction: siblings are
+                # peers of one another, not descendants, because a parent would
+                # imply one of them was the reference the others are judged
+                # against — and a cross-model sweep has no such reference.
                 raise ContractViolation("root Run relation fields are inconsistent")
+            if normalized_relation == "comparison" and comparison_id is None:
+                raise ContractViolation("a comparison sibling must carry a comparison id")
             run_id = new_id("arun")
             now = utc_now()
             correlation = correlation_id or (
@@ -1631,8 +1659,8 @@ class StudioStore:
                     (id, workspace_id, flow_id, flow_version_id, parent_run_id,
                      parent_step_id, relation_kind, correlation_id, idempotency_key,
                      status, revision, input_json,
-                     current_node_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', 1, ?, ?, ?)
+                     current_node_id, model_override, comparison_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', 1, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -1646,6 +1674,8 @@ class StudioStore:
                     idempotency_key,
                     canonical_json(dict(input_data)),
                     version["start_node_id"],
+                    model_override,
+                    comparison_id,
                     now,
                 ),
             )
@@ -1679,6 +1709,25 @@ class StudioStore:
                     "pinned_resources": _decode(version["pinned_resources_json"]),
                 },
             )
+            if model_override is not None:
+                # The Run row alone would make the override a fact only the
+                # database asserts. Putting it in the hash-linked chain makes it a
+                # fact the ledger asserts, next to the pinned model it displaced —
+                # a recorded deviation rather than a silent one.
+                self._append_event(
+                    connection,
+                    workspace_id,
+                    run_id,
+                    event_type="run.model_overridden",
+                    actor_type="runtime",
+                    actor_id=None,
+                    payload={
+                        "model": model_override,
+                        "pinned_model": pinned_model,
+                        "comparison_id": comparison_id,
+                        "flow_version_id": version["id"],
+                    },
+                )
         return run_id, True
 
     def transition_run(
@@ -3469,6 +3518,127 @@ class StudioStore:
                 run_id=run_id,
             )
 
+    def run_model_override(self, workspace_id: str, run_id: str) -> str | None:
+        """Read only the override, because the model sites need only the override.
+
+        `get_run` assembles the whole evidence bundle; a model call happens once
+        per node and needs one nullable string, so it gets one nullable string.
+        """
+
+        with self.store.read() as connection:
+            row = connection.execute(
+                "SELECT model_override FROM automation_runs "
+                "WHERE id = ? AND workspace_id = ?",
+                (run_id, workspace_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Automation Run was not found")
+            return row["model_override"]
+
+    def comparison_groups(
+        self, workspace_id: str, comparison_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Group comparison siblings by `comparison_id`, newest comparison first.
+
+        The comparison record is not a stored row. It is this grouping: the
+        siblings are the evidence, and everything a scoreboard shows is derived
+        from them, so there is no second copy of the truth to drift.
+        """
+
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            clause = "AND comparison_id = ?" if comparison_id is not None else ""
+            parameters: tuple[Any, ...] = (
+                (workspace_id, comparison_id)
+                if comparison_id is not None
+                else (workspace_id,)
+            )
+            rows = connection.execute(
+                "SELECT id, comparison_id, created_at FROM automation_runs "
+                f"WHERE workspace_id = ? AND comparison_id IS NOT NULL {clause} "
+                "ORDER BY created_at, rowid",
+                parameters,
+            ).fetchall()
+        grouped: dict[str, list[str]] = {}
+        started: dict[str, str] = {}
+        for row in rows:
+            key = str(row["comparison_id"])
+            grouped.setdefault(key, []).append(str(row["id"]))
+            started.setdefault(key, str(row["created_at"]))
+        return [
+            {
+                "id": key,
+                "created_at": started[key],
+                "run_ids": run_ids,
+            }
+            for key, run_ids in sorted(
+                grouped.items(), key=lambda item: started[item[0]], reverse=True
+            )
+        ]
+
+    def flow_version_pinned_models(
+        self, workspace_id: str, version_id: str
+    ) -> list[str]:
+        """Return every model the pinned Flow version would actually call.
+
+        Walks the pinned graph, including reused Flow versions, so a Flow whose
+        brain is buried in a subflow is described as truthfully as a flat one.
+        """
+
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            models: set[str] = set()
+            self._collect_pinned_models(connection, workspace_id, version_id, models, set())
+            return sorted(models)
+
+    def _collect_pinned_models(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        version_id: str,
+        models: set[str],
+        seen: set[str],
+    ) -> None:
+        if version_id in seen:
+            return
+        seen.add(version_id)
+        row = connection.execute(
+            "SELECT nodes_json FROM automation_flow_versions "
+            "WHERE id = ? AND workspace_id = ?",
+            (version_id, workspace_id),
+        ).fetchone()
+        if row is None:
+            raise NotFound("Automation Flow version was not found")
+        for node in _decode(row["nodes_json"]):
+            node_version_id = str(node["version_id"])
+            if node["type"] == "flow":
+                self._collect_pinned_models(
+                    connection, workspace_id, node_version_id, models, seen
+                )
+                continue
+            agent_version_id: str | None = None
+            if node["type"] == "agent":
+                agent_version_id = node_version_id
+            else:
+                action = connection.execute(
+                    "SELECT kind, executor_kind, agent_version_id FROM action_versions "
+                    "WHERE id = ? AND workspace_id = ?",
+                    (node_version_id, workspace_id),
+                ).fetchone()
+                if action is None:
+                    raise NotFound("Action version was not found")
+                if (action["executor_kind"] or action["kind"]) == "ai":
+                    agent_version_id = action["agent_version_id"]
+            if agent_version_id is None:
+                continue
+            agent = connection.execute(
+                "SELECT model FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                (agent_version_id, workspace_id),
+            ).fetchone()
+            if agent is None:
+                raise NotFound("Agent version was not found")
+            models.add(str(agent["model"]))
+
     def get_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         with self.store.read() as connection:
             row = connection.execute(
@@ -3614,6 +3784,8 @@ class StudioStore:
                 "parent_step_id": row["parent_step_id"],
                 "relation_kind": row["relation_kind"],
                 "correlation_id": row["correlation_id"],
+                "model_override": row["model_override"],
+                "comparison_id": row["comparison_id"],
                 "status": row["status"],
                 "revision": row["revision"],
                 "input": _decode(row["input_json"]),

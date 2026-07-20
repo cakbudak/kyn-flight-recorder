@@ -152,6 +152,17 @@ class ApiApplication:
         if match:
             workspace_id = self._workspace_id(request)
             return self._ok(self.control_plane.get_studio_flow(workspace_id, match.group(1)))
+        if request.path == "/api/v1/studio/comparisons":
+            workspace_id = self._workspace_id(request)
+            return self._ok(
+                {"comparisons": self.control_plane.list_comparisons(workspace_id)}
+            )
+        match = re.fullmatch(rf"/api/v1/studio/comparisons/{RESOURCE_ID}", request.path)
+        if match:
+            workspace_id = self._workspace_id(request)
+            return self._ok(
+                self.control_plane.get_comparison(workspace_id, match.group(1))
+            )
         match = re.fullmatch(rf"/api/v1/studio/runs/{RESOURCE_ID}", request.path)
         if match:
             workspace_id = self._workspace_id(request)
@@ -297,6 +308,38 @@ class ApiApplication:
                 self.control_plane.set_studio_trigger_enabled(
                     workspace_id, match.group(1), **body
                 )
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/flows/{RESOURCE_ID}/comparisons", request.path
+        )
+        if match:
+            self._require_keys(body, {"input", "models"}, {"repetitions"})
+            flow_id = match.group(1)
+            repetitions = body.get("repetitions", 1)
+            # N models times R repetitions is N*R model calls, so the whole sweep
+            # is charged against the workspace, address and global budgets before
+            # the command runs. A comparison that cannot afford all of its
+            # siblings must not spend any of them.
+            forecast = self.control_plane.studio_comparison_model_call_forecast(
+                workspace_id,
+                flow_id,
+                models=body["models"] if isinstance(body["models"], list) else [],
+                repetitions=repetitions if isinstance(repetitions, int) else 1,
+            )
+            operation = lambda client: self.control_plane.compare_studio_models(
+                workspace_id,
+                flow_id,
+                input_data=body["input"],
+                models=body["models"],
+                repetitions=repetitions,
+                client=client,
+            )
+            return self._studio_execution(
+                request,
+                workspace_id,
+                forecast_calls=forecast,
+                status=HTTPStatus.CREATED,
+                operation=operation,
             )
         match = re.fullmatch(
             rf"/api/v1/studio/flows/{RESOURCE_ID}/runs:enqueue", request.path

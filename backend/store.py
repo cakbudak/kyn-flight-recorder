@@ -25,7 +25,12 @@ from .contracts import (
     redact,
     utc_now,
 )
-from .schema import DEAD_END_STRUCTURE_INDEX_SQL, SCHEMA_SQL
+from .schema import (
+    AUTOMATION_RUN_GUARDS_SQL,
+    DEAD_END_STRUCTURE_INDEX_SQL,
+    RUN_COMPARISON_INDEX_SQL,
+    SCHEMA_SQL,
+)
 
 
 TERMINAL_RUN_STATUSES = frozenset({"blocked", "completed", "failed"})
@@ -101,6 +106,8 @@ class Store:
                 connection.execute("ALTER TABLE automation_runs ADD COLUMN outcome TEXT")
             self._migrate_dead_end_structure(connection)
             self._migrate_studio_step_node_types(connection)
+            self._migrate_run_comparison_relation(connection)
+            self._migrate_run_comparison_columns(connection)
         finally:
             connection.close()
 
@@ -213,6 +220,107 @@ class Store:
         violation = connection.execute("PRAGMA foreign_key_check").fetchone()
         if violation is not None:
             raise RuntimeError("Studio Step migration violated a foreign key")
+
+    @staticmethod
+    def _migrate_run_comparison_relation(connection: sqlite3.Connection) -> None:
+        """Admit the `comparison` relation kind without rewriting a single Run.
+
+        `relation_kind` is guarded by a CHECK constraint, and SQLite cannot widen
+        a CHECK in place, so this follows the same table-rebuild pattern as the
+        Step `node_type` migration: copy every row verbatim, drop, rename, then
+        reinstall the *identical* index and triggers from the shared constant.
+        Nothing about an existing Run changes — `relation_kind` keeps whatever it
+        already had — so the absorbing-terminal and revision-fence triggers see
+        no UPDATE and cannot fire.
+        """
+
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'automation_runs'"
+        ).fetchone()
+        if row is None or "'comparison'" in str(row["sql"]):
+            return
+        columns = [
+            item["name"]
+            for item in connection.execute("PRAGMA table_info(automation_runs)")
+        ]
+        carried = ", ".join(f'"{name}"' for name in columns)
+        connection.execute("PRAGMA foreign_keys=OFF")
+        try:
+            connection.executescript(
+                f"""
+                BEGIN IMMEDIATE;
+                CREATE TABLE automation_runs_v2 (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+                    flow_id TEXT NOT NULL REFERENCES automation_flows(id) ON DELETE RESTRICT,
+                    flow_version_id TEXT NOT NULL
+                        REFERENCES automation_flow_versions(id) ON DELETE RESTRICT,
+                    parent_run_id TEXT REFERENCES automation_runs(id) ON DELETE RESTRICT,
+                    parent_step_id TEXT REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+                    relation_kind TEXT NOT NULL DEFAULT 'root' CHECK (
+                        relation_kind IN ('root', 'rerun', 'proof', 'subflow', 'comparison')
+                    ),
+                    correlation_id TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    status TEXT NOT NULL CHECK (status IN (
+                        'created', 'running', 'waiting_approval', 'completed',
+                        'blocked', 'failed', 'cancelled'
+                    )),
+                    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+                    input_json TEXT NOT NULL,
+                    output_json TEXT,
+                    outcome TEXT,
+                    current_node_id TEXT,
+                    error_code TEXT,
+                    error_message TEXT,
+                    model_override TEXT,
+                    comparison_id TEXT,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    UNIQUE (workspace_id, idempotency_key),
+                    CHECK (model_override IS NULL OR relation_kind = 'comparison'),
+                    CHECK ((model_override IS NULL) = (comparison_id IS NULL))
+                );
+                INSERT INTO automation_runs_v2 ({carried})
+                SELECT {carried} FROM automation_runs;
+                DROP TABLE automation_runs;
+                ALTER TABLE automation_runs_v2 RENAME TO automation_runs;
+                COMMIT;
+                """
+            )
+        except BaseException:
+            if connection.in_transaction:
+                connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys=ON")
+        connection.executescript(AUTOMATION_RUN_GUARDS_SQL)
+        violation = connection.execute("PRAGMA foreign_key_check").fetchone()
+        if violation is not None:
+            raise RuntimeError("Studio Run comparison migration violated a foreign key")
+
+    @staticmethod
+    def _migrate_run_comparison_columns(connection: sqlite3.Connection) -> None:
+        """Give a deployed Run table the two columns a comparison must persist.
+
+        Everything else about a comparison — the record, its scoreboard, and
+        whether the brains disagreed — is derived by query from the siblings, so
+        exactly two columns are added. `ADD COLUMN` rewrites no row: Runs written
+        before this migration keep NULL in both, which is the truthful answer,
+        because a Run that predates comparisons was never part of one.
+        """
+
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(automation_runs)")
+        }
+        if "model_override" not in columns:
+            connection.execute("ALTER TABLE automation_runs ADD COLUMN model_override TEXT")
+        if "comparison_id" not in columns:
+            connection.execute("ALTER TABLE automation_runs ADD COLUMN comparison_id TEXT")
+        connection.executescript(RUN_COMPARISON_INDEX_SQL)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
