@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import { api } from "../api.js";
 import { Icon } from "../icons.jsx";
 import { exampleForSchema, formatTime, parseJson, shortId, titleCase } from "../lib.js";
-import { Badge, Button, Field, JsonField, Modal, PageHeader, StatusBadge } from "./ui.jsx";
+import { Badge, Button, CitedRuns, Field, JsonField, Modal, PageHeader, StatusBadge } from "./ui.jsx";
 
-export default function Overview({ snapshot, mutate, setView }) {
+export default function Overview({ snapshot, mutate, setView, focusRun }) {
   const studio = snapshot.studio;
   const [showTrigger, setShowTrigger] = useState(false);
   const [revealedWebhook, setRevealedWebhook] = useState(null);
@@ -58,6 +58,7 @@ export default function Overview({ snapshot, mutate, setView }) {
           <UseCase mark="FAIL → FIX → PROOF" title="Forward recovery" description="Diagnose from owned events, approve an allowlisted successor, and prove it in linked work." onClick={() => setView("runs")} />
         </div>
       </section>
+      <Principles principles={studio.principles ?? []} markers={studio.policy_markers ?? []} focusRun={focusRun} />
       <div className="overview-bottom-grid">
         <section className="overview-card recent-card">
           <header><div><p className="panel-kicker">Operations</p><h2>Recent Runs</h2></div><Button tone="quiet" onClick={() => setView("runs")}>Open console</Button></header>
@@ -77,6 +78,73 @@ export default function Overview({ snapshot, mutate, setView }) {
         </section>
       </div>
       {showTrigger ? <TriggerModal flows={studio.flows} mutate={mutate} onClose={() => setShowTrigger(false)} onCreated={(result) => { setShowTrigger(false); if (result?.secret) setRevealedWebhook(`/api/v1/hooks/${result.secret}`); }} /> : null}
+    </section>
+  );
+}
+
+/** Workspace-scoped distilled rules.
+ *
+ * This lives on Overview and not in Documentation because a principle is a
+ * property of *this* workspace's history, not of the contract: it is derived by
+ * query from the dead-end evidence of Flows that already ran, it changes as
+ * Runs accumulate, and it belongs to no single Flow or Run — so no workbench
+ * owns it. Overview is the only surface already scoped to the workspace as a
+ * whole. Documentation states what the system guarantees for everyone and holds
+ * no live workspace data; a derived, empty-by-default panel would make it read
+ * as a claim rather than an observation.
+ */
+function Principles({ principles, markers, focusRun }) {
+  // The ceiling is counted from the vocabulary the server actually ships, not
+  // asserted in prose. A claim about how narrow a table is must not be able to
+  // go stale when the table grows.
+  const vocabulary = markers ?? [];
+  return (
+    <section className="overview-section principles-section">
+      <header>
+        <div><p className="panel-kicker">Derived knowledge · never stored, never model-written</p><h2>What this workspace has learned</h2></div>
+        <p>A dead end refuses one exact pinned path. A principle generalizes it across independent Flows — and only advises.</p>
+      </header>
+      <p className="principle-ceiling">
+        <Icon name="lock" size={15} />
+        <span>
+          <strong>The honest ceiling.</strong> The mechanism is general: it groups any declared predicate over any
+          executor kind. The vocabulary is not. The runtime currently recognises{" "}
+          <strong>{vocabulary.length === 1 ? "exactly one predicate" : `${vocabulary.length} predicates`}</strong>
+          {vocabulary.length ? <> — {vocabulary.map((marker, index) => <span key={marker.name}>{index ? ", " : ""}<code>{marker.executor_kind}.{marker.config_key}</code></span>)}</> : null}
+          , so that is the whole of what this system can state. A failure carrying no recognised predicate produces no
+          signature and never distils, by construction. Treat any rule here as one entry of vocabulary, not as broad
+          judgement.
+        </span>
+      </p>
+      {principles.length ? (
+        <ol className="principle-list">
+          {principles.map((principle) => (
+            <li key={principle.signature}>
+              <header>
+                <Badge tone="blue" dot>Advisory</Badge>
+                <code>{principle.error_code}</code>
+                <span className="principle-count"><b>{principle.distinct_flows}</b> distinct Flows · <b>{principle.distinct_dead_ends}</b> dead ends</span>
+              </header>
+              <p>{principle.statement}</p>
+              <dl className="principle-facts">
+                <div><dt>Executor kind</dt><dd>{principle.executor_kind}</dd></div>
+                <div><dt>Declared predicate</dt><dd>{principle.policy_marker}</dd></div>
+                <div><dt>Signature</dt><dd><code>{principle.signature.slice(0, 20)}…</code></dd></div>
+                <div><dt>Cited</dt><dd>{formatTime(principle.first_cited_at)} → {formatTime(principle.last_cited_at)}</dd></div>
+              </dl>
+              <CitedRuns label={`Citing Runs · ${principle.citing_run_ids.length}`} ids={principle.citing_run_ids} onSelectRun={focusRun} />
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div className="compact-empty">
+          <Icon name="skill" size={20} />
+          <span>
+            <strong>No principle distilled yet</strong>
+            <small>Three <em>different</em> Flows must each fail the same declared way. Repeating one Flow ratifies a dead end instead, which is the brake&rsquo;s job.</small>
+          </span>
+        </div>
+      )}
     </section>
   );
 }

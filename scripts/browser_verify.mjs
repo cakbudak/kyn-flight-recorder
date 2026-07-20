@@ -601,6 +601,108 @@ async function main() {
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "10-brake-refusal.png"));
     await clickAndWait(page, page.getByRole("button", { name: "Dismiss the brake refusal" }));
 
+    progress("distilling a principle across independent Flows and proving that publishing a matching Flow is advised, never refused");
+    // A dead end needs one Flow repeating itself; a principle needs three
+    // *different* Flows sharing a structure. The recovery Flow above supplies
+    // the first, so two more independent Flows reach quorum.
+    const publishDeniedFlow = async (name, purpose) => {
+      await navigate(page, "Flow Studio");
+      await page.getByRole("button", { name: "New Flow" }).click();
+      await page.locator(".empty-canvas").waitFor({ state: "visible" });
+      await page.getByLabel("Search node library").fill("Recovery evidence store");
+      await page.locator(".palette-card").filter({ hasText: "Recovery evidence store" }).click();
+      await clickCanvasPane(page);
+      await fieldControl(page.locator(".node-inspector"), "Name", "input").fill(name);
+      await fieldControl(page.locator(".node-inspector"), "Purpose", "textarea").fill(purpose);
+      await clickAndWait(page, page.getByRole("button", { name: "Publish Flow" }));
+      return waitForSnapshot(page, (value) => value.studio.flows.some((item) => item.name === name), `published Flow ${name}`);
+    };
+    const runSelectedFlow = async (flowId) => {
+      await page.getByRole("button", { name: "Run", exact: true }).click();
+      await clickAndWait(page, page.getByRole("button", { name: "Pin and start Run" }));
+      await page.locator(".runs-page").waitFor({ state: "visible" });
+      return waitForSnapshot(
+        page,
+        (value) => value.studio.runs.some((run) => run.flow_id === flowId && run.status === "blocked"),
+        `blocked Run on Flow ${flowId}`
+      );
+    };
+    for (const [name, purpose] of [
+      ["Independent intake ledger", "An unrelated Flow that happens to carry the same disabled declared write."],
+      ["Independent audit ledger", "A third independent Flow sharing only the structure, not the definition."]
+    ]) {
+      snapshot = await publishDeniedFlow(name, purpose);
+      snapshot = await runSelectedFlow(snapshot.studio.flows.find((item) => item.name === name).id);
+    }
+    snapshot = await waitForSnapshot(page, (value) => value.studio.principles.length === 1, "distilled principle");
+    const principle = snapshot.studio.principles[0];
+
+    const advisedName = "Advised delivery Flow";
+    snapshot = await publishDeniedFlow(advisedName, "Published while a matching principle already exists, to prove publishing is never gated.");
+    const advisedFlow = snapshot.studio.flows.find((item) => item.name === advisedName);
+    await page.locator(".publish-advisory").waitFor({ state: "visible" });
+    const advisoryPanel = {
+      text: await page.locator(".publish-advisory").innerText(),
+      alerts: await page.locator(".publish-advisory[role='alert']").count(),
+      refusals: await page.locator(".brake-refusal, .error-banner").count(),
+      modals: await page.locator(".modal").count(),
+      run_enabled: await page.getByRole("button", { name: "Run", exact: true }).isEnabled(),
+      citations: await page.locator(".publish-advisory .dead-end-citations button").count()
+    };
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "11-publish-advisory.png"));
+
+    // A citation is only evidence if it opens. Click the first one and confirm
+    // the Runs console lands on that exact Run.
+    await clickAndWait(page, page.locator(".publish-advisory .dead-end-citations button").first());
+    const citationJump = {
+      runs_view: await page.locator(".runs-page").count(),
+      selected: (await page.locator(".run-detail-header h2").innerText()).trim(),
+      expected: shortId(principle.citing_run_ids[0], 13)
+    };
+
+    await navigate(page, "Flow Studio");
+    await page.locator("#flow-select").selectOption(advisedFlow.id);
+    const advisedRun = (await runSelectedFlow(advisedFlow.id)).studio.runs.find((run) => run.flow_id === advisedFlow.id);
+    await navigate(page, "Overview");
+    await page.locator(".principles-section").waitFor({ state: "visible" });
+    const principlesPanel = {
+      text: await page.locator(".principles-section").innerText(),
+      entries: await page.locator(".principle-list > li").count(),
+      markers: await page.locator(".principle-ceiling code").count()
+    };
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "12-workspace-principles.png"));
+    record(
+      "a Flow matching a distilled principle publishes successfully and is advised rather than refused, and the workspace surface states the rule and derives its vocabulary ceiling from the shipped predicate table",
+      advisedFlow.current_version === 1 &&
+        advisoryPanel.refusals === 0 && advisoryPanel.modals === 0 && advisoryPanel.alerts === 0 &&
+        advisoryPanel.run_enabled === true &&
+        advisoryPanel.text.includes("This Flow will run") &&
+        advisoryPanel.text.includes(principle.statement) &&
+        advisoryPanel.citations === principle.citing_run_ids.length &&
+        principle.citing_run_ids.every((id) => advisoryPanel.text.includes(shortId(id, 14))) &&
+        citationJump.runs_view === 1 && citationJump.selected === citationJump.expected &&
+        advisedRun.status === "blocked" && advisedRun.steps.length >= 1 &&
+        principlesPanel.entries === 1 &&
+        principlesPanel.text.includes(principle.statement) &&
+        // The ceiling is derived from the vocabulary the server ships, so assert
+        // against that number rather than a phrase that breaks when it grows.
+        principlesPanel.markers === snapshot.studio.policy_markers.length &&
+        snapshot.studio.policy_markers.every((marker) =>
+          principlesPanel.text.includes(`${marker.executor_kind}.${marker.config_key}`)
+        ),
+      {
+        published_version: advisedFlow.current_version,
+        advised_run: advisedRun.status,
+        advised_run_steps: advisedRun.steps.length,
+        distinct_flows: principle.distinct_flows,
+        citations: advisoryPanel.citations,
+        citation_opened: citationJump.selected,
+        run_still_offered: advisoryPanel.run_enabled,
+        refusal_surfaces: advisoryPanel.refusals,
+        principle_entries: principlesPanel.entries
+      }
+    );
+
     await navigate(page, "Runs");
     await page.locator(".run-list-item").filter({ hasText: shortId(recoveryRoot.id) }).first().click();
     await page.getByRole("tab", { name: /^Maintenance/ }).click();

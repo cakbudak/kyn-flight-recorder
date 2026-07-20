@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef } from "react";
 import { Icon } from "../icons.jsx";
-import { STATUS_TONE, titleCase } from "../lib.js";
+import { STATUS_TONE, shortId, titleCase } from "../lib.js";
 import { setTheme, useTheme } from "../theme.js";
 
 export function ThemeToggle({ className = "" }) {
@@ -171,6 +171,33 @@ export function DefinitionList({ items }) {
 
 export function KeyValue({ data }) {
   return <pre className="code-block">{JSON.stringify(data, null, 2)}</pre>;
+}
+
+/** Run citations rendered as links that select the cited Run.
+ *
+ * Shared because a citation means the same thing wherever it appears: the
+ * evidence is a real Run you can open, not a quoted identifier. The brake
+ * refusal, the dead-end panel, the publish advisory and the principles panel
+ * all cite Runs, so they cite them identically.
+ */
+export function CitedRuns({ label, ids, currentRunId, onSelectRun }) {
+  const headingId = useId();
+  return (
+    <div className="dead-end-citations">
+      <p className="panel-kicker" id={headingId}>{label}</p>
+      <ul aria-labelledby={headingId}>
+        {ids.map((id) => (
+          <li key={id}>
+            {onSelectRun ? (
+              <button type="button" onClick={() => onSelectRun(id)} aria-label={`Open citing Run ${shortId(id, 14)}`} aria-current={id === currentRunId ? "true" : undefined}>
+                <Icon name="run" size={12} /><code>{shortId(id, 14)}</code>
+              </button>
+            ) : <code>{shortId(id, 14)}</code>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function Spinner({ label = "Working" }) {

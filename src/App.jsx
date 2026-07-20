@@ -33,6 +33,7 @@ export default function App() {
     return NAVIGATION.some((item) => item.id === requested) || requested === "settings" ? requested : "studio";
   });
   const [keyRevision, setKeyRevision] = useState(0);
+  const [focusRunId, setFocusRunId] = useState(null);
 
   const setView = useCallback((next) => {
     setViewState(next);
@@ -94,6 +95,12 @@ export default function App() {
     }
   }), [mutate, setView]);
 
+  // A cited Run is evidence, so citing one anywhere must be able to open it.
+  const focusRun = useCallback((runId) => {
+    setFocusRunId(runId);
+    setView("runs");
+  }, [setView]);
+
   const onKeyChanged = useCallback(() => setKeyRevision((value) => value + 1), []);
   const keyConfigured = useMemo(() => Boolean(browserKey()), [keyRevision]);
 
@@ -112,14 +119,14 @@ export default function App() {
     );
   }
 
-  const shared = { snapshot, refresh, mutate, busy, setView };
+  const shared = { snapshot, refresh, mutate, busy, setView, focusRun };
   let content;
   if (view === "studio") content = <FlowStudio {...shared} />;
   else if (view === "actions") content = <ResourceWorkbench {...shared} kind="actions" />;
   else if (view === "agents") content = <ResourceWorkbench {...shared} kind="agents" />;
   else if (view === "prompts") content = <ResourceWorkbench {...shared} kind="prompts" />;
   else if (view === "skills") content = <ResourceWorkbench {...shared} kind="skills" />;
-  else if (view === "runs") content = <RunsWorkbench {...shared} />;
+  else if (view === "runs") content = <RunsWorkbench {...shared} focusRunId={focusRunId} />;
   else if (view === "docs") content = <Documentation setView={setView} />;
   else if (view === "settings") content = (
     <Settings

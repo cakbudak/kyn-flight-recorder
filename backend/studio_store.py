@@ -22,6 +22,7 @@ from .contracts import (
     hash_text,
     is_ratifiable_fault,
     new_id,
+    POLICY_MARKERS,
     normalize_failure_detail,
     policy_marker as derive_policy_marker,
     principle_signature,
@@ -1501,6 +1502,17 @@ class StudioStore:
             "triggers": triggers,
             "dead_ends": dead_ends,
             "principles": principles,
+            # The surface states how narrow the distilled vocabulary is. Derive
+            # that number here so the claim cannot go stale if the table grows.
+            "policy_markers": [
+                {
+                    "name": marker.name,
+                    "executor_kind": marker.executor_kind,
+                    "config_key": marker.config_key,
+                    "clause": marker.clause,
+                }
+                for marker in POLICY_MARKERS
+            ],
             "runs": [self.get_run(workspace_id, run_id) for run_id in run_ids],
             "action_kinds": [
                 "ai",

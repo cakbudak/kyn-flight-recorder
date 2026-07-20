@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useThemeTokens } from "../theme.js";
 import {
   Background,
@@ -30,6 +30,7 @@ import {
 import {
   Badge,
   Button,
+  CitedRuns,
   DefinitionList,
   EmptyState,
   Field,
@@ -51,19 +52,31 @@ const RATIFICATION_MEANING = {
   canonical: "Three independent Runs reproduced it. This pinned Flow version is now refused before any Run row exists — which branch a Run would take is not knowable before it runs, so the version is the scope. Publishing a successor changes the fingerprint and clears the brake."
 };
 
-export default function RunsWorkbench({ snapshot, refresh, mutate, busy }) {
+export default function RunsWorkbench({ snapshot, refresh, mutate, busy, focusRunId = null }) {
   const runs = snapshot.studio.runs;
   const [selectedId, setSelectedId] = useState(runs[0]?.id ?? null);
   const [tab, setTab] = useState("summary");
   const [showStart, setShowStart] = useState(false);
   const [approval, setApproval] = useState(null);
   const [repair, setRepair] = useState(null);
+  const honouredFocus = useRef(null);
   const selected = runs.find((run) => run.id === selectedId) ?? runs[0] ?? null;
 
   useEffect(() => {
     if (runs.some((run) => run.id === selectedId)) return;
     setSelectedId(runs[0]?.id ?? null);
   }, [runs, selectedId]);
+
+  // A citation elsewhere in the product asked for one exact Run. Honour it once
+  // per request: the polling refresh re-runs this effect every 900 ms, and a
+  // request that re-applied itself would fight the operator's own selection.
+  useEffect(() => {
+    if (!focusRunId || honouredFocus.current === focusRunId) return;
+    if (!runs.some((run) => run.id === focusRunId)) return;
+    honouredFocus.current = focusRunId;
+    setSelectedId(focusRunId);
+    setTab("summary");
+  }, [focusRunId, runs]);
 
   useEffect(() => {
     if (!selected || !["created", "running"].includes(selected.status)) return undefined;
@@ -211,11 +224,6 @@ function ApprovalCallout({ run, onDecision }) {
 }
 
 function deadEndTone(state) { return RATIFICATION_TONE[state] ?? "neutral"; }
-
-function CitedRuns({ label, ids, currentRunId, onSelectRun }) {
-  const headingId = useId();
-  return <div className="dead-end-citations"><p className="panel-kicker" id={headingId}>{label}</p><ul aria-labelledby={headingId}>{ids.map((id) => <li key={id}>{onSelectRun ? <button type="button" onClick={() => onSelectRun(id)} aria-label={`Open citing Run ${shortId(id, 14)}`} aria-current={id === currentRunId ? "true" : undefined}><Icon name="run" size={12} /><code>{shortId(id, 14)}</code></button> : <code>{shortId(id, 14)}</code>}</li>)}</ul></div>;
-}
 
 function DeadEndCallout({ run, onSelectRun }) {
   const records = run.dead_ends;

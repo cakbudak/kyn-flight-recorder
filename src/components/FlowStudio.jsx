@@ -36,6 +36,8 @@ import {
 import {
   Badge,
   Button,
+  CitedRuns,
+  DefinitionList,
   EmptyState,
   Field,
   IconButton,
@@ -62,7 +64,7 @@ export default function FlowStudio(props) {
   return <ReactFlowProvider><FlowStudioInner {...props} /></ReactFlowProvider>;
 }
 
-function FlowStudioInner({ snapshot, mutate, busy, setView }) {
+function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun }) {
   const graph = useThemeTokens(GRAPH_TOKENS);
   const flows = snapshot.studio.flows;
   const [selectedFlowId, setSelectedFlowId] = useState(flows[0]?.id ?? null);
@@ -75,6 +77,7 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
   const [showRun, setShowRun] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [advisory, setAdvisory] = useState(null);
   const history = useRef({ past: [], future: [] });
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [canvasNodes, setCanvasNodes, onNodesChangeBase] = useNodesState([]);
@@ -156,6 +159,7 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
     setDraft(flowDraft(flow));
     setSelectedNodeId(null);
     setDirty(false);
+    setAdvisory(null);
     history.current = { past: [], future: [] };
     requestAnimationFrame(() => fitView({ padding: 0.22, duration: 280 }));
   }, [fitView, flows]);
@@ -165,6 +169,7 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
     setDraft(flowDraft(null));
     setSelectedNodeId(null);
     setDirty(false);
+    setAdvisory(null);
     history.current = { past: [], future: [] };
   }, []);
 
@@ -295,6 +300,10 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
         setDraft(flowDraft(result));
         setDirty(false);
         history.current = { past: [], future: [] };
+        // The publish already succeeded. Advisories only describe what three
+        // independent Flows proved about this shape; they gate nothing.
+        const matched = result.advisories ?? [];
+        setAdvisory(matched.length ? { version: result.current_version, principles: matched } : null);
       }
     } catch (error) {
       await mutate(() => Promise.reject(error), { refreshAfter: false, success: "" });
@@ -370,6 +379,7 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
           ) : (
             <EmptyCanvas onAddFirst={() => addNode(palette.actions[0] ?? palette.agents[0] ?? palette.flows[0])} />
           )}
+          {advisory ? <PublishAdvisory advisory={advisory} onDismiss={() => setAdvisory(null)} onSelectRun={focusRun} /> : null}
         </div>
         {inspectorOpen ? <Inspector
           draft={draft}
@@ -388,6 +398,57 @@ function FlowStudioInner({ snapshot, mutate, busy, setView }) {
           onStarted={() => { setShowRun(false); setView("runs"); }}
         />
       ) : null}
+    </section>
+  );
+}
+
+/** What the workspace already learned about the shape that was just published.
+ *
+ * Deliberately calmer than `BrakeRefusal`. The brake is danger-toned because it
+ * refused a Run; this refused nothing — the Flow is published, it will run, and
+ * dismissing this panel is optional. Every word here has to keep that true.
+ */
+function PublishAdvisory({ advisory, onDismiss, onSelectRun }) {
+  const { version, principles } = advisory;
+  const nodeCount = new Set(principles.flatMap((principle) => principle.node_ids)).size;
+  return (
+    <section className="publish-advisory" role="status" aria-labelledby="publish-advisory-title">
+      <header>
+        <span className="advisory-icon"><Icon name="skill" size={22} /></span>
+        <div>
+          <p className="panel-kicker">Distilled principle · advisory, not a refusal</p>
+          <h2 id="publish-advisory-title">Published{version ? ` as v${version}` : ""}. This Flow will run.</h2>
+          <p>
+            Nothing was blocked and nothing needs your acknowledgement. It is shown because independent Flows
+            in this workspace already failed the same structural way, and the rule they distilled matches{" "}
+            <strong>{nodeCount} node{nodeCount === 1 ? "" : "s"}</strong> of what you just published. Only the
+            ratification brake ever refuses a Run, and only on the one pinned path three Runs proved.
+          </p>
+        </div>
+        <IconButton icon="close" label="Dismiss the publish advisory" onClick={onDismiss} />
+      </header>
+      {principles.map((principle) => (
+        <article key={principle.signature}>
+          <header>
+            <Badge tone="blue" dot>Advisory</Badge>
+            <strong>{principle.node_ids.join(", ")}</strong>
+            <code>{principle.error_code}</code>
+            <span className="dead-end-count"><b>{principle.distinct_flows}</b> distinct Flows</span>
+          </header>
+          <p>{principle.statement}</p>
+          <DefinitionList items={[
+            ["Matched nodes in this draft", principle.node_ids.join(", ")],
+            ["Executor kind", principle.executor_kind],
+            ["Declared predicate", principle.policy_marker],
+            ["Signature", <code key="signature">{principle.signature.slice(0, 24)}…</code>]
+          ]} />
+          <CitedRuns
+            label={`Distilled from ${principle.citing_run_ids.length} prior Runs · open any of them`}
+            ids={principle.citing_run_ids}
+            onSelectRun={onSelectRun}
+          />
+        </article>
+      ))}
     </section>
   );
 }
