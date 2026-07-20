@@ -1368,7 +1368,7 @@ class StudioRuntime:
             completion = self._adjudicate_completion(
                 workspace_id, run_id, flow_version
             )
-        except ContractViolation as error:
+        except (ContractViolation, ProviderFailure) as error:
             return self._fail_run(
                 workspace_id,
                 run_id,

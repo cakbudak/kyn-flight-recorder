@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from unittest import mock
 
-from backend.contracts import verify_event_chain
+from backend.contracts import ProviderFailure, verify_event_chain
 from backend.service import ControlPlane
 from backend.store import Store
 from backend.stop_seam import (
@@ -731,6 +731,56 @@ class NoCriteriaTest(StopSeamRuntimeCase):
         self.assertEqual(run["status"], "completed")
         self.assertEqual(self.client.adjudications, 1)
         self.assertEqual(len(run["model_calls"]), 1)
+
+
+class JudgeProviderFailureTest(StopSeamRuntimeCase):
+    def test_a_goal_judge_provider_failure_stays_a_provider_failure_at_the_stop_seam(
+        self,
+    ) -> None:
+        """A transient judge outage must not become an unexplained worker fault.
+
+        The model attempt is evidence too. The Run must retain its safe provider
+        classification and failed attempt receipt while never passing through
+        `completed`; the asynchronous worker may then return normally instead of
+        flattening a known failure into `worker_failure`.
+        """
+
+        flow = self.publish(
+            "judge-provider-failure",
+            [self.node("quiet", "work")],
+            criteria=[criterion("work-succeeded", "receipt", "work")],
+        )
+
+        def provider_fails(
+            criterion: Mapping[str, Any], evidence: Mapping[str, Any]
+        ) -> list[str]:
+            del criterion, evidence
+            raise ProviderFailure(
+                "OpenAI request failed with status 503",
+                detail={
+                    "provider_code": "service_unavailable",
+                    "provider_type": "server_error",
+                    "status": 503,
+                    "request_id": "req_stop_seam_transient",
+                },
+            )
+
+        run = self.start(flow, value="declared", chooser=provider_fails)
+
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["error_code"], "provider_failure")
+        self.assertIn("service_unavailable", run["error_message"])
+        self.assert_never_completed(run)
+        self.assertEqual(self.completion_events(run), [])
+        self.assertNotIn(
+            "run.worker_failed", [event["type"] for event in run["events"]]
+        )
+        self.assertEqual(self.client.adjudications, 1)
+        self.assertEqual(len(run["model_calls"]), 1)
+        self.assertEqual(run["model_calls"][0]["status"], "failed")
+        self.assertEqual(
+            run["model_calls"][0]["request_id"], "req_stop_seam_transient"
+        )
 
 
 # ---------------------------------------------------------------------------

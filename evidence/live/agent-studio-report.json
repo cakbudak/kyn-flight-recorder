@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-20T13:00:05.357Z",
+  "generated_at": "2026-07-20T20:16:53.425Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -11,9 +11,9 @@
     ]
   },
   "summary": {
-    "checks": 36,
-    "passed": 36,
-    "failed": 0
+    "checks": 30,
+    "passed": 29,
+    "failed": 1
   },
   "checks": [
     {
@@ -45,9 +45,9 @@
       "name": "fresh workspace seeds editable Actions, Agents, Prompts, Skills, and a nontrivial Flow",
       "status": "pass",
       "detail": {
-        "actions": 9,
-        "agents": 4,
-        "prompts": 4,
+        "actions": 12,
+        "agents": 5,
+        "prompts": 5,
         "skills": 4,
         "seeded_nodes": 5
       }
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_a921e6f73b4d43ddbba1ed5c9302c8a6",
+        "prompt": "prmv_90a8ef854cb844099cb54afceff15112",
         "skills": [
-          "sklv_37de8acceb304eb793ebd23c8dce77bc"
+          "sklv_97f84cf09e874c6aa369778625e0d26a"
         ],
         "actions": [
-          "actv_02f5e9edd2b546fdbe337a5497a42824"
+          "actv_1f8f61858b27405abaa2810864cf15db"
         ]
       }
     },
@@ -181,15 +181,25 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_02f5e9edd2b546fdbe337a5497a42824"
+          "version_id": "actv_1f8f61858b27405abaa2810864cf15db"
         }
+      }
+    },
+    {
+      "name": "dialogs receive focus, trap keyboard traversal, close with Escape, and restore the opener",
+      "status": "pass",
+      "detail": {
+        "focusedOnClose": true,
+        "wrappedBackward": true,
+        "wrappedForward": true,
+        "restoredToLauncher": true
       }
     },
     {
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_aaa50adb7eea4d8b8cfd6aa5403de7d5",
+        "id": "arun_030314b90e0f40a581612576145fdbed",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -227,15 +237,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_46f69cc984714f1a905bc6e941b3ad3a"
+        "version_id": "aflowv_8a6729e2f3e8453692811f1efc6b8747"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_a76c200e5d3a41dd8bd3ad545640c79f",
-        "child": "arun_553e2bd46c6c47ab8f6f87361e1e5a92",
+        "parent": "arun_cf3b578ee4d54ed2b9049c1c378b4c28",
+        "child": "arun_ffc2effe2c4543828e0561c6ab8ceaf8",
         "outcome": "standard"
       }
     },
@@ -243,8 +253,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_af207f9f14d34edc9a4cac243166d6c5",
-        "run": "arun_1bd4df802ad547c9b237cf1f2cb109db",
+        "trigger": "atrg_088636a109b54a62a71efeceaa5a83d4",
+        "run": "arun_e0236e30f7fa4292b6425e4ac7f65a22",
         "outcome": "priority"
       }
     },
@@ -259,7 +269,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_a9212f6e476542029c03b4644f68ee9d",
+        "run": "arun_c6c8170c1c5b42329ca81f1d4b394a85",
         "calls": 1,
         "steps": [
           "completed",
@@ -291,17 +301,17 @@
       "status": "pass",
       "detail": {
         "controlled": {
-          "id": "cmp_1cb8f31f8a934dbc9ee8f3686e66a2c9",
+          "id": "cmp_0921055ce1b14347a49d8bbc7d8fb47b",
           "usable": true,
           "pinned_versions": [
-            "aflowv_1cb7af87fa594148b6cceeb7aa585052"
+            "aflowv_fb7f49e0fc2048b4b1fe568961b8d492"
           ],
-          "enforced": 3,
+          "enforced": 4,
           "uncontrolled": 5,
           "rows": 2
         },
         "aliased": {
-          "id": "cmp_5626d5bfe56c46dd87c92bbe4e7c81cb",
+          "id": "cmp_74d822dc9c204d14a8551b7b1691dcc2",
           "usable": false,
           "problems": [
             "response_model_mismatch"
@@ -343,7 +353,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_e1e639fcbca63",
+        "citation_opened": "arun_0ffe30beb715c",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -364,61 +374,52 @@
       }
     },
     {
-      "name": "live documentation explains outputs, AI pins, subflows, Run truth, maintenance, BYOK, and public limits",
+      "name": "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
       "status": "pass",
       "detail": {
-        "characters": 9612,
-        "missing": []
+        "judge": "agtv_ea7547f41fe54b799e38f7de15dee7e5",
+        "criteria": [
+          {
+            "evidence_kind": "effect",
+            "id": "record-in-ledger",
+            "node_ids": [
+              "publish-to-ledger"
+            ],
+            "statement": "The submitted record was written to the workspace evidence ledger."
+          },
+          {
+            "evidence_kind": "receipt",
+            "id": "ledger-write-succeeded",
+            "node_ids": [
+              "publish-to-ledger"
+            ],
+            "statement": "The ledger write reported success rather than a mere attempt."
+          },
+          {
+            "evidence_kind": "step",
+            "id": "readiness-evaluated",
+            "node_ids": [
+              "readiness-gate"
+            ],
+            "statement": "The deterministic readiness gate completed and recorded its routing decision."
+          }
+        ]
       }
     },
     {
-      "name": "every rendered button has an accessible name",
-      "status": "pass",
+      "name": "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
+      "status": "fail",
       "detail": {
-        "unnamed": 0
+        "run": "arun_0441b63912074205909b475b4e89374e",
+        "status": "failed",
+        "error_code": "worker_failure",
+        "status_history": [
+          "running",
+          "failed"
+        ],
+        "effects": 0,
+        "model_calls": 1
       }
-    },
-    {
-      "name": "reduced-motion preference collapses interaction transitions",
-      "status": "pass",
-      "detail": "1e-06s"
-    },
-    {
-      "name": "390px reload preserves the workspace and graph without page overflow",
-      "status": "pass",
-      "detail": {
-        "clientWidth": 390,
-        "scrollWidth": 390,
-        "nodes": 5,
-        "mainTop": 107
-      }
-    },
-    {
-      "name": "server sends restrictive security and no-store headers",
-      "status": "pass",
-      "detail": null
-    },
-    {
-      "name": "browser makes no cross-origin runtime request",
-      "status": "pass",
-      "detail": []
-    },
-    {
-      "name": "browser journey has no failed request",
-      "status": "pass",
-      "detail": []
-    },
-    {
-      "name": "browser journey has no console or page error",
-      "status": "pass",
-      "detail": []
-    },
-    {
-      "name": "the only refused HTTP response in the journey is the one asserted brake 409",
-      "status": "pass",
-      "detail": [
-        "Failed to load resource: the server responded with a status of 409 ()"
-      ]
     }
   ],
   "diagnostics": {
