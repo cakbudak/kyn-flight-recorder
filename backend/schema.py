@@ -501,6 +501,9 @@ CREATE TABLE IF NOT EXISTS automation_dead_end_evidence (
     error_code TEXT NOT NULL,
     normalized_detail TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    flow_id TEXT REFERENCES automation_flows(id) ON DELETE RESTRICT,
+    executor_kind TEXT,
+    policy_marker TEXT,
     UNIQUE (fingerprint, run_id)
 );
 
@@ -701,6 +704,15 @@ CREATE TRIGGER IF NOT EXISTS trg_automation_repairs_transition
 BEFORE UPDATE OF status ON automation_repair_proposals
 WHEN NEW.status <> OLD.status AND NOT (OLD.status = 'proposed' AND NEW.status = 'applied')
 BEGIN SELECT RAISE(ABORT, 'illegal automation repair transition'); END;
+"""
+
+
+# The structural-signature index is applied *after* the dead-end migration adds
+# its columns, so it cannot live in SCHEMA_SQL: on a pre-existing database the
+# columns do not exist yet when SCHEMA_SQL runs.
+DEAD_END_STRUCTURE_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS ix_automation_dead_ends_structure
+ON automation_dead_end_evidence(workspace_id, executor_kind, error_code, policy_marker);
 """
 
 

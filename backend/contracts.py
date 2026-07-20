@@ -8,7 +8,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, NamedTuple, Sequence
 
 
 GENESIS_HASH = "0" * 64
@@ -207,6 +207,101 @@ def ratification_state(distinct_runs: int) -> str:
     if distinct_runs >= CONFIRMED_DISTINCT_RUNS:
         return "confirmed"
     return "proposed"
+
+
+# -- Principle distillation -----------------------------------------------
+#
+# A `dead_end` VETOES one exact pinned path. A `principle` is the
+# generalization: the same *structural* failure observed across independent
+# Flows. It is advisory only — it surfaces while authoring, where being wrong
+# costs a reader two seconds. The brake stays the only thing that refuses, and
+# only on the exact path three independent Runs proved. Warn early, refuse late.
+
+PRINCIPLE_MIN_DEAD_ENDS = 3
+PRINCIPLE_MIN_DISTINCT_FLOWS = 3
+
+
+class PolicyMarker(NamedTuple):
+    """One recognised configuration predicate a family of failures shares.
+
+    The vocabulary is a small explicit table rather than ad-hoc string building
+    so a principle can only ever speak about a predicate somebody declared here.
+    A failure with no recognised marker produces no signature and can never
+    distil into a principle — fail-closed by construction.
+    """
+
+    name: str
+    executor_kind: str
+    config_key: str
+    denied_value: Any
+    default_value: Any
+    clause: str
+
+
+POLICY_MARKERS: tuple[PolicyMarker, ...] = (
+    PolicyMarker(
+        name="write_enabled_denied",
+        executor_kind="data_store",
+        config_key="write_enabled",
+        denied_value=False,
+        default_value=True,
+        clause="its pinned `write_enabled` policy is false",
+    ),
+)
+
+_MARKERS_BY_NAME = {marker.name: marker for marker in POLICY_MARKERS}
+
+
+def policy_marker(executor_kind: Any, config: Any) -> str | None:
+    """Name the declared configuration predicate a failed Action carried."""
+
+    if not isinstance(config, Mapping):
+        return None
+    kind = str(executor_kind or "")
+    for marker in POLICY_MARKERS:
+        if marker.executor_kind != kind:
+            continue
+        observed = config.get(marker.config_key, marker.default_value)
+        if type(observed) is type(marker.denied_value) and observed == marker.denied_value:
+            return marker.name
+    return None
+
+
+def principle_signature(
+    *, executor_kind: Any, error_code: Any, policy_marker: Any
+) -> str | None:
+    """Identify a failure *structure*, deliberately coarser than a fingerprint.
+
+    A dead end pins the flow version and node; a principle generalizes, so the
+    signature drops both and keeps only what a reader could act on elsewhere.
+    """
+
+    if not executor_kind or not error_code or not policy_marker:
+        return None
+    if str(policy_marker) not in _MARKERS_BY_NAME:
+        return None
+    return fingerprint(
+        {
+            "executor_kind": str(executor_kind),
+            "error_code": str(error_code),
+            "policy_marker": str(policy_marker),
+        }
+    )
+
+
+def principle_statement(
+    *, executor_kind: Any, error_code: Any, policy_marker: Any
+) -> str:
+    """Render the rule from a fixed template. No model participates, ever."""
+
+    marker = _MARKERS_BY_NAME.get(str(policy_marker))
+    clause = marker.clause if marker is not None else "an unrecognised policy holds"
+    return (
+        f"Across at least {PRINCIPLE_MIN_DISTINCT_FLOWS} distinct Flows, a "
+        f"`{executor_kind}` Action failed with `{error_code}` because {clause}. "
+        "This is advisory: publishing and running stay allowed. Grant the "
+        "policy on a successor Action version, or route the Flow around it."
+    )
 
 
 JSON_SCHEMA_TYPES = frozenset(

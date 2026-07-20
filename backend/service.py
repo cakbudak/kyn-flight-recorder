@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import json
 import threading
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from .contracts import (
     ContractViolation,
@@ -13,6 +13,7 @@ from .contracts import (
     new_id,
     normalize_json_schema,
     normalize_outcomes,
+    policy_marker,
     require_slug,
     require_string,
     require_string_list,
@@ -654,7 +655,7 @@ class ControlPlane:
         )
         if normalized_output["type"] != "object":
             raise ContractViolation("Flow output schema must be an object")
-        return self.studio.create_flow(
+        published = self.studio.create_flow(
             workspace_id,
             name=require_string(name, "Flow name", maximum=100),
             slug=require_slug(slug),
@@ -666,6 +667,10 @@ class ControlPlane:
             nodes=normalized_nodes,
             routes=normalized_routes,
         )
+        return {
+            **published,
+            "advisories": self._flow_advisories(workspace_id, contracts),
+        }
 
     def revise_studio_flow(
         self,
@@ -737,7 +742,7 @@ class ControlPlane:
         )
         if normalized_output["type"] != "object":
             raise ContractViolation("Flow output schema must be an object")
-        return self.studio.revise_flow(
+        revised = self.studio.revise_flow(
             workspace_id,
             flow_id,
             expected_revision=expected_revision,
@@ -750,6 +755,10 @@ class ControlPlane:
             nodes=normalized_nodes,
             routes=normalized_routes,
         )
+        return {
+            **revised,
+            "advisories": self._flow_advisories(workspace_id, contracts),
+        }
 
     def _studio_node_contract(
         self, workspace_id: str, node: dict[str, Any]
@@ -760,6 +769,9 @@ class ControlPlane:
                 "input_schema": action["input_schema"],
                 "output_schema": action["output_schema"],
                 "outcomes": action["outcomes"],
+                # The declared policy predicate a principle would recognise.
+                "executor_kind": action["kind"],
+                "policy_marker": policy_marker(action["kind"], action["config"]),
             }
         if node["type"] == "agent":
             agent = self.studio.get_agent_runtime(workspace_id, node["version_id"])
@@ -795,6 +807,35 @@ class ControlPlane:
             "output_schema": flow["output_schema"],
             "outcomes": flow["outcomes"],
         }
+
+    def _flow_advisories(
+        self, workspace_id: str, contracts: Mapping[str, Mapping[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Surface, at authoring time, every rule this draft's structure matches.
+
+        This is the whole safety argument for principles: they appear here, where
+        a wrong one costs a reader two seconds, and nowhere near the decision to
+        admit a Run. Publishing always succeeds; only the brake ever refuses.
+        """
+
+        matched_nodes: dict[tuple[str, str], list[str]] = {}
+        for node_id, contract in contracts.items():
+            kind = contract.get("executor_kind")
+            marker = contract.get("policy_marker")
+            if not kind or not marker:
+                continue
+            matched_nodes.setdefault((str(kind), str(marker)), []).append(str(node_id))
+        if not matched_nodes:
+            return []
+        advisories: list[dict[str, Any]] = []
+        for principle in self.studio.list_principles(workspace_id):
+            node_ids = matched_nodes.get(
+                (str(principle["executor_kind"]), str(principle["policy_marker"]))
+            )
+            if not node_ids:
+                continue
+            advisories.append({**principle, "node_ids": sorted(node_ids)})
+        return advisories
 
     @staticmethod
     def _validate_route_outcome_ownership(
@@ -1262,6 +1303,11 @@ class ControlPlane:
 
     def list_dead_ends(self, workspace_id: str) -> list[dict[str, Any]]:
         return self.studio.list_dead_ends(workspace_id)
+
+    def list_principles(self, workspace_id: str) -> list[dict[str, Any]]:
+        """Return every distilled rule. A principle advises; it never refuses."""
+
+        return self.studio.list_principles(workspace_id)
 
     def create_studio_trigger(
         self,

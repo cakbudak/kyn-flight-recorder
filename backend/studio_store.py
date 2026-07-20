@@ -22,7 +22,12 @@ from .contracts import (
     hash_text,
     new_id,
     normalize_failure_detail,
+    policy_marker as derive_policy_marker,
+    principle_signature,
+    principle_statement,
     ratification_state,
+    PRINCIPLE_MIN_DEAD_ENDS,
+    PRINCIPLE_MIN_DISTINCT_FLOWS,
     redact,
     utc_now,
     verify_event_chain,
@@ -1487,11 +1492,13 @@ class StudioStore:
                 )
             ]
             dead_ends = self._dead_end_records(connection, workspace_id)
+            principles = self._principle_records(connection, workspace_id)
         return {
             "actions": actions,
             "flows": flows,
             "triggers": triggers,
             "dead_ends": dead_ends,
+            "principles": principles,
             "runs": [self.get_run(workspace_id, run_id) for run_id in run_ids],
             "action_kinds": [
                 "ai",
@@ -3194,6 +3201,137 @@ class StudioStore:
             )
         return records
 
+    @staticmethod
+    def _failed_node_structure(
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        *,
+        flow_version_id: str,
+        node_id: str,
+    ) -> dict[str, str | None]:
+        """Resolve the owning Flow and the pinned Action's declared policy.
+
+        Anything unresolved stays NULL. A NULL executor kind or policy marker can
+        never satisfy a principle quorum, so an unrecognised failure simply never
+        generalizes instead of generalizing on a guess.
+        """
+
+        empty: dict[str, str | None] = {
+            "flow_id": None,
+            "executor_kind": None,
+            "policy_marker": None,
+        }
+        version = connection.execute(
+            "SELECT flow_id, nodes_json FROM automation_flow_versions "
+            "WHERE id = ? AND workspace_id = ?",
+            (flow_version_id, workspace_id),
+        ).fetchone()
+        if version is None:
+            return empty
+        empty["flow_id"] = version["flow_id"]
+        node = next(
+            (
+                item
+                for item in (_decode(version["nodes_json"]) or [])
+                if str(item.get("id")) == node_id
+            ),
+            None,
+        )
+        if node is None or node.get("type") != "action":
+            return empty
+        action_version = connection.execute(
+            "SELECT * FROM action_versions WHERE id = ? AND workspace_id = ?",
+            (node.get("version_id"), workspace_id),
+        ).fetchone()
+        if action_version is None:
+            return empty
+        projection = StudioStore._action_version_projection(action_version)
+        empty["executor_kind"] = projection["kind"]
+        empty["policy_marker"] = derive_policy_marker(
+            projection["kind"], projection["config"]
+        )
+        return empty
+
+    @staticmethod
+    def _principle_records(
+        connection: sqlite3.Connection, workspace_id: str
+    ) -> list[dict[str, Any]]:
+        """Derive every stated rule by query; nothing about them is ever stored.
+
+        Quorum is `PRINCIPLE_MIN_DEAD_ENDS` distinct dead ends across
+        `PRINCIPLE_MIN_DISTINCT_FLOWS` distinct *Flows*. Counting Flows rather
+        than Runs is deliberate: repetition inside one Flow is the brake's job,
+        and one loud Flow must not mint a workspace-wide rule.
+        """
+
+        grouped = connection.execute(
+            "SELECT executor_kind, error_code, policy_marker, "
+            "COUNT(DISTINCT fingerprint) AS distinct_dead_ends, "
+            "COUNT(DISTINCT flow_id) AS distinct_flows, "
+            "MIN(created_at) AS first_cited_at, MAX(created_at) AS last_cited_at "
+            "FROM automation_dead_end_evidence "
+            "WHERE workspace_id = ? AND flow_id IS NOT NULL "
+            "AND executor_kind IS NOT NULL AND policy_marker IS NOT NULL "
+            "GROUP BY executor_kind, error_code, policy_marker "
+            "HAVING COUNT(DISTINCT fingerprint) >= ? AND COUNT(DISTINCT flow_id) >= ? "
+            "ORDER BY MIN(created_at), MIN(rowid)",
+            (workspace_id, PRINCIPLE_MIN_DEAD_ENDS, PRINCIPLE_MIN_DISTINCT_FLOWS),
+        ).fetchall()
+        records: list[dict[str, Any]] = []
+        for row in grouped:
+            signature = principle_signature(
+                executor_kind=row["executor_kind"],
+                error_code=row["error_code"],
+                policy_marker=row["policy_marker"],
+            )
+            if signature is None:
+                continue
+            citations = connection.execute(
+                "SELECT flow_id, run_id, MIN(created_at) AS cited_at, MIN(rowid) AS ordinal "
+                "FROM automation_dead_end_evidence "
+                "WHERE workspace_id = ? AND executor_kind = ? AND error_code = ? "
+                "AND policy_marker = ? AND flow_id IS NOT NULL "
+                "GROUP BY flow_id, run_id ORDER BY cited_at, ordinal",
+                (
+                    workspace_id,
+                    row["executor_kind"],
+                    row["error_code"],
+                    row["policy_marker"],
+                ),
+            ).fetchall()
+            citing_flow_ids: list[str] = []
+            citing_run_ids: list[str] = []
+            for citation in citations:
+                if citation["flow_id"] not in citing_flow_ids:
+                    citing_flow_ids.append(citation["flow_id"])
+                if citation["run_id"] not in citing_run_ids:
+                    citing_run_ids.append(citation["run_id"])
+            records.append(
+                {
+                    "signature": signature,
+                    "statement": principle_statement(
+                        executor_kind=row["executor_kind"],
+                        error_code=row["error_code"],
+                        policy_marker=row["policy_marker"],
+                    ),
+                    "executor_kind": row["executor_kind"],
+                    "error_code": row["error_code"],
+                    "policy_marker": row["policy_marker"],
+                    "distinct_dead_ends": int(row["distinct_dead_ends"]),
+                    "distinct_flows": int(row["distinct_flows"]),
+                    "citing_flow_ids": citing_flow_ids,
+                    "citing_run_ids": citing_run_ids,
+                    "first_cited_at": row["first_cited_at"],
+                    "last_cited_at": row["last_cited_at"],
+                }
+            )
+        return records
+
+    def list_principles(self, workspace_id: str) -> list[dict[str, Any]]:
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            return self._principle_records(connection, workspace_id)
+
     def record_dead_end(
         self,
         workspace_id: str,
@@ -3213,14 +3351,24 @@ class StudioStore:
             error_code=error_code,
             normalized_detail=normalized_detail,
         )
+        # Resolved on a read connection before the write opens, so the structural
+        # columns cost the write transaction nothing.
+        with self.store.read() as connection:
+            structure = self._failed_node_structure(
+                connection,
+                workspace_id,
+                flow_version_id=flow_version_id,
+                node_id=str(node_id),
+            )
         with self.store.write() as connection:
             # One Run may not inflate a count: `UNIQUE (fingerprint, run_id)`
             # makes a repeated citation from the same Run a no-op.
             connection.execute(
                 "INSERT OR IGNORE INTO automation_dead_end_evidence "
                 "(id, workspace_id, fingerprint, run_id, flow_version_id, node_id, "
-                "error_code, normalized_detail, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "error_code, normalized_detail, created_at, flow_id, executor_kind, "
+                "policy_marker) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     new_id("ade"),
                     workspace_id,
@@ -3231,6 +3379,9 @@ class StudioStore:
                     str(error_code),
                     normalized_detail,
                     utc_now(),
+                    structure["flow_id"],
+                    structure["executor_kind"],
+                    structure["policy_marker"],
                 ),
             )
         with self.store.read() as connection:

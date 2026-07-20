@@ -25,7 +25,7 @@ from .contracts import (
     redact,
     utc_now,
 )
-from .schema import SCHEMA_SQL
+from .schema import DEAD_END_STRUCTURE_INDEX_SQL, SCHEMA_SQL
 
 
 TERMINAL_RUN_STATUSES = frozenset({"blocked", "completed", "failed"})
@@ -99,9 +99,43 @@ class Store:
                 )
             if "outcome" not in run_columns:
                 connection.execute("ALTER TABLE automation_runs ADD COLUMN outcome TEXT")
+            self._migrate_dead_end_structure(connection)
             self._migrate_studio_step_node_types(connection)
         finally:
             connection.close()
+
+    @staticmethod
+    def _migrate_dead_end_structure(connection: sqlite3.Connection) -> None:
+        """Widen dead-end evidence with the columns a principle groups on.
+
+        `ADD COLUMN` is non-destructive and safe on this append-only table: it
+        rewrites no row and therefore trips neither the no-UPDATE nor the
+        no-DELETE trigger. Rows written before this migration keep NULL in the
+        new columns, and a NULL marker can never satisfy a principle quorum —
+        guessing a marker for historical evidence would invent proof nobody
+        observed.
+        """
+
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(automation_dead_end_evidence)"
+            )
+        }
+        if "flow_id" not in columns:
+            connection.execute(
+                "ALTER TABLE automation_dead_end_evidence ADD COLUMN flow_id TEXT "
+                "REFERENCES automation_flows(id) ON DELETE RESTRICT"
+            )
+        if "executor_kind" not in columns:
+            connection.execute(
+                "ALTER TABLE automation_dead_end_evidence ADD COLUMN executor_kind TEXT"
+            )
+        if "policy_marker" not in columns:
+            connection.execute(
+                "ALTER TABLE automation_dead_end_evidence ADD COLUMN policy_marker TEXT"
+            )
+        connection.executescript(DEAD_END_STRUCTURE_INDEX_SQL)
 
     @staticmethod
     def _migrate_studio_step_node_types(connection: sqlite3.Connection) -> None:
