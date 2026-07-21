@@ -594,13 +594,14 @@ samples across all thirteen workbenches in both themes, and a legible pannable 3
 graph; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 
-The same journey passes **45/45** against the deployed public origin at
+The same journey passes **55/55** against the deployed public origin at
 `https://buildweek.kyn.ist` with real model calls, real provider latency, and no
 scripted responses; see
 [`evidence/live/agent-studio-report.json`](evidence/live/agent-studio-report.json)
 and the archived screenshots under `evidence/live/`. That proof includes the
-real Capability Forge path. Its one refused HTTP response is the brake's own
-asserted 409.
+real Capability Forge path plus four real parallel BoardRoom calls whose honest
+0/3 verdict sent the decision to review instead of manufacturing consensus. Its
+one refused HTTP response is the brake's own asserted 409.
 
 Prove the guards are load-bearing rather than taking the green suite on trust:
 

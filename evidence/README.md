@@ -73,9 +73,12 @@ The committed proof shows:
   is Human-promoted into immutable Skill v1 without changing an Agent or Flow.
 - an immutable Knowledge source is read through SmartRead with exact
   version/fingerprint/line citations and transferred into a real BoardRoom;
-- three independent participants execute concurrently, code reaches quorum while
-  retaining a dissenting member, and the editor remains downstream of the
-  barrier;
+- three independent participants execute concurrently; the real provider returns
+  three challenges, so code records 0 affirmative / 3 dissenting and selects the
+  review route without manufacturing quorum; the editor remains downstream of
+  the barrier;
+- the generated BoardRoom opens in the full Flow editor, publishes a member-ID
+  successor as v2, and leaves the completed Run and its member Steps pinned to v1;
 - a completed ledger-verified Run becomes a quarantined, qualified,
   exact-fingerprint Human-promoted Memory and is recalled with provenance.
 

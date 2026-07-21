@@ -749,32 +749,41 @@ async function main() {
     const fanOutStep = boardRoomRun.steps.find((step) => step.node_type === "fan_out" && step.member_id === null);
     const participantSteps = boardRoomRun.steps.filter((step) => step.parent_step_id === fanOutStep?.id);
     const barrier = fanOutStep?.output?.barrier;
+    const participantIds = participantSteps.map((step) => step.member_id);
+    const dissentingMemberIds = barrier?.dissenting_members ?? [];
     record(
-      "three independent model Steps join through code-owned quorum while material dissent remains first-class evidence",
+      "three independent model Steps join through a code-owned barrier while the actual verdict distribution remains first-class evidence",
       boardRoomRun.model_calls.length === 4 &&
         participantSteps.length === 3 &&
-        new Set(participantSteps.map((step) => step.member_id)).size === 3 &&
+        new Set(participantIds).size === 3 &&
         participantSteps.every((step) => step.status === "completed") &&
-        barrier?.affirmative === 2 &&
-        barrier?.converged === true &&
-        barrier?.dissenting_members?.join(",") === "risk" &&
+        barrier?.completed === 3 &&
+        barrier?.expected === 3 &&
+        barrier?.failed === 0 &&
+        barrier?.affirmative + dissentingMemberIds.length === 3 &&
+        dissentingMemberIds.every((memberId) => participantIds.includes(memberId)) &&
+        barrier?.converged === (barrier?.affirmative >= barrier?.quorum) &&
         boardRoomRun.effects.length === 0 &&
         boardRoomRun.pending_approval !== null &&
         verifyChain(boardRoomRun),
       {
         run: boardRoomRun.id,
         model_calls: boardRoomRun.model_calls.length,
-        member_steps: participantSteps.map((step) => step.member_id),
+        member_steps: participantIds,
         barrier,
         effects_before_approval: boardRoomRun.effects.length
       }
     );
     await page.getByRole("button", { name: "Approve and resume" }).waitFor({ state: "visible" });
     await page.locator(".parallel-evidence").waitFor({ state: "visible" });
-    await page.waitForFunction(() => {
+    await page.waitForFunction(({ converged, dissent, memberCount }) => {
       const text = document.querySelector(".parallel-evidence")?.textContent ?? "";
-      return text.includes("Quorum reached") && text.includes("Dissent: risk") && text.includes("3 separately persisted member Steps");
-    });
+      const routeVisible = text.includes(converged ? "Quorum reached" : "Review route");
+      const dissentVisible = dissent.length
+        ? text.includes(`Dissent: ${dissent.join(", ")}`)
+        : text.includes("No recorded dissent");
+      return routeVisible && dissentVisible && text.includes(`${memberCount} separately persisted member Steps`);
+    }, { converged: barrier.converged, dissent: dissentingMemberIds, memberCount: participantSteps.length });
     const parallelEvidenceText = await page.locator(".parallel-evidence").innerText();
     const parallelEvidenceUi = {
       members: await page.locator(".parallel-member-grid > article").count(),
@@ -786,10 +795,11 @@ async function main() {
     record(
       "the Runs console makes the fan-out, member verdicts, deterministic join, and surviving dissent visible without opening raw JSON",
       parallelEvidenceUi.members === 3 &&
-        parallelEvidenceUi.dissentCards === 1 &&
+        parallelEvidenceUi.dissentCards === dissentingMemberIds.length &&
         parallelEvidenceUi.metrics.completed === "3/3" &&
-        parallelEvidenceUi.metrics.affirmative === "2" &&
-        parallelEvidenceUi.metrics.dissenting === "1" &&
+        parallelEvidenceUi.metrics.affirmative === String(barrier.affirmative) &&
+        parallelEvidenceUi.metrics.dissenting === String(dissentingMemberIds.length) &&
+        parallelEvidenceUi.metrics.failed === "0" &&
         parallelEvidenceUi.authorityNotes === 1 &&
         parallelEvidenceContrast.failureCount === 0,
       {
@@ -809,7 +819,7 @@ async function main() {
     record(
       "the human gate resumes the exact pinned BoardRoom into an explicit result without granting hidden write authority",
       boardRoomRun.output?.status === "approved" &&
-        boardRoomRun.output?.dissent?.length === 1 &&
+        Array.isArray(boardRoomRun.output?.dissent) &&
         boardRoomRun.approvals[0]?.decision?.approved === true &&
         boardRoomRun.effects.length === 0 &&
         verifyChain(boardRoomRun),
@@ -861,9 +871,10 @@ async function main() {
     await memoryForm.waitFor({ state: "visible" });
     await fieldControl(memoryForm, "Completed source Run", "select").selectOption(boardRoomRun.id);
     await delay(100);
-    await fieldControl(memoryForm, "Memory title", "input").fill("Dissent must survive an affirmative quorum");
-    await fieldControl(memoryForm, "Content", "textarea").fill("When a quorum converges, preserve every completed member record and name dissenting members in the barrier evidence.");
-    await fieldControl(memoryForm, "Why these events prove it", "textarea").fill("The cited BoardRoom Run completed with two affirmative votes while the risk member remained explicitly dissenting.");
+    const dissentSummary = dissentingMemberIds.length ? dissentingMemberIds.join(", ") : "none";
+    await fieldControl(memoryForm, "Memory title", "input").fill("Parallel verdicts remain inspectable");
+    await fieldControl(memoryForm, "Content", "textarea").fill(`The BoardRoom persisted ${barrier.completed} independent member Steps; its code-owned barrier recorded ${barrier.affirmative} affirmative and ${dissentingMemberIds.length} non-affirmative verdicts. Dissenting members: ${dissentSummary}.`);
+    await fieldControl(memoryForm, "Why these events prove it", "textarea").fill(`The cited Run ledger contains the parent fan-out Step, ${barrier.completed} child Steps, and the barrier record for this exact verdict distribution.`);
     await clickAndWait(page, memoryForm.getByRole("button", { name: "Create quarantined candidate" }));
     snapshot = await waitForSnapshot(
       page,
@@ -886,7 +897,7 @@ async function main() {
       "qualified Memory candidate"
     );
     memoryCandidate = snapshot.studio.memory_candidates.find((candidate) => candidate.id === memoryCandidate.id);
-    await fieldControl(page.locator(".memory-decision"), "Memory slug", "input").fill("dissent-survives-quorum");
+    await fieldControl(page.locator(".memory-decision"), "Memory slug", "input").fill("parallel-verdicts-remain-inspectable");
     await page.getByRole("checkbox", { name: "I reviewed this exact fingerprint" }).check();
     await clickAndWait(page, page.getByRole("button", { name: "Promote to Memory" }));
     snapshot = await waitForSnapshot(
@@ -895,8 +906,8 @@ async function main() {
       "promoted Memory"
     );
     memoryCandidate = snapshot.studio.memory_candidates.find((candidate) => candidate.id === memoryCandidate.id);
-    const promotedMemory = (snapshot.studio.memories ?? []).find((memory) => memory.slug === "dissent-survives-quorum");
-    await fieldControl(page.locator(".memory-recall-panel"), "Recall terms", "input").fill("dissent quorum evidence");
+    const promotedMemory = (snapshot.studio.memories ?? []).find((memory) => memory.slug === "parallel-verdicts-remain-inspectable");
+    await fieldControl(page.locator(".memory-recall-panel"), "Recall terms", "input").fill("parallel verdicts inspectable");
     await clickAndWait(page, page.locator(".memory-recall-panel").getByRole("button", { name: "Recall Memory" }));
     await page.locator(".memory-result-list article").waitFor({ state: "visible" });
     const recalledText = await page.locator(".memory-result-list").innerText();
@@ -906,7 +917,7 @@ async function main() {
         memoryCandidate.decision?.candidate_fingerprint === memoryCandidate.fingerprint &&
         promotedMemory?.state === "active" &&
         promotedMemory.version.source_candidate_id === memoryCandidate.id &&
-        recalledText.includes("Dissent must survive an affirmative quorum") &&
+        recalledText.includes("Parallel verdicts remain inspectable") &&
         recalledText.includes(shortId(boardRoomRun.id, 14)),
       {
         memory: promotedMemory?.id,
