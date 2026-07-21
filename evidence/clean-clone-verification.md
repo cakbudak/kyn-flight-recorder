@@ -33,10 +33,13 @@ separate because it consumes the visitor's API quota.
 
 ## Current clean-clone proof
 
-On 2026-07-21, public runtime commit
-`de5746c4ce28f58ed3cead0722ce7eb928f539b2` was cloned from the public GitHub URL
-with interactive authentication and the credential helper disabled. In that
-untouched clone, with `OPENAI_API_KEY` removed from the process environment:
+On 2026-07-21, runtime tree
+`087f35b4319d4ef17599a994b83b1cbd1b2d92bb`, now represented by public commit
+`03bc4cf874a9d633d3aaa7c1333b5caaf2c8a6a5`, was cloned from the public GitHub
+URL with interactive authentication and the credential helper disabled. The
+subsequent release-material history scrub changed the commit identifier but not
+the verified tree. In that untouched clone, with `OPENAI_API_KEY` removed from
+the process environment:
 
 - `pip install -r requirements.txt` and `npm ci` completed;
 - 291 Python contract tests passed;
