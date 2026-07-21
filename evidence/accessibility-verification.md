@@ -14,7 +14,8 @@ Automated/static evidence:
 - native required/min/max constraints on approval fields;
 - no dynamic HTML parsing sink; server data enters through text nodes;
 - computed contrast audit across all eleven workbenches in light and dark: 3,430
-  visible text samples, minimum 4.70:1, zero WCAG AA failures;
+  local and 3,440 deployed visible text samples, minimum 4.70:1, zero WCAG AA
+  failures;
 - no `transition: all`, no zero-scale entrances, transitions ≤300 ms;
 - `prefers-reduced-motion` collapses animation/transition durations;
 - 390 × 844 Chromium reload has no document overflow, preserves the proven

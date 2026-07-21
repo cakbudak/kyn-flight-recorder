@@ -33,17 +33,18 @@ separate because it consumes the visitor's API quota.
 
 ## Current clean-clone proof
 
-On 2026-07-20, public source commit
-`984c17657a9f06d2698496cc8818479c59ba2f41` was cloned from the public GitHub URL
+On 2026-07-21, public runtime commit
+`8013539dceff432318b17e4da580dea718f534da` was cloned from the public GitHub URL
 with the credential helper and global/system Git configuration disabled. In that
 untouched clone:
 
 - `pip install -r requirements.txt` and `npm ci` completed;
-- 265 Python contract tests passed;
+- 274 Python contract tests passed;
 - 9 pure browser-state tests passed;
-- the production frontend rebuilt successfully;
-- the current deterministic Chromium product journey passed 42/42, including
-  completion refusal and admission on one pinned Flow version;
+- the production frontend rebuilt byte-for-byte to the committed asset names;
+- the deterministic Chromium product journey passed 45/45, including completion
+  refusal/admission on one pinned Flow version and the complete Capability Forge
+  quarantine/qualification/promotion path;
 - `npm audit` reported zero vulnerabilities;
 - `pip check` reported no broken requirements;
 - `.env` and `OPENAI_API_KEY` were absent;
@@ -51,4 +52,5 @@ untouched clone:
 
 The clean clone path was temporary and contained no configuration symlink,
 private Kyn dependency, pre-existing database, or uncommitted asset. This
-proof verifies the same source commit deployed at `https://buildweek.kyn.ist`.
+proof verifies the runtime source deployed at `https://buildweek.kyn.ist`; later
+evidence-only commits do not change that runtime tree.

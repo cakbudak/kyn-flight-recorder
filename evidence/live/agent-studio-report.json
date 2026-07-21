@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-20T20:35:31.618Z",
+  "generated_at": "2026-07-21T10:18:27.058Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -11,8 +11,8 @@
     ]
   },
   "summary": {
-    "checks": 42,
-    "passed": 42,
+    "checks": 45,
+    "passed": 45,
     "failed": 0
   },
   "checks": [
@@ -61,7 +61,7 @@
         "sourceHandles": 12,
         "width": 962,
         "first_node_handle_tops": [
-          495,
+          496,
           514
         ]
       }
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_64e672ab995549dba43e60c022644fea",
+        "prompt": "prmv_aa2a50cfd8c94d819552a554e4454ad1",
         "skills": [
-          "sklv_e830a3391db945daa2795a96b8ef7956"
+          "sklv_f06e0948437b44caa714edee76f86ca0"
         ],
         "actions": [
-          "actv_db2546d9e61e4c24946c809dc31befed"
+          "actv_fb3395bca0f4437c879e22d53026419b"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_db2546d9e61e4c24946c809dc31befed"
+          "version_id": "actv_fb3395bca0f4437c879e22d53026419b"
         }
       }
     },
@@ -199,7 +199,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_db07a541bd284c46b2331908d6c95292",
+        "id": "arun_1965ef49b87b4e89b9c7f9bdb509c27c",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -237,15 +237,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_ad1205c6d87445f299c3fc1f59db70f9"
+        "version_id": "aflowv_4392e413cc7c44e987b31ec255d38973"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_878907dec54b460ca74f78b04ac776c1",
-        "child": "arun_29875a0c60774aa0b0dde85f398da5a0",
+        "parent": "arun_af8eea5152554d00846d03468e87f7ec",
+        "child": "arun_ed05845ea299438488f68e6b2a554a3a",
         "outcome": "standard"
       }
     },
@@ -253,8 +253,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_b51b49dea6f4411598d823743a29c446",
-        "run": "arun_477fbfb3f9b543808a83f378dd2094b6",
+        "trigger": "atrg_433c032c74774f88ba0484b39c91d69c",
+        "run": "arun_51ed0bd6b58d420e9146840bb0f8cb27",
         "outcome": "priority"
       }
     },
@@ -269,7 +269,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_6eefd92d2a0c42369c556de8e5958d80",
+        "run": "arun_ebbf1b947761444aace5ce3d893eaa42",
         "calls": 1,
         "steps": [
           "completed",
@@ -297,21 +297,62 @@
       }
     },
     {
+      "name": "Capability Forge distils one completed model Step through a different logical Agent into an authority-free quarantine",
+      "status": "pass",
+      "detail": {
+        "candidate": "skc_23b4fa76bdb04f3b968eae47af5c6e4e",
+        "source_run": "arun_ebbf1b947761444aace5ce3d893eaa42",
+        "source_agent": "agt_bb07254430b94e38b7a5116e232a03f8",
+        "source_agent_version": "agtv_cebb3428e11b4bb2adc0b3c9cbed173d",
+        "distiller_agent": "agt_990a0527841a4c2e93c2c89ee94ee805",
+        "distiller_agent_version": "agtv_2b5080d9c7c741808ad89b49759c49ab",
+        "cited_events": 6,
+        "authority_delta": 0
+      }
+    },
+    {
+      "name": "the provenance gate replays source truth, citations, independence, fingerprints, and zero authority without another model call",
+      "status": "pass",
+      "detail": {
+        "checks": [
+          "terminal-source",
+          "ledger-chain",
+          "model-step",
+          "source-snapshot",
+          "bounded-citations",
+          "candidate-fingerprint",
+          "independent-distiller",
+          "zero-authority-delta"
+        ],
+        "passed": true
+      }
+    },
+    {
+      "name": "human promotion publishes one immutable Skill v1 while every Agent and Flow remains pinned until a later successor",
+      "status": "pass",
+      "detail": {
+        "skill": "skl_9685152d2ad4422680cd07ead64779bd",
+        "version": 1,
+        "agents_changed": false,
+        "authority_delta": 0
+      }
+    },
+    {
       "name": "a cross-model sweep renders its proof of control before any measurement, and a sweep whose provider silently renamed a model is marked unusable rather than presentable",
       "status": "pass",
       "detail": {
         "controlled": {
-          "id": "cmp_5048e35a611047caa1869e4ca7485aeb",
+          "id": "cmp_c638dcd098af457f8c7f62977a3cdaa3",
           "usable": true,
           "pinned_versions": [
-            "aflowv_2f752417f7304dfdbcfba5f2d3ce8b7f"
+            "aflowv_cb7f6c2f6ce942b4b1f505dabcadc2bd"
           ],
           "enforced": 4,
           "uncontrolled": 5,
           "rows": 2
         },
         "aliased": {
-          "id": "cmp_b81f4f15e49e48259a50b85a2d2f3a86",
+          "id": "cmp_d3f8c2ae17394983b29e5e317944e401",
           "usable": false,
           "problems": [
             "response_model_mismatch"
@@ -353,7 +394,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_764d61198c89e",
+        "citation_opened": "arun_be83f6ae8b178",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -377,7 +418,7 @@
       "name": "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
       "status": "pass",
       "detail": {
-        "judge": "agtv_6b1b2ddccd3e4acebf8f5d9b2079861c",
+        "judge": "agtv_83ae3340cbfb437b99e7faee82480269",
         "criteria": [
           {
             "evidence_kind": "effect",
@@ -410,7 +451,7 @@
       "name": "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
       "status": "pass",
       "detail": {
-        "run": "arun_bdb9b06250f0455aa11b0cacfb141825",
+        "run": "arun_b061b7dd024f40d7a7950533a97bc69f",
         "status": "failed",
         "error_code": "completion_unevidenced",
         "status_history": [
@@ -429,20 +470,20 @@
       "name": "the Runs console renders the stop-seam refusal and names every declared promise that carried no accepted evidence",
       "status": "pass",
       "detail": {
-        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_8f5d9b2079861c\n\nThe readiness gate is evidenced as completed with a recorded false routing decision. No evidence is supplied from the declared publish-to-ledger site; instead, the record was held for revision and explicitly published nowhere.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nThere is no effect evidence showing a ledger write at publish-to-ledger. The supplied hold-for-revision evidence says the record was \"published nowhere.\"\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo receipt from the declared publish-to-ledger site is supplied. The successful receipt is from hold-for-revision and does not establish a successful ledger write.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nThe completed step at readiness-gate records actual readiness 0.31, matched false, and route_outcome false.\n\nSURVIVING ANCHORS · 1\n\nastep_bbf8909de0bcc9",
+        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_e7faee82480269\n\nThe readiness gate was evaluated and recorded a false routing decision, but no evidence shows a write or successful write at the declared publish-to-ledger site. The record was instead held for revision and explicitly published nowhere.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo effect evidence was supplied for publish-to-ledger. The available evidence says the record was held for revision and published nowhere.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo successful receipt was supplied at publish-to-ledger. The only publication-related receipt is at hold-for-revision and reports that the record was published nowhere.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nThe completed readiness-gate step records actual readiness 0.31, matched false, and route_outcome false.\n\nSURVIVING ANCHORS · 1\n\nastep_43ade46c286ecc",
         "tone": 1,
         "criteria": 3,
         "unevidenced": 2,
-        "characters": 2160
+        "characters": 2157
       }
     },
     {
       "name": "the identical pinned Flow version admits when the Run actually reached the declared work, so the refusal was about this Run's data and not the definition",
       "status": "pass",
       "detail": {
-        "refused": "arun_bdb9b06250f0455aa11b0cacfb141825",
-        "admitted": "arun_c4b1cae9c211421d903836cd8bf5140f",
-        "shared_flow_version": "aflowv_de5beaaa805c44e7b30a8435e314de9b",
+        "refused": "arun_b061b7dd024f40d7a7950533a97bc69f",
+        "admitted": "arun_0bc1bb01e9964388b54dd9f18579a95a",
+        "shared_flow_version": "aflowv_43330d21fe5847b0992db37de951c678",
         "effects": 1,
         "model_calls": 1,
         "adjudications_added_by_this_beat": 2
@@ -452,7 +493,7 @@
       "name": "live documentation explains authoring, authority, stop truth, ratification, comparison controls, maintenance, BYOK, and public limits",
       "status": "pass",
       "detail": {
-        "characters": 13177,
+        "characters": 14803,
         "missing": []
       }
     },
@@ -460,7 +501,7 @@
       "name": "every rendered button has an accessible name",
       "status": "pass",
       "detail": {
-        "total": 13,
+        "total": 14,
         "unnamed": 0
       }
     },
@@ -468,7 +509,7 @@
       "name": "visible text clears WCAG AA contrast across every workbench in both themes",
       "status": "pass",
       "detail": {
-        "samples": 3048,
+        "samples": 3440,
         "minimum": 4.7,
         "failures": []
       }
