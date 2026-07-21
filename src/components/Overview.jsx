@@ -71,7 +71,7 @@ export default function Overview({ snapshot, mutate, setView, focusRun }) {
           <UseCase mark="FLOW → FLOW" title="Reusable orchestration" description="Publish a Flow, use its immutable version as a typed node, and retain linked child Run evidence." onClick={() => setView("studio")} />
           <UseCase mark="FAIL → FIX → PROOF" title="Forward recovery" description="Diagnose from owned events, approve an allowlisted successor, and prove it in linked work." onClick={() => setView("runs")} />
           <UseCase mark="RUN → SKILL" title="Evidence-bound learning" description="Distil a completed model Step, qualify its provenance and zero authority delta, then human-promote an immutable Skill." onClick={() => setView("forge")} />
-          <UseCase mark="READ → CITE → USE" title="SmartRead context" description="Inspect only the needed source window and carry its exact version, fingerprint, and line citations into agent work." onClick={() => setView("context")} />
+          <UseCase mark="READ + MEMORY → FLOW" title="Flow-native context" description="Pin one SmartRead window, recall only promoted Memory, combine both cited envelopes in code, and pass them automatically into a reusable BoardRoom Flow." onClick={() => setView("context")} />
           <UseCase mark="3×AI ⇉ JOIN → H" title="Independent BoardRoom" description="Run distinct perspectives concurrently, compute quorum in code, preserve dissent, then place authority after the join." onClick={() => setView("boardrooms")} />
         </div>
       </section>

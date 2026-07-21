@@ -142,6 +142,180 @@ BOARDROOM_RESULT_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+CONTEXT_TRANSFER_SCHEMA: dict[str, Any] = {
+    "type": "string",
+    "maxLength": 12_000,
+}
+CONTEXT_CITATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "source_id": {"type": "string"},
+        "source_version_id": {"type": "string"},
+        "source_version": {"type": "integer"},
+        "source_name": {"type": "string"},
+        "filename": {"type": "string"},
+        "fingerprint": {"type": "string"},
+        "line_start": {"type": "integer"},
+        "line_end": {"type": "integer"},
+        "label": {"type": "string"},
+    },
+    "required": [
+        "source_id",
+        "source_version_id",
+        "source_version",
+        "source_name",
+        "filename",
+        "fingerprint",
+        "line_start",
+        "line_end",
+        "label",
+    ],
+    "additionalProperties": False,
+}
+CONTEXT_PASSAGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string", "maxLength": 20_000},
+        "citation": CONTEXT_CITATION_SCHEMA,
+    },
+    "required": ["text", "citation"],
+    "additionalProperties": False,
+}
+SMART_READ_SOURCE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "version_id": {"type": "string"},
+        "version": {"type": "integer"},
+        "name": {"type": "string"},
+        "filename": {"type": "string"},
+        "media_type": {"type": "string"},
+        "fingerprint": {"type": "string"},
+        "line_count": {"type": "integer"},
+        "byte_count": {"type": "integer"},
+    },
+    "required": [
+        "id",
+        "version_id",
+        "version",
+        "name",
+        "filename",
+        "media_type",
+        "fingerprint",
+        "line_count",
+        "byte_count",
+    ],
+    "additionalProperties": False,
+}
+
+
+def _smart_read_action_output_schema(*, mode: str) -> dict[str, Any]:
+    properties: dict[str, Any] = {
+        "mode": {"type": "string"},
+        "source": SMART_READ_SOURCE_SCHEMA,
+        "passages": {
+            "type": "array",
+            "items": CONTEXT_PASSAGE_SCHEMA,
+            "maxItems": 100,
+        },
+        "result_fingerprint": {"type": "string"},
+        "context": CONTEXT_TRANSFER_SCHEMA,
+    }
+    if mode == "glance":
+        properties["headings"] = {
+            "type": "array",
+            "items": CONTEXT_PASSAGE_SCHEMA,
+            "maxItems": 100,
+        }
+    if mode == "grep":
+        properties["query"] = {"type": "string"}
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def _search_action_output_schema(*, memory: bool) -> dict[str, Any]:
+    if memory:
+        item = {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string"},
+                "memory_version_id": {"type": "string"},
+                "title": {"type": "string"},
+                "content": {"type": "string"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "score": {"type": "integer"},
+                "matched_terms": {"type": "array", "items": {"type": "string"}},
+                "fingerprint": {"type": "string"},
+                "provenance": {
+                    "type": "object",
+                    "properties": {
+                        "source_candidate_id": {"type": "string"},
+                        "source_run_id": {"type": "string"},
+                        "evidence_event_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": [
+                        "source_candidate_id",
+                        "source_run_id",
+                        "evidence_event_ids",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "required": [
+                "memory_id",
+                "memory_version_id",
+                "title",
+                "content",
+                "tags",
+                "score",
+                "matched_terms",
+                "fingerprint",
+                "provenance",
+            ],
+            "additionalProperties": False,
+        }
+    else:
+        item = {
+            "type": "object",
+            "properties": {
+                "passage_id": {"type": "string"},
+                "text": {"type": "string"},
+                "score": {"type": "integer"},
+                "matched_terms": {"type": "array", "items": {"type": "string"}},
+                "citation": CONTEXT_CITATION_SCHEMA,
+                "passage_fingerprint": {"type": "string"},
+            },
+            "required": [
+                "passage_id",
+                "text",
+                "score",
+                "matched_terms",
+                "citation",
+                "passage_fingerprint",
+            ],
+            "additionalProperties": False,
+        }
+    properties = {
+        "query": {"type": "string"},
+        "terms": {"type": "array", "items": {"type": "string"}},
+        "results": {"type": "array", "items": item},
+        "result_fingerprint": {"type": "string"},
+        "context": CONTEXT_TRANSFER_SCHEMA,
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
 
 class ControlPlane:
     def __init__(
@@ -188,12 +362,145 @@ class ControlPlane:
         if seed:
             self.store.seed_default_lab(workspace["id"], model=self.default_model)
             self.studio.seed_default(workspace["id"], model=self.default_model)
+            self._seed_context_actions(workspace["id"])
             self._seed_contracted_flow(workspace["id"])
         return {
             "workspace_id": workspace["id"],
             "workspace_token": workspace["token"],
             "snapshot": self.snapshot(workspace["id"]),
         }
+
+    def _seed_context_actions(self, workspace_id: str) -> None:
+        """Publish the context primitives needed for a visible closed-loop Flow.
+
+        The source version, line window, and recall query stay node mappings, not
+        ambient config. The Flow canvas can therefore show exactly where context
+        came from and how it was passed to the next capability.
+        """
+
+        focus_input = {
+            "type": "object",
+            "properties": {
+                "source_version_id": {"type": "string"},
+                "line_start": {"type": "integer", "minimum": 1},
+                "line_end": {"type": "integer", "minimum": 1},
+            },
+            "required": ["source_version_id", "line_start", "line_end"],
+            "additionalProperties": False,
+        }
+        search_input = {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                "max_results": {"type": "integer", "minimum": 1, "maximum": 30},
+            },
+            "required": ["query", "max_results"],
+            "additionalProperties": False,
+        }
+        source_input = {
+            "type": "object",
+            "properties": {"source_version_id": {"type": "string"}},
+            "required": ["source_version_id"],
+            "additionalProperties": False,
+        }
+        grep_input = {
+            "type": "object",
+            "properties": {
+                "source_version_id": {"type": "string"},
+                "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                "max_results": {"type": "integer", "minimum": 1, "maximum": 30},
+            },
+            "required": ["source_version_id", "query", "max_results"],
+            "additionalProperties": False,
+        }
+        read_descriptions = {
+            "glance": "Reads the bounded opening and headings",
+            "outline": "Reads only the source structure",
+            "focus": "Reads one exact bounded line window",
+            "grep": "Reads bounded literal matches with context",
+            "full": "Reads the complete source inside the runtime size limit",
+        }
+        for mode in ("glance", "outline", "focus", "grep", "full"):
+            self.create_action(
+                workspace_id,
+                name=f"SmartRead {mode}",
+                slug=f"smartread-{mode}",
+                description=(
+                    f"{read_descriptions[mode]} from one immutable Knowledge version "
+                    "and emits structured citations plus a directly mappable context envelope."
+                ),
+                kind="smart_read",
+                input_schema=(
+                    focus_input
+                    if mode == "focus"
+                    else grep_input
+                    if mode == "grep"
+                    else source_input
+                ),
+                output_schema=_smart_read_action_output_schema(mode=mode),
+                config={"mode": mode},
+                agent_version_id=None,
+            )
+        self.create_action(
+            workspace_id,
+            name="Current knowledge search",
+            slug="current-knowledge-search",
+            description=(
+                "Deterministically ranks literal matches across current immutable "
+                "Knowledge versions and emits cited transferable context."
+            ),
+            kind="knowledge_search",
+            input_schema=search_input,
+            output_schema=_search_action_output_schema(memory=False),
+            config={},
+            agent_version_id=None,
+        )
+        self.create_action(
+            workspace_id,
+            name="Governed Memory recall",
+            slug="governed-memory-recall",
+            description=(
+                "Recalls only active Human-promoted Memory and carries exact candidate "
+                "and source-Run provenance into the Flow."
+            ),
+            kind="memory_recall",
+            input_schema=search_input,
+            output_schema=_search_action_output_schema(memory=True),
+            config={},
+            agent_version_id=None,
+        )
+        self.create_action(
+            workspace_id,
+            name="Cited context handoff",
+            slug="cited-context-handoff",
+            description=(
+                "Combines current source citations and governed Memory into one explicit "
+                "downstream context field without model inference."
+            ),
+            kind="template",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "knowledge_context": CONTEXT_TRANSFER_SCHEMA,
+                    "memory_context": CONTEXT_TRANSFER_SCHEMA,
+                },
+                "required": ["knowledge_context", "memory_context"],
+                "additionalProperties": False,
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"text": CONTEXT_TRANSFER_SCHEMA},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            config={
+                "template": (
+                    "CURRENT IMMUTABLE SOURCE EVIDENCE\n{{knowledge_context}}\n\n"
+                    "ACTIVE HUMAN-PROMOTED MEMORY\n{{memory_context}}"
+                )
+            },
+            agent_version_id=None,
+        )
 
     # The one seeded Flow that declares what finishing means, so the stop seam is
     # reachable in the shipped demo rather than only in the test suite.
@@ -696,7 +1003,10 @@ class ControlPlane:
                         f"SmartRead {mode} input schema must require exactly "
                         + ", ".join(sorted(expected_input))
                     )
-                if output_properties != expected_output:
+                if frozenset(output_properties) not in {
+                    frozenset(expected_output),
+                    frozenset({*expected_output, "context"}),
+                }:
                     raise ContractViolation(
                         f"SmartRead {mode} output schema has the wrong top-level fields"
                     )
@@ -721,13 +1031,20 @@ class ControlPlane:
                     raise ContractViolation(
                         "context search input schema must require query and max_results"
                     )
-                if output_properties != expected_output:
+                if frozenset(output_properties) not in {
+                    frozenset(expected_output),
+                    frozenset({*expected_output, "context"}),
+                }:
                     raise ContractViolation("context search output schema has the wrong top-level fields")
                 if (
                     normalized_input["properties"]["query"]["type"] != "string"
                     or normalized_input["properties"]["max_results"]["type"] != "integer"
                 ):
                     raise ContractViolation("context search input types are invalid")
+            if "context" in output_properties and normalized_output["properties"][
+                "context"
+            ].get("type") != "string":
+                raise ContractViolation("transferable context output must be a string")
         elif normalized_kind == "template":
             if normalized_agent is not None or set(normalized_config) != {"template"}:
                 raise ContractViolation("template Action config is invalid")
@@ -1120,6 +1437,21 @@ class ControlPlane:
             nodes=nodes,
             routes=routes,
         )
+        prior_fan_outs = {
+            node["id"]: {member["id"] for member in node["members"]}
+            for node in current["version"]["nodes"]
+            if node["type"] == "fan_out"
+        }
+        for node in normalized_nodes:
+            if node["type"] != "fan_out" or node["id"] not in prior_fan_outs:
+                continue
+            member_ids = {member["id"] for member in node["members"]}
+            if member_ids != prior_fan_outs[node["id"]]:
+                raise ContractViolation(
+                    f"Flow fan-out {node['id']} member IDs are immutable after publication; "
+                    "they are keys in downstream schemas. Replace pinned targets or publish "
+                    "a new fan-out and compatible downstream Action contracts."
+                )
         contracts: dict[str, dict[str, Any]] = {}
         for node in normalized_nodes:
             contract = self._studio_node_contract(workspace_id, node)

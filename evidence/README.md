@@ -5,9 +5,10 @@ Flows, version-pinned Agent resources, webhook activation, executable Runs,
 Human approval, linked reruns, evidence-bound completion, dead-end ratification,
 controlled model comparison, integrated bounded maintenance, and evidence-bound
 Skill distillation, citation-first SmartRead, concurrent BoardRooms, and
-governed Memory. Superseded
-Recorder artifacts are removed from the active tree and remain recoverable in
-Git history.
+governed Memory. It also proves the Flow-native knowledge path that pins an
+immutable read, recalls active Memory, combines both citation envelopes, and
+passes them into a nested BoardRoom. Superseded Recorder artifacts are removed
+from the active tree and remain recoverable in Git history.
 
 ## Deterministic full-stack browser proof
 
@@ -43,6 +44,7 @@ Expected screenshots:
 - `browser/21-boardroom-evidence.png`
 - `browser/22-memory-recall.png`
 - `browser/23-boardroom-flow-editor.png`
+- `browser/24-context-flow-draft.png`
 
 ## Public HTTPS + real-model proof
 
@@ -77,8 +79,9 @@ The committed proof shows:
   three challenges, so code records 0 affirmative / 3 dissenting and selects the
   review route without manufacturing quorum; the editor remains downstream of
   the barrier;
-- the generated BoardRoom opens in the full Flow editor, publishes a member-ID
-  successor as v2, and leaves the completed Run and its member Steps pinned to v1;
+- the generated BoardRoom opens in the full Flow editor, publishes a quorum
+  successor as v2, keeps published member IDs stable as downstream schema keys,
+  and leaves the completed Run and its member Steps pinned to v1;
 - a completed ledger-verified Run becomes a quarantined, qualified,
   exact-fingerprint Human-promoted Memory and is recalled with provenance.
 
@@ -108,6 +111,11 @@ Screenshots:
 - [`live/21-boardroom-evidence.png`](live/21-boardroom-evidence.png)
 - [`live/22-memory-recall.png`](live/22-memory-recall.png)
 - [`live/23-boardroom-flow-editor.png`](live/23-boardroom-flow-editor.png)
+
+The current deterministic browser proof additionally covers the composed
+four-node cited-context Flow. Refresh the live report and add
+`live/24-context-flow-draft.png` only after the new release is deployed and the
+same real-provider journey has passed.
 
 ## Maximum-graph release-host proof
 

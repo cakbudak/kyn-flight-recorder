@@ -7,6 +7,7 @@ import {
   clone,
   parseJson,
   shortId,
+  smartReadPreset,
   slugDraft,
   slugify,
   titleCase
@@ -130,6 +131,18 @@ function ActionEditor({ snapshot, resource, mutate, busy, onSaved }) {
     const next = ACTION_PRESETS[kind] ?? ACTION_PRESETS.template;
     setForm((state) => ({ ...state, kind, description: next.description, input: JSON.stringify(next.input_schema, null, 2), output: JSON.stringify(next.output_schema, null, 2), config: JSON.stringify(next.config, null, 2), outcomes: clone(next.outcomes), agentVersionId: kind === "ai" ? (state.agentVersionId || snapshot.agents[0]?.version.id || "") : "" }));
   };
+  const applySmartReadMode = (mode) => {
+    const next = smartReadPreset(mode);
+    setForm((state) => ({
+      ...state,
+      description: next.description,
+      input: JSON.stringify(next.input_schema, null, 2),
+      output: JSON.stringify(next.output_schema, null, 2),
+      config: JSON.stringify(next.config, null, 2),
+      outcomes: clone(next.outcomes),
+      agentVersionId: ""
+    }));
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -159,6 +172,13 @@ function ActionEditor({ snapshot, resource, mutate, busy, onSaved }) {
   };
 
   const selectedAgent = snapshot.agents.find((agent) => agent.version.id === form.agentVersionId);
+  let smartReadMode = "glance";
+  try {
+    smartReadMode = JSON.parse(form.config).mode ?? "glance";
+  } catch {
+    // The JSON editor owns validation. Keep the structured selector stable
+    // while an operator is in the middle of repairing raw config text.
+  }
   return (
     <form className="definition-editor" onSubmit={submit}>
       <EditorHeader icon="action" title={form.name} subtitle={`${titleCase(form.kind)} Action`} version={resource?.current_version} fingerprint={current?.fingerprint}><Button tone="primary" icon="save" type="submit" disabled={busy}>Publish {resource ? "successor" : "v1"}</Button></EditorHeader>
@@ -170,7 +190,7 @@ function ActionEditor({ snapshot, resource, mutate, busy, onSaved }) {
           <section className="form-section"><div className="form-section-title"><span>01</span><div><h3>Identity and purpose</h3><p>Stable resource identity; revisions append immutable execution versions.</p></div></div><div className="field-grid two"><Field label="Name" required><input required value={form.name} onChange={(event) => { patch("name", event.target.value); if (!resource) patch("slug", slugify(event.target.value)); }} /></Field><Field label="Slug" hint={resource ? "Immutable after v1" : "Stable lowercase identifier"}><input required disabled={Boolean(resource)} value={form.slug} onChange={(event) => patch("slug", slugDraft(event.target.value))} onBlur={(event) => patch("slug", slugify(event.target.value))} /></Field></div><Field label="Description" required><textarea required rows="3" value={form.description} onChange={(event) => patch("description", event.target.value)} /></Field><Field label="Executor kind"><select value={form.kind} onChange={(event) => applyKind(event.target.value)}>{Object.entries(ACTION_PRESETS).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}{form.kind === "sandbox" ? <option value="sandbox">Sandbox (legacy seed)</option> : null}</select></Field></section>
           <section className="form-section"><div className="form-section-title"><span>02</span><div><h3>Typed boundary</h3><p>Both sides are validated on every invocation, including Agent-requested calls.</p></div></div><div className="json-grid"><JsonField label="Input schema" value={form.input} onChange={(value) => patch("input", value)} rows={15} hint="Strict JSON Schema object" /><JsonField label="Output schema" value={form.output} onChange={(value) => patch("output", value)} rows={15} hint="Strict JSON Schema object" /></div></section>
         </> : null}
-        {tab === "execution" ? <section className="form-section"><div className="form-section-title"><span>03</span><div><h3>{form.kind === "ai" ? "AI stack and model policy" : "Bounded executor configuration"}</h3><p>Database config selects one code-owned executor. It can never register server code.</p></div></div>{form.kind === "ai" ? <><Field label="Pinned Agent version" hint="The Agent itself pins its Prompt and Skills."><select value={form.agentVersionId} onChange={(event) => patch("agentVersionId", event.target.value)}>{snapshot.agents.map((agent) => <option key={agent.version.id} value={agent.version.id}>{agent.name} · {agent.version.model} · v{agent.version.version}</option>)}</select></Field>{selectedAgent ? <AgentStackCard snapshot={snapshot} agent={selectedAgent} /> : <EmptyState icon="agent" title="Create an Agent first" description="An AI Action cannot run without an immutable Agent pin." />}</> : null}<JsonField label="Executor config" value={form.config} onChange={(value) => patch("config", value)} rows={16} hint="Allowlisted shape, validated by the control plane" /></section> : null}
+        {tab === "execution" ? <section className="form-section"><div className="form-section-title"><span>03</span><div><h3>{form.kind === "ai" ? "AI stack and model policy" : form.kind === "smart_read" ? "Pinned read policy" : "Bounded executor configuration"}</h3><p>Database config selects one code-owned executor. It can never register server code.</p></div></div>{form.kind === "ai" ? <><Field label="Pinned Agent version" hint="The Agent itself pins its Prompt and Skills."><select value={form.agentVersionId} onChange={(event) => patch("agentVersionId", event.target.value)}>{snapshot.agents.map((agent) => <option key={agent.version.id} value={agent.version.id}>{agent.name} · {agent.version.model} · v{agent.version.version}</option>)}</select></Field>{selectedAgent ? <AgentStackCard snapshot={snapshot} agent={selectedAgent} /> : <EmptyState icon="agent" title="Create an Agent first" description="An AI Action cannot run without an immutable Agent pin." />}</> : null}{form.kind === "smart_read" ? <><Field label="SmartRead strategy" hint="Changing strategy atomically updates the exact input and output contracts."><select value={smartReadMode} onChange={(event) => applySmartReadMode(event.target.value)}><option value="glance">Glance · opening + headings</option><option value="outline">Outline · structure only</option><option value="focus">Focus · exact line window</option><option value="grep">Grep · literal matches</option><option value="full">Full · bounded whole source</option></select></Field><div className="context-action-note"><Icon name="context" size={16} /><p><strong>Flow-native cited context</strong><span>The node input chooses the immutable source version and any read bounds. Its <code>context</code> output is ready to map into an Agent or nested BoardRoom Flow.</span></p></div></> : null}<JsonField label="Executor config" value={form.config} onChange={(value) => patch("config", value)} rows={16} hint="Allowlisted shape, validated by the control plane" /></section> : null}
         {tab === "outputs" ? <section className="form-section"><div className="form-section-title"><span>04</span><div><h3>Named outcomes</h3><p>Each outcome becomes an independent source port on the Flow canvas. Error is mandatory.</p></div></div><OutcomeForm outcomes={form.outcomes} onChange={(value) => patch("outcomes", value)} /><div className="port-preview">{form.outcomes.map((outcome) => <span key={outcome.id} className={`tone-${outcome.tone}`}><i />{outcome.label}<small>{outcome.id}</small></span>)}</div></section> : null}
         {tab === "versions" ? <VersionHistory resource={resource} kind="Action" render={(version) => `${titleCase(version.kind)} · ${version.outcomes.length} outputs · ${version.effect_level}`} /> : null}
       </div>

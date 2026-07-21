@@ -87,7 +87,9 @@ def citation_schema() -> dict[str, object]:
     }
 
 
-def smart_read_output_schema(*, headings: bool = False) -> dict[str, object]:
+def smart_read_output_schema(
+    *, headings: bool = False, transferable: bool = True
+) -> dict[str, object]:
     source_properties = {
         "id": string_property(),
         "version_id": string_property(),
@@ -123,6 +125,8 @@ def smart_read_output_schema(*, headings: bool = False) -> dict[str, object]:
         },
         "result_fingerprint": string_property(),
     }
+    if transferable:
+        properties["context"] = string_property(maximum=12_000)
     if headings:
         properties["headings"] = {
             "type": "array",
@@ -332,7 +336,31 @@ class ContextLayerContractTest(unittest.TestCase):
         self.assertEqual(run["steps"][0]["target_version_id"], action["version"]["id"])
         self.assertEqual(len(run["action_receipts"]), 1)
         self.assertEqual(run["action_receipts"][0]["outcome"], "succeeded")
+        self.assertIn("[launch-brief.md:L1-L", run["output"]["context"])
+        self.assertIn("Every write", run["output"]["context"])
         self.assertTrue(verify_event_chain(run["events"]))
+
+    def test_legacy_smart_read_contract_without_transfer_field_still_publishes(self) -> None:
+        action = self.plane.create_action(
+            self.workspace_id,
+            name="Legacy SmartRead glance",
+            slug="legacy-smartread-glance",
+            description="Preserves the pre-transfer structured result contract.",
+            kind="smart_read",
+            input_schema={
+                "type": "object",
+                "properties": {"source_version_id": string_property()},
+                "required": ["source_version_id"],
+                "additionalProperties": False,
+            },
+            output_schema=smart_read_output_schema(
+                headings=True, transferable=False
+            ),
+            outcomes=SUCCESS_ERROR,
+            config={"mode": "glance"},
+            agent_version_id=None,
+        )
+        self.assertNotIn("context", action["version"]["output_schema"]["properties"])
 
     def test_memory_is_quarantined_qualified_promoted_recalled_and_retired(self) -> None:
         run = self._completed_run()

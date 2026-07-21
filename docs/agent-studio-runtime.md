@@ -143,9 +143,32 @@ SmartRead declares intent before volume:
 - `full`: the whole source only below the configured 96 KiB bound.
 
 Deterministic Knowledge search ranks literal term coverage over current admitted
-passages. SmartRead, search, and Memory recall also exist as ordinary Actions and
-therefore enter model work only through exact Skill grants and the normal receipt
-path.
+passages. SmartRead, search, and Memory recall also exist as ordinary Actions.
+Their strict results may expose a bounded `context` envelope that retains exact
+source, fingerprint, line, candidate, and source-Run provenance for downstream
+Flow mapping; older Action versions without that field remain valid. A seeded
+deterministic handoff Action combines the current-source and active-Memory
+envelopes without inference.
+
+The Context workbench can turn one cited SmartRead result into an ordinary
+editable four-node draft:
+
+```text
+SmartRead (exact source/read policy)
+  → governed Memory recall (active versions only)
+  → deterministic cited-context handoff
+  → published BoardRoom Flow
+```
+
+The draft is not auto-published and every pin, mapping, route, and node remains
+visible in Flow Studio. A Run before promotion may recall no Memory. After a
+completed, ledger-verified source Run is qualified and Human-promoted through
+the normal Memory lifecycle, the same pinned Flow automatically carries the
+matching Memory and its provenance into the next Run. Same-Run Memory writing is
+deliberately impossible: a candidate requires terminal source evidence first.
+
+Context Actions may also enter model work through exact Skill grants and the
+normal receipt path.
 
 ## Parallel fan-out and BoardRooms
 

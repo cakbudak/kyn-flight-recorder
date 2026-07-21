@@ -713,6 +713,25 @@ class BoardRoomProductContractTest(unittest.TestCase):
         self.assertNotIn("'verdict':", editor_prompt)
         self.assertTrue(verify_event_chain(run["events"]))
 
+    def test_published_member_ids_are_stable_downstream_schema_keys(self) -> None:
+        room = self._room(slug="stable-member-council")
+        flow = room["flow"]
+        nodes = json.loads(json.dumps(flow["version"]["nodes"]))
+        nodes[0]["members"][1]["id"] = "risk-review"
+
+        with self.assertRaisesRegex(ContractViolation, "member IDs are immutable"):
+            self.plane.revise_studio_flow(
+                self.workspace_id,
+                flow["id"],
+                expected_revision=flow["revision"],
+                input_schema=flow["version"]["input_schema"],
+                output_schema=flow["version"]["output_schema"],
+                outcomes=flow["version"]["outcomes"],
+                start_node_id=flow["version"]["start_node_id"],
+                nodes=nodes,
+                routes=flow["version"]["routes"],
+            )
+
     def test_human_gate_precedes_a_bounded_write_and_rejection_has_no_effect(self) -> None:
         room = self._room(
             slug="governed-launch-council",

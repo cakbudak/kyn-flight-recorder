@@ -45,6 +45,7 @@ export default function App() {
   const [focusFlowId, setFocusFlowId] = useState(null);
   const [comparisonFlowId, setComparisonFlowId] = useState(null);
   const [boardroomContext, setBoardroomContext] = useState("");
+  const [contextComposition, setContextComposition] = useState(null);
 
   const setView = useCallback((next) => {
     setViewState(next);
@@ -130,6 +131,11 @@ export default function App() {
     setView("boardrooms");
   }, [setView]);
 
+  const composeContextFlow = useCallback((composition) => {
+    setContextComposition(composition);
+    setView("studio");
+  }, [setView]);
+
   const onKeyChanged = useCallback(() => setKeyRevision((value) => value + 1), []);
   const keyConfigured = useMemo(() => Boolean(browserKey()), [keyRevision]);
 
@@ -150,9 +156,9 @@ export default function App() {
 
   const shared = { snapshot, refresh, mutate, busy, setView, focusRun, startComparison, openFlow };
   let content;
-  if (view === "studio") content = <FlowStudio {...shared} focusFlowId={focusFlowId} onFocusFlowHandled={() => setFocusFlowId(null)} />;
+  if (view === "studio") content = <FlowStudio {...shared} focusFlowId={focusFlowId} onFocusFlowHandled={() => setFocusFlowId(null)} contextComposition={contextComposition} onContextCompositionHandled={() => setContextComposition(null)} />;
   else if (view === "boardrooms") content = <BoardRooms {...shared} initialContext={boardroomContext} onContextConsumed={() => setBoardroomContext("")} />;
-  else if (view === "context") content = <ContextWorkbench {...shared} onUseInBoardRoom={useContextInBoardRoom} />;
+  else if (view === "context") content = <ContextWorkbench {...shared} onUseInBoardRoom={useContextInBoardRoom} onComposeFlow={composeContextFlow} />;
   else if (view === "comparisons") content = (
     <Comparisons
       {...shared}

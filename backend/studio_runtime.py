@@ -80,6 +80,12 @@ MAX_CITED_DEAD_ENDS = 3
 # provider-specific rejection.
 MAX_ADJUDICATION_QUESTION_BYTES = 96 * 1024
 MAX_ADJUDICATION_REQUEST_BYTES = 240 * 1024
+# Context read Actions expose their structured result and, when their immutable
+# output contract asks for it, one directly mappable cited string. Twelve
+# thousand characters matches the BoardRoom input boundary: a Flow may pass the
+# envelope straight into a council without a hidden truncation step. Wider reads
+# fail closed and tell the author to choose a narrower SmartRead policy.
+MAX_TRANSFER_CONTEXT_CHARS = 12_000
 # `candidate_json` / `evidence_json` keep existing forensic Agents usable as
 # independent judges; the two explicit names are preferred for new judge Prompts.
 JUDGE_PROMPT_VARIABLES = frozenset(
@@ -110,6 +116,50 @@ class GoalJudgement:
     claimed: Mapping[str, tuple[str, ...]]
     reasons: Mapping[str, str]
     marked_unevidenced: Mapping[str, bool]
+
+
+def _bounded_context_envelope(parts: Sequence[str], *, operation: str) -> str:
+    envelope = "\n\n".join(part for part in parts if part)
+    if len(envelope) > MAX_TRANSFER_CONTEXT_CHARS:
+        raise ContractViolation(
+            f"{operation} transferable context exceeds {MAX_TRANSFER_CONTEXT_CHARS:,} "
+            "characters; choose a narrower read or fewer results"
+        )
+    return envelope
+
+
+def _smart_read_envelope(result: Mapping[str, Any]) -> str:
+    records = [*(result.get("headings") or []), *(result.get("passages") or [])]
+    return _bounded_context_envelope(
+        [
+            f"[{record['citation']['label']} · "
+            f"{str(record['citation']['fingerprint'])[:12]}]\n{record['text']}"
+            for record in records
+        ],
+        operation="SmartRead",
+    )
+
+
+def _knowledge_search_envelope(result: Mapping[str, Any]) -> str:
+    return _bounded_context_envelope(
+        [
+            f"[{record['citation']['label']} · "
+            f"{str(record['citation']['fingerprint'])[:12]}]\n{record['text']}"
+            for record in result.get("results", [])
+        ],
+        operation="Knowledge search",
+    )
+
+
+def _memory_recall_envelope(result: Mapping[str, Any]) -> str:
+    return _bounded_context_envelope(
+        [
+            f"[Memory · {record['title']} · {str(record['fingerprint'])[:12]} · "
+            f"source Run {record['provenance']['source_run_id']}]\n{record['content']}"
+            for record in result.get("results", [])
+        ],
+        operation="Memory recall",
+    )
 
 
 def _safe_provider_detail(error: ProviderFailure) -> dict[str, Any]:
@@ -2312,6 +2362,8 @@ class StudioRuntime:
                     validated_input["source_version_id"],
                     **options,
                 )
+                if "context" in action["output_schema"]["properties"]:
+                    output = {**output, "context": _smart_read_envelope(output)}
                 result = ActionResult(output=output, route_outcome="success")
             elif kind == "knowledge_search":
                 if self.context is None:
@@ -2321,6 +2373,8 @@ class StudioRuntime:
                     validated_input["query"],
                     max_results=validated_input["max_results"],
                 )
+                if "context" in action["output_schema"]["properties"]:
+                    output = {**output, "context": _knowledge_search_envelope(output)}
                 result = ActionResult(output=output, route_outcome="success")
             elif kind == "memory_recall":
                 if self.context is None:
@@ -2330,6 +2384,8 @@ class StudioRuntime:
                     validated_input["query"],
                     max_results=validated_input["max_results"],
                 )
+                if "context" in action["output_schema"]["properties"]:
+                    output = {**output, "context": _memory_recall_envelope(output)}
                 result = ActionResult(output=output, route_outcome="success")
             elif kind == APPROVAL_ACTION_KIND:
                 template = action["config"]["message_template"]

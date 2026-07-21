@@ -42,6 +42,7 @@ export const APPROVAL_DEMO_BRIEF = [
 ].join(" ");
 
 const CONTEXT_STRING = { type: "string", maxLength: 20000 };
+const TRANSFER_CONTEXT_STRING = { type: "string", maxLength: 12000 };
 const CONTEXT_CITATION_SCHEMA = {
   type: "object",
   properties: {
@@ -86,6 +87,56 @@ const SEARCH_INPUT_SCHEMA = {
   required: ["query", "max_results"],
   additionalProperties: false
 };
+
+export function smartReadPreset(mode = "glance") {
+  const inputProperties = mode === "focus"
+    ? {
+        source_version_id: { type: "string" },
+        line_start: { type: "integer", minimum: 1 },
+        line_end: { type: "integer", minimum: 1 }
+      }
+    : mode === "grep"
+      ? {
+          source_version_id: { type: "string" },
+          query: { type: "string", minLength: 1, maxLength: 200 },
+          max_results: { type: "integer", minimum: 1, maximum: 30 }
+        }
+      : { source_version_id: { type: "string" } };
+  const outputProperties = {
+    mode: { type: "string" },
+    source: SMART_READ_SOURCE_SCHEMA,
+    passages: { type: "array", items: CONTEXT_PASSAGE_SCHEMA, maxItems: 100 },
+    result_fingerprint: { type: "string" },
+    context: TRANSFER_CONTEXT_STRING
+  };
+  if (mode === "glance") outputProperties.headings = { type: "array", items: CONTEXT_PASSAGE_SCHEMA, maxItems: 100 };
+  if (mode === "grep") outputProperties.query = { type: "string" };
+  const detail = {
+    glance: "Read a bounded source opening and headings.",
+    outline: "Read only the source structure before detail.",
+    focus: "Read one exact bounded line range.",
+    grep: "Read literal matches with a bounded context window.",
+    full: "Read the complete source only inside the runtime's size bound."
+  }[mode] ?? "Read immutable source evidence with exact citations.";
+  return {
+    label: "SmartRead",
+    description: `${detail} Emit structured citations and one directly mappable context envelope.`,
+    input_schema: {
+      type: "object",
+      properties: inputProperties,
+      required: Object.keys(inputProperties),
+      additionalProperties: false
+    },
+    output_schema: {
+      type: "object",
+      properties: outputProperties,
+      required: Object.keys(outputProperties),
+      additionalProperties: false
+    },
+    outcomes: SUCCESS_ERROR,
+    config: { mode }
+  };
+}
 
 export const ACTION_PRESETS = {
   template: {
@@ -184,25 +235,7 @@ export const ACTION_PRESETS = {
     outcomes: SUCCESS_ERROR,
     config: { operation: "append_record", collection: "records", write_enabled: true }
   },
-  smart_read: {
-    label: "SmartRead · glance",
-    description: "Read a bounded source opening and headings with immutable line citations.",
-    input_schema: { type: "object", properties: { source_version_id: { type: "string" } }, required: ["source_version_id"], additionalProperties: false },
-    output_schema: {
-      type: "object",
-      properties: {
-        mode: { type: "string" },
-        source: SMART_READ_SOURCE_SCHEMA,
-        passages: { type: "array", items: CONTEXT_PASSAGE_SCHEMA, maxItems: 100 },
-        headings: { type: "array", items: CONTEXT_PASSAGE_SCHEMA, maxItems: 100 },
-        result_fingerprint: { type: "string" }
-      },
-      required: ["mode", "source", "passages", "headings", "result_fingerprint"],
-      additionalProperties: false
-    },
-    outcomes: SUCCESS_ERROR,
-    config: { mode: "glance" }
-  },
+  smart_read: smartReadPreset("glance"),
   knowledge_search: {
     label: "Knowledge search",
     description: "Rank cited passages across current source versions without model inference.",
@@ -213,9 +246,10 @@ export const ACTION_PRESETS = {
         query: { type: "string" },
         terms: { type: "array", items: { type: "string" } },
         results: { type: "array", items: { type: "object", properties: { passage_id: { type: "string" }, text: CONTEXT_STRING, score: { type: "integer" }, matched_terms: { type: "array", items: { type: "string" } }, citation: CONTEXT_CITATION_SCHEMA, passage_fingerprint: { type: "string" } }, required: ["passage_id", "text", "score", "matched_terms", "citation", "passage_fingerprint"], additionalProperties: false } },
-        result_fingerprint: { type: "string" }
+        result_fingerprint: { type: "string" },
+        context: TRANSFER_CONTEXT_STRING
       },
-      required: ["query", "terms", "results", "result_fingerprint"],
+      required: ["query", "terms", "results", "result_fingerprint", "context"],
       additionalProperties: false
     },
     outcomes: SUCCESS_ERROR,
@@ -231,9 +265,10 @@ export const ACTION_PRESETS = {
         query: { type: "string" },
         terms: { type: "array", items: { type: "string" } },
         results: { type: "array", items: { type: "object", properties: { memory_id: { type: "string" }, memory_version_id: { type: "string" }, title: CONTEXT_STRING, content: CONTEXT_STRING, tags: { type: "array", items: { type: "string" } }, score: { type: "integer" }, matched_terms: { type: "array", items: { type: "string" } }, fingerprint: { type: "string" }, provenance: { type: "object", properties: { source_candidate_id: { type: "string" }, source_run_id: { type: "string" }, evidence_event_ids: { type: "array", items: { type: "string" } } }, required: ["source_candidate_id", "source_run_id", "evidence_event_ids"], additionalProperties: false } }, required: ["memory_id", "memory_version_id", "title", "content", "tags", "score", "matched_terms", "fingerprint", "provenance"], additionalProperties: false } },
-        result_fingerprint: { type: "string" }
+        result_fingerprint: { type: "string" },
+        context: TRANSFER_CONTEXT_STRING
       },
-      required: ["query", "terms", "results", "result_fingerprint"],
+      required: ["query", "terms", "results", "result_fingerprint", "context"],
       additionalProperties: false
     },
     outcomes: SUCCESS_ERROR,

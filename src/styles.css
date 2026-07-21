@@ -521,6 +521,8 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .symbol-approval { color: var(--tone-warning-solid); background: var(--tone-warning-bg); }
 .symbol-data_store, .symbol-sandbox, .avatar-data_store { color: var(--tone-danger-solid); background: var(--tone-danger-bg); }
 .symbol-subflow, .symbol-flow { color: var(--tone-blue-solid); background: color-mix(in srgb, var(--tone-blue-tint) calc(7% * var(--tint-scale)), transparent); }
+.symbol-smart_read, .symbol-knowledge_search { color: var(--tone-cyan-solid); background: var(--tone-cyan-bg); }
+.symbol-memory_recall { color: var(--tone-blue-solid); background: var(--tone-blue-bg); }
 .symbol-fan_out, .avatar-boardroom { color: var(--tone-ai-solid); background: linear-gradient(145deg, var(--tone-ai-bg), var(--tone-blue-bg)); }
 .avatar-context { color: var(--tone-cyan-solid); background: var(--tone-cyan-bg); }
 .avatar-memory { color: var(--tone-success-text); background: var(--tone-success-bg); }
@@ -1589,6 +1591,7 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .smart-read-empty p { max-width: 560px; margin: 4px 0 0; font-size: 12px; line-height: 1.55; }
 .read-result { padding: 20px 22px 24px; }
 .read-result > header { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
+.read-result-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 .read-result h3 { margin: 2px 0 3px; font-size: 17px; }
 .read-result header p:not(.panel-kicker) { margin: 0; color: var(--muted); font-size: 11px; }
 .context-page .citation-list { display: grid; gap: var(--space-3); margin-top: 0; }
@@ -1612,6 +1615,19 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 .file-drop small { color: var(--muted); font-size: 11px; }
 .file-drop input { position: absolute; inset: 0; height: 100%; opacity: 0; cursor: pointer; }
 .source-content-input { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+.context-flow-form { gap: var(--space-4); }
+.context-flow-preview { display: grid; grid-template-columns: repeat(7, auto); align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--tone-cyan-border); border-radius: var(--radius); background: linear-gradient(120deg, var(--tone-cyan-bg), var(--tone-blue-bg)); }
+.context-flow-preview > span { display: grid; grid-template-columns: auto auto; align-items: center; gap: 6px; color: var(--text); font-size: 11px; font-weight: 700; }
+.context-flow-preview > span small { grid-column: 2; color: var(--muted); font-size: 9px; font-weight: 500; }
+.context-flow-preview > i { color: var(--sequence-arrow); font-style: normal; }
+.context-flow-pins { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); background: var(--surface-2); font-size: 10px; }
+.context-flow-pins > span { display: inline-flex; align-items: center; gap: 5px; }
+.context-flow-pins code { margin-left: auto; }
+.inline-warning, .context-action-note { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--tone-warning-border); border-radius: var(--radius-sm); color: var(--tone-warning-text); background: var(--tone-warning-bg); }
+.inline-warning p, .context-action-note p { display: grid; gap: 3px; margin: 0; }
+.inline-warning strong, .context-action-note strong { color: var(--text); font-size: 11px; }
+.inline-warning span, .context-action-note span { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.context-action-note { border-color: var(--tone-cyan-border); color: var(--tone-cyan-text); background: var(--tone-cyan-bg); }
 
 .memory-workspace { display: grid; gap: 22px; margin: 22px 28px 0; }
 .memory-proposal-panel, .memory-recall-panel { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow); }

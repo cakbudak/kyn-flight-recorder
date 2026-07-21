@@ -26,8 +26,9 @@ reports are superseded and are not accepted as evidence for this product surface
 | comparison | expected siblings are manifested pre-I/O; model alias, missing evidence, or broken ledger makes the result unusable | PASS |
 | repair | failed Run proves owned diagnosis → bounded successor → human dual-revision fence → linked changed outcome | PASS |
 | SmartRead | immutable admitted source → intent-bounded read → exact version/fingerprint/line citation; no path fetch or model summary | PASS |
+| Flow-native context | cited SmartRead result → complete editable four-node draft → strict source/Memory envelopes → nested BoardRoom Run; promoted Memory enters the next unchanged Flow Run automatically | PASS |
 | parallel BoardRoom | three independent member calls → separately persisted child Steps → configured 2/3 barrier computes the actual verdict distribution and preserves dissent → one pinned editor | PASS |
-| BoardRoom editing | generated room opens as an ordinary full Flow; fan-out composition publishes v2 while its completed Run remains pinned to v1 | PASS |
+| BoardRoom editing | generated room opens as an ordinary full Flow; pinned targets/quorum/routes publish v2 while prior Runs retain v1 and published member IDs remain stable downstream schema keys | PASS |
 | governed Memory | completed verified Run → cited quarantine → deterministic qualification → exact-fingerprint human promotion → provenance-bearing recall | PASS |
 | provider failure | failed OpenAI attempt is append-only evidence with safe code/parameter/request ID, never raw provider text | PASS |
 | database | flat explicit product tables, immutable version/evidence triggers, legal transition and revision fences | PASS |

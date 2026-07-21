@@ -12,7 +12,7 @@ const READ_MODES = [
   { id: "full", label: "Full", detail: "Whole source up to 96 KiB" }
 ];
 
-export default function ContextWorkbench({ snapshot, mutate, busy, onUseInBoardRoom, focusRun }) {
+export default function ContextWorkbench({ snapshot, mutate, busy, onUseInBoardRoom, onComposeFlow, focusRun }) {
   const studio = snapshot.studio;
   const sources = studio.knowledge_sources ?? [];
   const candidates = studio.memory_candidates ?? [];
@@ -20,6 +20,7 @@ export default function ContextWorkbench({ snapshot, mutate, busy, onUseInBoardR
   const [tab, setTab] = useState("read");
   const [selectedSourceId, setSelectedSourceId] = useState(sources[0]?.id ?? null);
   const [sourceDialog, setSourceDialog] = useState(null);
+  const [composeResult, setComposeResult] = useState(null);
 
   useEffect(() => {
     if (sources.some((source) => source.id === selectedSourceId)) return;
@@ -63,6 +64,7 @@ export default function ContextWorkbench({ snapshot, mutate, busy, onUseInBoardR
         mutate={mutate}
         busy={busy}
         onUseInBoardRoom={onUseInBoardRoom}
+        onComposeFlowResult={setComposeResult}
       /> : null}
       {tab === "search" ? <KnowledgeSearch mutate={mutate} onUseInBoardRoom={onUseInBoardRoom} /> : null}
       {tab === "memory" ? <MemoryWorkspace snapshot={snapshot} candidates={candidates} memories={memories} mutate={mutate} busy={busy} focusRun={focusRun} /> : null}
@@ -74,11 +76,17 @@ export default function ContextWorkbench({ snapshot, mutate, busy, onUseInBoardR
         onClose={() => setSourceDialog(null)}
         onSaved={(source) => { if (source) setSelectedSourceId(source.id); setSourceDialog(null); }}
       /> : null}
+      {composeResult ? <ContextFlowModal
+        result={composeResult}
+        snapshot={snapshot}
+        onClose={() => setComposeResult(null)}
+        onCompose={onComposeFlow}
+      /> : null}
     </section>
   );
 }
 
-function SmartReadWorkspace({ sources, selectedSource, setSelectedSourceId, setSourceDialog, mutate, busy, onUseInBoardRoom }) {
+function SmartReadWorkspace({ sources, selectedSource, setSelectedSourceId, setSourceDialog, mutate, busy, onUseInBoardRoom, onComposeFlowResult }) {
   const [versionId, setVersionId] = useState(selectedSource?.version.id ?? "");
   const [mode, setMode] = useState("glance");
   const [query, setQuery] = useState("");
@@ -103,7 +111,7 @@ function SmartReadWorkspace({ sources, selectedSource, setSelectedSourceId, setS
     if (mode === "grep") Object.assign(body, { query, max_results: 12 });
     if (mode === "focus") Object.assign(body, { line_start: Number(lineStart), line_end: Number(lineEnd) });
     const next = await mutate(() => api("/api/v1/studio/knowledge/smart-read", { method: "POST", body }), { success: "Cited read complete", refreshAfter: false });
-    if (next) setResult(next);
+    if (next) setResult({ ...next, read_policy: body });
   };
 
   return <div className="context-workbench">
@@ -128,19 +136,85 @@ function SmartReadWorkspace({ sources, selectedSource, setSelectedSourceId, setS
           {mode === "focus" ? <div className="field-grid two"><Field label="First line"><input type="number" min="1" max={selectedVersion?.line_count ?? 1} value={lineStart} onChange={(event) => { const next = Math.max(1, Math.min(selectedVersion?.line_count ?? 1, Number(event.target.value) || 1)); setLineStart(next); setLineEnd((current) => Math.max(next, Math.min(Number(current) || next, next + 159, selectedVersion?.line_count ?? next))); }} /></Field><Field label="Last line" hint="Maximum 160 lines"><input type="number" min={lineStart} max={Math.min(selectedVersion?.line_count ?? 1, Number(lineStart) + 159)} value={lineEnd} onChange={(event) => setLineEnd(event.target.value)} /></Field></div> : null}
           <div className="context-form-actions"><span><Icon name="lock" size={14} />No model call. No summarization. Exact source text.</span><Button tone="primary" icon="read" type="submit" disabled={busy}>Read cited context</Button></div>
         </form>
-        {result ? <ReadResult result={result} onUseInBoardRoom={onUseInBoardRoom} /> : <div className="smart-read-empty"><Icon name="read" size={28} /><div><strong>Read with a declared purpose</strong><p>Glance for orientation, outline for structure, grep for literal evidence, focus for an exact window, full only for bounded small sources.</p></div></div>}
+        {result ? <ReadResult result={result} onUseInBoardRoom={onUseInBoardRoom} onComposeFlow={() => onComposeFlowResult(result)} /> : <div className="smart-read-empty"><Icon name="read" size={28} /><div><strong>Read with a declared purpose</strong><p>Glance for orientation, outline for structure, grep for literal evidence, focus for an exact window, full only for bounded small sources.</p></div></div>}
       </>}
     </main>
   </div>;
 }
 
-function ReadResult({ result, onUseInBoardRoom }) {
+function ReadResult({ result, onUseInBoardRoom, onComposeFlow }) {
   const records = [...(result.headings ?? []), ...(result.passages ?? [])];
   const envelope = records.map((item) => `[${item.citation.label} · ${item.citation.fingerprint.slice(0, 12)}]\n${item.text}`).join("\n\n");
   return <section className="read-result" aria-live="polite">
-    <header><div><p className="panel-kicker">Verified result · {result.mode}</p><h3>{result.source.name}</h3><p>{records.length} cited record{records.length === 1 ? "" : "s"} · result <code>{shortId(result.result_fingerprint, 16)}</code></p></div>{records.length ? <Button tone="default" icon="boardroom" onClick={() => onUseInBoardRoom(envelope)}>Take context to BoardRoom</Button> : null}</header>
+    <header><div><p className="panel-kicker">Verified result · {result.mode}</p><h3>{result.source.name}</h3><p>{records.length} cited record{records.length === 1 ? "" : "s"} · result <code>{shortId(result.result_fingerprint, 16)}</code></p></div>{records.length ? <div className="read-result-actions"><Button tone="quiet" icon="boardroom" onClick={() => onUseInBoardRoom(envelope)}>Take context to BoardRoom</Button><Button tone="primary" icon="flow" onClick={onComposeFlow}>Compose cited Flow</Button></div> : null}</header>
     <div className="citation-list">{records.map((item, index) => <CitationCard key={`${item.citation.label}-${index}`} item={item} />)}{!records.length ? <EmptyState icon="search" title="No matching passages" description="The result is still fingerprinted. Change the literal query or inspect the outline." /> : null}</div>
   </section>;
+}
+
+function ContextFlowModal({ result, snapshot, onClose, onCompose }) {
+  const roomFlows = new Map(snapshot.studio.flows.map((flow) => [flow.id, flow]));
+  const rooms = (snapshot.studio.boardrooms ?? []).filter((room) => {
+    const schema = roomFlows.get(room.flow_id)?.version?.input_schema;
+    const properties = schema?.properties ?? {};
+    const required = new Set(schema?.required ?? []);
+    return properties.brief?.type === "string" && properties.context?.type === "string" && required.has("brief") && required.has("context");
+  });
+  const [roomId, setRoomId] = useState(rooms[0]?.flow_id ?? "");
+  const [name, setName] = useState(`${result.source.name} governed decision`);
+  const [recallQuery, setRecallQuery] = useState("bounded canary human approval dissent");
+  const actions = snapshot.studio.actions;
+  const emitsContext = (action) => action?.version?.output_schema?.properties?.context?.type === "string";
+  const smartRead = actions.find((action) => action.version.kind === "smart_read" && action.version.config?.mode === result.mode && emitsContext(action));
+  const memoryRecall = actions.find((action) => action.slug === "governed-memory-recall" && action.version.kind === "memory_recall" && emitsContext(action))
+    ?? actions.find((action) => action.version.kind === "memory_recall" && emitsContext(action));
+  const handoff = actions.find((action) => {
+    const input = action.version.input_schema?.properties ?? {};
+    return action.slug === "cited-context-handoff" && action.version.kind === "template" &&
+      input.knowledge_context?.type === "string" && input.memory_context?.type === "string" &&
+      action.version.output_schema?.properties?.text?.type === "string";
+  });
+  const room = rooms.find((item) => item.flow_id === roomId) ?? null;
+  const missing = [
+    !smartRead ? `SmartRead ${result.mode} Action` : null,
+    !memoryRecall ? "Memory recall Action" : null,
+    !handoff ? "Cited context handoff Action" : null,
+    !room ? "published BoardRoom with brief + context inputs" : null
+  ].filter(Boolean);
+  const submit = (event) => {
+    event.preventDefault();
+    if (missing.length) return;
+    onCompose({
+      name,
+      slug: slugify(name),
+      result,
+      roomFlowId: room.flow_id,
+      smartReadActionVersionId: smartRead.version.id,
+      memoryRecallActionVersionId: memoryRecall.version.id,
+      handoffActionVersionId: handoff.version.id,
+      recallQuery
+    });
+  };
+  return <Modal
+    title="Compose this evidence in Flow Studio"
+    description="Generate an editable draft that pins the immutable source read, recalls only promoted Memory, combines both envelopes, and passes them into one published BoardRoom Flow. Nothing runs or publishes yet."
+    onClose={onClose}
+    width="760px"
+  >
+    <form className="modal-form context-flow-form" onSubmit={submit}>
+      <div className="context-flow-preview" aria-label="Generated context flow">
+        <span><Icon name="read" size={16} />SmartRead <small>{result.mode}</small></span><i>→</i>
+        <span><Icon name="memory" size={16} />Recall <small>active only</small></span><i>→</i>
+        <span><Icon name="context" size={16} />Handoff <small>cited</small></span><i>→</i>
+        <span><Icon name="boardroom" size={16} />BoardRoom <small>Human gate</small></span>
+      </div>
+      <Field label="Flow name" required><input required value={name} onChange={(event) => setName(event.target.value)} /></Field>
+      <Field label="Published BoardRoom" required hint="The nested Flow keeps its own Agents, quorum, editor, routes, and Human approval."><select value={roomId} onChange={(event) => setRoomId(event.target.value)}><option value="">Choose a BoardRoom…</option>{rooms.map((item) => <option key={item.flow_id} value={item.flow_id}>{item.name} · Flow v{item.revision}</option>)}</select></Field>
+      <Field label="Governed Memory recall terms" required hint="The first Run may return no Memory. After promotion, the same pinned Flow automatically carries matching active Memory into the next Run."><input required value={recallQuery} onChange={(event) => setRecallQuery(event.target.value)} /></Field>
+      <div className="context-flow-pins"><span><Icon name="lock" size={14} />{result.source.filename} · source v{result.source.version}</span><span>{result.mode} · {result.passages?.[0]?.citation?.label ?? "cited result"}</span><code>{shortId(result.source.fingerprint, 14)}</code></div>
+      {missing.length ? <div className="inline-warning" role="alert"><Icon name="warning" size={16} /><p><strong>Composition needs workspace primitives</strong><span>Missing: {missing.join(", ")}. A fresh Studio seeds the context Actions; publish a BoardRoom before composing.</span></p></div> : null}
+      <div className="modal-actions"><Button tone="quiet" type="button" onClick={onClose}>Cancel</Button><Button tone="primary" icon="flow" type="submit" disabled={Boolean(missing.length)}>Open editable Flow draft</Button></div>
+    </form>
+  </Modal>;
 }
 
 function CitationCard({ item }) {

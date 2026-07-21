@@ -11,12 +11,14 @@ The public product will demonstrate one coherent, inspectable agentic loop:
 1. a user imports bounded text into a private workspace;
 2. SmartRead turns the pinned document version into cited, line-addressable context;
 3. Knowledge search and human-approved Memory recall make that context available to
-   exactly granted Agents;
-4. a generic Flow fan-out executes independent participants concurrently;
-5. a deterministic barrier computes quorum and preserves dissent;
-6. a pinned editor Agent synthesises only the completed participant records;
-7. an optional human approval gates any write Action;
-8. Steps, receipts, model calls, citations, approvals, and effects remain visible in
+   exactly granted Agents or ordinary downstream Flow mappings;
+4. a deterministic cited-context Action can combine the current immutable source
+   envelope and active promoted Memory before a nested Flow;
+5. a generic Flow fan-out executes independent participants concurrently;
+6. a deterministic barrier computes quorum and preserves dissent;
+7. a pinned editor Agent synthesises only the completed participant records;
+8. an optional human approval gates any write Action;
+9. Steps, receipts, model calls, citations, approvals, and effects remain visible in
    the existing hash-linked Run ledger.
 
 This is a public projection of Kyn.ist's product capability. It deliberately does
@@ -84,6 +86,27 @@ text passage.
 `memory_recall` searches only promoted, active Memories. A result cites both the
 Memory and its source Run/events. Candidates and rejected Memories never enter
 recall.
+
+When their output schema declares it, all three context executors also return a
+bounded `context` string assembled by code from the same cited records. This is
+not a model summary. A seeded deterministic template Action combines current
+Knowledge and promoted-Memory envelopes under separate labels.
+
+From one cited SmartRead result the Context workbench may construct, but never
+auto-publish, this ordinary editable Flow draft:
+
+```text
+SmartRead (pinned source/version/read policy)
+  → active Memory recall
+  → deterministic cited-context handoff
+  → published BoardRoom subflow
+```
+
+The first Run may recall nothing. Once evidence from a completed,
+ledger-verified Run passes the existing quarantine, deterministic qualification,
+and exact-fingerprint Human promotion, the same pinned Flow automatically
+recalls it on its next Run. It cannot write and consume its own candidate inside
+one Run because source completion is a hard Memory admission precondition.
 
 ### 3. Fan-out/barrier Flow node
 
@@ -320,4 +343,3 @@ from imported brief to cited SmartRead, governed Memory, concurrent BoardRoom,
 editor synthesis, human approval, effect, and verified evidence ledger. A separate
 live OpenAI run must show real provider response ids while the stored database and
 logs remain free of the browser key.
-

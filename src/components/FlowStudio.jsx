@@ -76,7 +76,7 @@ export default function FlowStudio(props) {
   return <ReactFlowProvider><FlowStudioInner {...props} /></ReactFlowProvider>;
 }
 
-function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startComparison, focusFlowId, onFocusFlowHandled }) {
+function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startComparison, focusFlowId, onFocusFlowHandled, contextComposition, onContextCompositionHandled }) {
   const graph = useThemeTokens(GRAPH_TOKENS);
   const flows = snapshot.studio.flows;
   const [selectedFlowId, setSelectedFlowId] = useState(flows[0]?.id ?? null);
@@ -91,6 +91,8 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [advisory, setAdvisory] = useState(null);
   const history = useRef({ past: [], future: [] });
+  const fitAfterHydration = useRef(false);
+  const fitAfterHydrationTimer = useRef(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [canvasNodes, setCanvasNodes, onNodesChangeBase] = useNodesState([]);
   const [canvasEdges, setCanvasEdges, onEdgesChangeBase] = useEdgesState([]);
@@ -117,7 +119,14 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
     const hydrated = hydrateNodes(snapshot, draft);
     setCanvasNodes(hydrated);
     setCanvasEdges(hydrateEdges(draft));
-  }, [snapshot, draft.nodes, draft.routes, draft.start_node_id, setCanvasEdges, setCanvasNodes]);
+    if (fitAfterHydration.current) {
+      fitAfterHydration.current = false;
+      window.clearTimeout(fitAfterHydrationTimer.current);
+      fitAfterHydrationTimer.current = window.setTimeout(() => fitGraph(0.14, 420), 220);
+    }
+  }, [snapshot, draft.nodes, draft.routes, draft.start_node_id, fitGraph, setCanvasEdges, setCanvasNodes]);
+
+  useEffect(() => () => window.clearTimeout(fitAfterHydrationTimer.current), []);
 
   useEffect(() => {
     const timer = setTimeout(() => fitGraph(0.2, 220), 180);
@@ -191,6 +200,22 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
     loadFlow(focusFlowId);
     onFocusFlowHandled?.();
   }, [flows, focusFlowId, loadFlow, onFocusFlowHandled]);
+
+  useEffect(() => {
+    if (!contextComposition) return;
+    const composed = contextCompositionDraft(snapshot, contextComposition);
+    fitAfterHydration.current = true;
+    setSelectedFlowId(null);
+    setDraft(composed);
+    setSelectedNodeId(null);
+    setDirty(true);
+    setPaletteSection("context");
+    setPaletteOpen(false);
+    setInspectorOpen(false);
+    setAdvisory(null);
+    history.current = { past: [], future: [] };
+    onContextCompositionHandled?.();
+  }, [contextComposition, fitGraph, onContextCompositionHandled, snapshot]);
 
   const createNew = useCallback(() => {
     setSelectedFlowId(null);
@@ -621,7 +646,99 @@ function flowDraft(flow) {
   };
 }
 
+function contextCompositionDraft(snapshot, composition) {
+  const actionVersion = (versionId) => snapshot.studio.actions.flatMap((action) => action.versions).find((version) => version.id === versionId);
+  const read = actionVersion(composition.smartReadActionVersionId);
+  const recall = actionVersion(composition.memoryRecallActionVersionId);
+  const handoff = actionVersion(composition.handoffActionVersionId);
+  const room = snapshot.studio.flows.find((flow) => flow.id === composition.roomFlowId);
+  if (!read || !recall || !handoff || !room) throw new Error("Context Flow composition references a resource that is no longer current.");
+  const citations = composition.result.passages?.map((passage) => passage.citation) ?? [];
+  const firstLine = citations.length ? Math.min(...citations.map((citation) => citation.line_start)) : 1;
+  const lastLine = citations.length ? Math.max(...citations.map((citation) => citation.line_end)) : firstLine;
+  const readPolicy = composition.result.read_policy ?? {};
+  const readMapping = Object.fromEntries(Object.keys(read.input_schema.properties).map((name) => {
+    if (Object.hasOwn(readPolicy, name)) return [name, { source: "literal", value: readPolicy[name] }];
+    if (name === "source_version_id") return [name, { source: "literal", value: composition.result.source.version_id }];
+    if (name === "line_start") return [name, { source: "literal", value: firstLine }];
+    if (name === "line_end") return [name, { source: "literal", value: lastLine }];
+    if (name === "query") return [name, { source: "literal", value: composition.result.query ?? "" }];
+    if (name === "max_results") return [name, { source: "literal", value: 12 }];
+    return [name, { source: "literal", value: exampleForSchema(read.input_schema.properties[name], name) }];
+  }));
+  const settings = () => ({ max_attempts: 1, backoff_seconds: 0, retry_on: ["provider_failure"], on_error: "fail" });
+  return {
+    id: null,
+    isNew: true,
+    expected_revision: null,
+    version: null,
+    name: composition.name,
+    slug: composition.slug,
+    description: "Pin one immutable SmartRead window, recall only Human-promoted Memory, combine both cited envelopes, and pass them into an independently governed BoardRoom.",
+    input_schema_text: JSON.stringify({
+      type: "object",
+      properties: { brief: { type: "string", minLength: 1, maxLength: 8000 } },
+      required: ["brief"],
+      additionalProperties: false
+    }, null, 2),
+    output_schema_text: JSON.stringify(room.version.output_schema, null, 2),
+    outcomes: clone(room.version.outcomes ?? SUCCESS_ERROR),
+    acceptance_criteria: [],
+    judge_agent_version_id: null,
+    start_node_id: "read-evidence",
+    nodes: [
+      {
+        id: "read-evidence",
+        type: "action",
+        version_id: read.id,
+        input_mapping: readMapping,
+        position: { x: 80, y: 220 },
+        settings: settings()
+      },
+      {
+        id: "recall-memory",
+        type: "action",
+        version_id: recall.id,
+        input_mapping: {
+          query: { source: "literal", value: composition.recallQuery },
+          max_results: { source: "literal", value: 6 }
+        },
+        position: { x: 410, y: 220 },
+        settings: settings()
+      },
+      {
+        id: "handoff-context",
+        type: "action",
+        version_id: handoff.id,
+        input_mapping: {
+          knowledge_context: { source: "step", node_id: "read-evidence", path: "context" },
+          memory_context: { source: "step", node_id: "recall-memory", path: "context" }
+        },
+        position: { x: 740, y: 220 },
+        settings: settings()
+      },
+      {
+        id: "governed-council",
+        type: "flow",
+        version_id: room.version.id,
+        input_mapping: {
+          brief: { source: "input", path: "brief" },
+          context: { source: "step", node_id: "handoff-context", path: "text" }
+        },
+        position: { x: 1_070, y: 220 },
+        settings: settings()
+      }
+    ],
+    routes: [
+      { from: "read-evidence", to: "recall-memory", outcome: "success" },
+      { from: "recall-memory", to: "handoff-context", outcome: "success" },
+      { from: "handoff-context", to: "governed-council", outcome: "success" }
+    ]
+  };
+}
+
 function paletteResources(snapshot, selectedFlowId) {
+  const contextKinds = new Set(["smart_read", "knowledge_search", "memory_recall"]);
   return {
     control: [{
       id: "fanout-v1",
@@ -643,7 +760,11 @@ function paletteResources(snapshot, selectedFlowId) {
         outcomes: FAN_OUT_OUTCOMES
       }
     }],
-    actions: snapshot.studio.actions.map((action) => ({
+    context: snapshot.studio.actions.filter((action) => contextKinds.has(action.version.kind)).map((action) => ({
+      id: action.id, type: "action", slug: action.slug, name: action.name,
+      description: action.description, kind: action.version.kind, version: action.version
+    })),
+    actions: snapshot.studio.actions.filter((action) => !contextKinds.has(action.version.kind)).map((action) => ({
       id: action.id, type: "action", slug: action.slug, name: action.name,
       description: action.description, kind: action.version.kind, version: action.version
     })),
@@ -664,7 +785,7 @@ function Palette({ section, setSection, query, setQuery, resources, counts, onAd
       <header><div><p className="panel-kicker">Node library</p><h2>Capabilities</h2></div><Badge tone="neutral">Drag or add</Badge></header>
       <label className="search-box"><Icon name="search" size={16} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a capability…" aria-label="Search node library" /></label>
       <div className="palette-tabs" role="tablist" aria-label="Capability type">
-        {["control", "actions", "agents", "flows"].map((item) => (
+        {["control", "context", "actions", "agents", "flows"].map((item) => (
           <button key={item} type="button" role="tab" aria-selected={section === item} className={section === item ? "is-active" : ""} onClick={() => setSection(item)}>{titleCase(item)}<span>{counts[item]}</span></button>
         ))}
       </div>
@@ -681,11 +802,11 @@ function Palette({ section, setSection, query, setQuery, resources, counts, onAd
             }}
             onClick={() => onAdd(resource)}
           >
-            <span className={`node-symbol symbol-${resource.kind}`}><Icon name={resource.type === "fan_out" ? "parallel" : resource.type === "action" ? "action" : resource.type === "agent" ? "agent" : "flow"} size={16} /></span>
+            <span className={`node-symbol symbol-${resource.kind}`}><Icon name={resource.type === "fan_out" ? "parallel" : resource.kind === "smart_read" ? "read" : resource.kind === "knowledge_search" ? "search" : resource.kind === "memory_recall" ? "memory" : resource.type === "action" ? "action" : resource.type === "agent" ? "agent" : "flow"} size={16} /></span>
             <span><strong>{resource.name}</strong><small>{titleCase(resource.kind)} · v{resource.version.version}</small></span>
             <Icon name="plus" size={15} />
           </button>
-        )) : <EmptyState icon={section === "control" ? "parallel" : section === "flows" ? "flow" : section === "agents" ? "agent" : "action"} title="Nothing matches" description="Change the search or create the resource from its registry." />}
+        )) : <EmptyState icon={section === "control" ? "parallel" : section === "context" ? "context" : section === "flows" ? "flow" : section === "agents" ? "agent" : "action"} title="Nothing matches" description="Change the search or create the resource from its registry." />}
       </div>
       <footer><Icon name="lock" size={14} /><span>Nodes pin immutable versions when you publish.</span></footer>
     </aside>
@@ -714,7 +835,7 @@ function KynNode({ data, selected }) {
   return (
     <article className={`kyn-node ${selected ? "is-selected" : ""} ${data.isStart ? "is-start" : ""}`} style={{ minHeight: height }}>
       <header>
-        <span className={`node-symbol symbol-${data.kind}`}><Icon name={data.type === "action" ? "action" : data.type === "agent" ? "agent" : "flow"} size={16} /></span>
+        <span className={`node-symbol symbol-${data.kind}`}><Icon name={data.kind === "smart_read" ? "read" : data.kind === "knowledge_search" ? "search" : data.kind === "memory_recall" ? "memory" : data.type === "action" ? "action" : data.type === "agent" ? "agent" : "flow"} size={16} /></span>
         <div><strong>{data.label}</strong><small>{titleCase(data.kind)} · v{data.version}</small></div>
         {data.isStart ? <Badge tone="success">Start</Badge> : null}
       </header>
@@ -829,6 +950,8 @@ function colorForKind(kind) {
   if (kind === "router" || kind === "condition" || kind === "assert") return "tone-cyan-solid";
   if (kind === "data_store" || kind === "sandbox") return "tone-danger-solid";
   if (kind === "subflow") return "tone-blue-solid";
+  if (kind === "smart_read" || kind === "knowledge_search") return "tone-cyan-solid";
+  if (kind === "memory_recall") return "tone-blue-solid";
   return "tone-success-solid";
 }
 
@@ -1158,8 +1281,8 @@ function FanOutInspector({ node, draft, snapshot, replaceDraft, onRename, onClos
                 ? options.filter((candidate) => options.filter((peer) => schemaKey(peer.inputSchema) === schemaKey(candidate.inputSchema)).length >= node.members.length)
                 : compatible;
               return <article className={`fanout-member-editor ${duplicateIds.has(member.id) || duplicateTargets.has(targetKey) || !entry ? "is-invalid" : ""}`} key={`member-${index}`}>
-                <header><span>{String(index + 1).padStart(2, "0")}</span><strong>{entry?.label ?? "Unavailable pinned target"}</strong><IconButton icon="trash" label={`Remove member ${member.id}`} disabled={node.members.length <= 2} onClick={() => removeMember(index)} /></header>
-                <Field label="Member ID" required><input value={member.id} aria-invalid={duplicateIds.has(member.id)} onChange={(event) => updateNode((current) => ({ ...current, members: current.members.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, id: slugDraft(event.target.value) } : candidate) }))} onBlur={(event) => updateNode((current) => ({ ...current, members: current.members.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, id: slugify(event.target.value) } : candidate) }))} /></Field>
+                <header><span>{String(index + 1).padStart(2, "0")}</span><strong>{entry?.label ?? "Unavailable pinned target"}</strong><IconButton icon="trash" label={`Remove member ${member.id}`} disabled={!draft.isNew || node.members.length <= 2} onClick={() => removeMember(index)} /></header>
+                <Field label="Member ID" required hint={draft.isNew ? "Becomes a stable key in the barrier and downstream schemas." : "Immutable after v1 because downstream contracts pin this key."}><input value={member.id} disabled={!draft.isNew} aria-invalid={duplicateIds.has(member.id)} onChange={(event) => updateNode((current) => ({ ...current, members: current.members.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, id: slugDraft(event.target.value) } : candidate) }))} onBlur={(event) => updateNode((current) => ({ ...current, members: current.members.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, id: slugify(event.target.value) } : candidate) }))} /></Field>
                 <Field label="Pinned target" required hint={entry ? `${titleCase(entry.type)} · immutable v${entry.version.version}` : "This version is no longer eligible for parallel execution."}>
                   <select value={targetKey} aria-invalid={!entry || duplicateTargets.has(targetKey)} onChange={(event) => replaceTarget(index, event.target.value)}>
                     {!entry ? <option value={targetKey}>Unavailable · {member.version_id}</option> : null}
@@ -1171,7 +1294,8 @@ function FanOutInspector({ node, draft, snapshot, replaceDraft, onRename, onClos
           </div>
           {duplicateIds.size ? <p className="field-error">Member IDs must be unique lowercase slugs.</p> : null}
           {duplicateTargets.size ? <p className="field-error">Every member must pin a distinct target version.</p> : null}
-          <Button tone="quiet" icon="plus" onClick={addMember} disabled={node.members.length >= 8 || !compatible.some((item) => !node.members.some((member) => member.type === item.type && member.version_id === item.version.id))}>Add compatible member</Button>
+          <Button tone="quiet" icon="plus" onClick={addMember} disabled={!draft.isNew || node.members.length >= 8 || !compatible.some((item) => !node.members.some((member) => member.type === item.type && member.version_id === item.version.id))}>Add compatible member</Button>
+          {!draft.isNew ? <p className="section-help">Member keys and count are schema. Publish a new fan-out with compatible downstream contracts to change them; pinned targets, quorum, failure policy, mappings, and routes remain editable here.</p> : null}
         </section>
 
         <section className="inspector-section">
@@ -1189,7 +1313,7 @@ function FanOutInspector({ node, draft, snapshot, replaceDraft, onRename, onClos
         <section className="inspector-section">
           <h3>Shared input mapping <Badge tone="neutral">{Object.keys(inputSchema.properties ?? {}).length}</Badge></h3>
           <p className="section-help">The same mapped object is copied to every independent member.</p>
-          {Object.entries(inputSchema.properties ?? {}).map(([name, schema]) => <MappingRow key={name} name={name} schema={schema} mapping={node.input_mapping[name]} node={node} draft={draft} onChange={(mapping) => updateNode((current) => ({ ...current, input_mapping: { ...current.input_mapping, [name]: mapping } }))} />)}
+          {Object.entries(inputSchema.properties ?? {}).map(([name, schema]) => <MappingRow key={name} name={name} schema={schema} mapping={node.input_mapping[name]} node={node} draft={draft} snapshot={snapshot} onChange={(mapping) => updateNode((current) => ({ ...current, input_mapping: { ...current.input_mapping, [name]: mapping } }))} />)}
           {!Object.keys(inputSchema.properties ?? {}).length ? <p className="muted">Choose compatible members to establish the shared input contract.</p> : null}
         </section>
 
@@ -1236,7 +1360,7 @@ function NodeInspector({ node, draft, snapshot, replaceDraft, onRename, onClose,
           <h3>Input mapping <Badge tone="neutral">{Object.keys(inputSchema.properties ?? {}).length}</Badge></h3>
           <p className="section-help">No ambient context. Every field names its source.</p>
           {Object.entries(inputSchema.properties ?? {}).map(([name, schema]) => (
-            <MappingRow key={name} name={name} schema={schema} mapping={node.input_mapping[name]} node={node} draft={draft} onChange={(mapping) => updateNode((current) => ({ ...current, input_mapping: { ...current.input_mapping, [name]: mapping } }))} />
+            <MappingRow key={name} name={name} schema={schema} mapping={node.input_mapping[name]} node={node} draft={draft} snapshot={snapshot} onChange={(mapping) => updateNode((current) => ({ ...current, input_mapping: { ...current.input_mapping, [name]: mapping } }))} />
           ))}
           {!Object.keys(inputSchema.properties ?? {}).length ? <p className="muted">This node accepts no input fields.</p> : null}
         </section>
@@ -1279,9 +1403,22 @@ function NodeInspector({ node, draft, snapshot, replaceDraft, onRename, onClose,
   );
 }
 
-function MappingRow({ name, schema, mapping, node, draft, onChange }) {
+function MappingRow({ name, schema, mapping, node, draft, snapshot, onChange }) {
   const source = mapping?.source ?? "input";
   const predecessors = draft.nodes.filter((candidate) => candidate.id !== node.id);
+  const sourceVersions = (snapshot.studio.knowledge_sources ?? []).flatMap((knowledge) => knowledge.versions.map((version) => ({ knowledge, version })));
+  const literalControl = () => {
+    if (name === "source_version_id" && sourceVersions.length) {
+      return <select aria-label={`Literal for ${name}`} value={mapping?.value ?? ""} onChange={(event) => onChange({ source: "literal", value: event.target.value })}><option value="">Choose immutable source version…</option>{sourceVersions.map(({ knowledge, version }) => <option key={version.id} value={version.id}>{knowledge.name} · v{version.version} · {version.filename}</option>)}</select>;
+    }
+    if (schema.type === "integer" || schema.type === "number") {
+      return <input type="number" aria-label={`Literal for ${name}`} min={schema.minimum} max={schema.maximum} step={schema.type === "integer" ? 1 : "any"} value={mapping?.value ?? exampleForSchema(schema, name)} onChange={(event) => onChange({ source: "literal", value: schema.type === "integer" ? Number.parseInt(event.target.value || "0", 10) : Number(event.target.value || 0) })} />;
+    }
+    if (schema.type === "boolean") {
+      return <select aria-label={`Literal for ${name}`} value={String(mapping?.value ?? false)} onChange={(event) => onChange({ source: "literal", value: event.target.value === "true" })}><option value="true">true</option><option value="false">false</option></select>;
+    }
+    return <input aria-label={`Literal for ${name}`} value={typeof mapping?.value === "string" ? mapping.value : JSON.stringify(mapping?.value ?? "")} onChange={(event) => onChange({ source: "literal", value: event.target.value })} />;
+  };
   return (
     <div className="mapping-row">
       <div className="mapping-name"><strong>{name}</strong><span>{schema.type ?? "any"}</span></div>
@@ -1293,7 +1430,7 @@ function MappingRow({ name, schema, mapping, node, draft, onChange }) {
       }}>
         <option value="input">Flow input</option><option value="step">Earlier Step</option><option value="literal">Literal</option>
       </select>
-      {source === "step" ? <div className="mapping-source-detail"><select aria-label={`Step for ${name}`} value={mapping?.node_id ?? ""} onChange={(event) => onChange({ ...mapping, node_id: event.target.value })}>{predecessors.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}</select><input aria-label={`Output path for ${name}`} value={mapping?.path ?? name} onChange={(event) => onChange({ ...mapping, path: event.target.value })} placeholder="output.path" /></div> : source === "literal" ? <input aria-label={`Literal for ${name}`} value={typeof mapping?.value === "string" ? mapping.value : JSON.stringify(mapping?.value ?? "")} onChange={(event) => onChange({ source: "literal", value: event.target.value })} /> : <input aria-label={`Flow input path for ${name}`} value={mapping?.path ?? name} onChange={(event) => onChange({ source: "input", path: event.target.value })} placeholder="input.path" />}
+      {source === "step" ? <div className="mapping-source-detail"><select aria-label={`Step for ${name}`} value={mapping?.node_id ?? ""} onChange={(event) => onChange({ ...mapping, node_id: event.target.value })}>{predecessors.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}</select><input aria-label={`Output path for ${name}`} value={mapping?.path ?? name} onChange={(event) => onChange({ ...mapping, path: event.target.value })} placeholder="output.path" /></div> : source === "literal" ? literalControl() : <input aria-label={`Flow input path for ${name}`} value={mapping?.path ?? name} onChange={(event) => onChange({ source: "input", path: event.target.value })} placeholder="input.path" />}
     </div>
   );
 }

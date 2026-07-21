@@ -82,16 +82,24 @@ A `fan_out` node pins two to eight distinct Action, Agent, or Flow members with
 one identical mapped input contract plus an all/quorum barrier, affirmative
 value set, and isolate/fail-fast member error policy. Its code-derived output
 contains every member record, completed/failed counts, convergence, and
-dissenting-member IDs.
+dissenting-member IDs. Once published, its member IDs and count are downstream
+schema keys and cannot change in a successor of that Flow; pinned targets,
+quorum, mappings, policies, and routes remain editable. A differently keyed
+fan-out requires a new compatible Flow contract.
 
 ### Knowledge and Memory
 
 Knowledge source versions and their passages are immutable and fingerprinted.
 SmartRead accepts only a source-version ID and one bounded mode; it never accepts
-a path or URL. Memory candidates are append-only quarantined proposals over
-exact events from one completed, ledger-verified Run. Qualification is
-deterministic; promotion/rejection requires a Human acknowledgement of the exact
-candidate fingerprint. Only active promoted Memory versions enter recall.
+a path or URL. SmartRead, Knowledge search, and active-Memory recall may emit a
+strict bounded `context` envelope that preserves their source provenance for
+ordinary downstream Step mapping. A deterministic handoff Action can combine
+current source evidence and active promoted Memory before a nested Flow. Memory
+candidates are append-only quarantined proposals over exact events from one
+completed, ledger-verified Run. Qualification is deterministic;
+promotion/rejection requires a Human acknowledgement of the exact candidate
+fingerprint. Only active promoted Memory versions enter recall; same-Run Memory
+creation is impossible because candidate admission requires terminal evidence.
 
 ## Run contract
 

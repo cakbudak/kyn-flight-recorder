@@ -855,13 +855,9 @@ async function main() {
     await awaitSurface(page, ".flow-studio", "opening the generated BoardRoom Flow");
     await page.locator(".react-flow__node").filter({ hasText: "Parallel fan-out" }).click();
     await page.locator(".fan-out-inspector").waitFor({ state: "visible" });
-    const memberIdInputs = page.locator(".fanout-member-editor input");
+    const memberIdInputs = page.locator('.fanout-member-editor input[disabled]');
     const memberIdValues = await memberIdInputs.evaluateAll((items) => items.map((item) => item.value));
-    const riskMemberIndex = memberIdValues.indexOf("risk");
-    if (riskMemberIndex < 0) throw new Error(`generated BoardRoom fan-out did not expose its risk member: ${memberIdValues.join(", ")}`);
-    const riskMemberId = memberIdInputs.nth(riskMemberIndex);
-    await riskMemberId.fill("risk-review");
-    await riskMemberId.blur();
+    await page.getByLabel("Affirmative votes").fill("3");
     if (await page.locator(".toast").count()) await page.locator(".toast").waitFor({ state: "hidden", timeout: 6000 });
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "23-boardroom-flow-editor.png"));
     await clickAndWait(page, page.getByRole("button", { name: "Publish successor" }));
@@ -874,16 +870,20 @@ async function main() {
     const revisedFanOut = revisedBoardRoomFlow.version.nodes.find((node) => node.type === "fan_out");
     const pinnedBoardRoomRun = snapshot.studio.runs.find((run) => run.id === boardRoomRun.id);
     record(
-      "a BoardRoom opens as the ordinary full graph, edits its fan-out composition, and publishes forward without rewriting prior Run truth",
+      "a BoardRoom opens as the ordinary full graph, edits its barrier policy, and publishes forward without rewriting prior Run truth or schema-key member IDs",
       revisedBoardRoomFlow.current_version === 2 &&
-        revisedFanOut?.members.some((member) => member.id === "risk-review") &&
+        revisedFanOut?.barrier.quorum === 3 &&
+        memberIdValues.join(",") === "product,risk,operations" &&
+        revisedFanOut?.members.map((member) => member.id).join(",") === "product,risk,operations" &&
         pinnedBoardRoomRun.flow_version === 1 &&
         pinnedBoardRoomRun.steps.some((step) => step.member_id === "risk") &&
-        pinnedBoardRoomRun.steps.every((step) => step.member_id !== "risk-review"),
+        barrier.quorum === 2,
       {
         current_flow_version: revisedBoardRoomFlow.current_version,
+        current_quorum: revisedFanOut?.barrier.quorum,
         current_members: revisedFanOut?.members.map((member) => member.id),
         pinned_run_version: pinnedBoardRoomRun.flow_version,
+        pinned_quorum: barrier.quorum,
         pinned_member_ids: pinnedBoardRoomRun.steps.map((step) => step.member_id).filter(Boolean)
       }
     );
@@ -951,6 +951,135 @@ async function main() {
       }
     );
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "22-memory-recall.png"));
+
+    progress("composing cited Knowledge and promoted Memory into one editable Flow");
+    await page.getByRole("tab", { name: /^SmartRead/ }).click();
+    await page.getByRole("radio", { name: /Focus/ }).check();
+    await page.getByLabel("First line").fill("1");
+    await page.getByLabel("Last line").fill("11");
+    await clickAndWait(page, page.getByRole("button", { name: "Read cited context" }));
+    await clickAndWait(page, page.getByRole("button", { name: "Compose cited Flow" }));
+    const contextFlowDialog = page.getByRole("dialog", { name: "Compose this evidence in Flow Studio" });
+    await contextFlowDialog.waitFor({ state: "visible" });
+    await fieldControl(contextFlowDialog, "Flow name", "input").fill("Browser cited council Flow");
+    await fieldControl(contextFlowDialog, "Governed Memory recall terms", "input").fill("parallel verdicts inspectable");
+    const compositionPreview = await contextFlowDialog.locator(".context-flow-preview").innerText();
+    record(
+      "SmartRead offers a visible closed-loop composition instead of a one-off context handoff",
+      compositionPreview.includes("SmartRead") &&
+        compositionPreview.includes("Recall") &&
+        compositionPreview.includes("Handoff") &&
+        compositionPreview.includes("BoardRoom") &&
+        await contextFlowDialog.locator(".inline-warning").count() === 0,
+      { preview: compositionPreview.replaceAll("\n", " · ") }
+    );
+    await clickAndWait(page, contextFlowDialog.getByRole("button", { name: "Open editable Flow draft" }));
+    await awaitSurface(page, ".flow-studio", "opening the cited Flow draft");
+    const smartReadDraftNode = page.locator(".react-flow__node").filter({ hasText: "SmartRead focus" });
+    await smartReadDraftNode.waitFor({ state: "visible" });
+    await delay(720);
+    const draftGeometry = await page.evaluate(() => {
+      const canvas = document.querySelector(".canvas-shell")?.getBoundingClientRect();
+      const nodes = [...document.querySelectorAll(".react-flow__node")].map((node) => {
+        const rect = node.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+      });
+      return {
+        canvas: canvas ? { left: canvas.left, top: canvas.top, right: canvas.right, bottom: canvas.bottom } : null,
+        nodes,
+        all_nodes_visible: Boolean(canvas) && nodes.every((node) =>
+          node.left >= canvas.left && node.top >= canvas.top &&
+          node.right <= canvas.right && node.bottom <= canvas.bottom
+        )
+      };
+    });
+    const citedDraft = {
+      nodes: await page.locator(".react-flow__node").count(),
+      routes: await page.locator(".react-flow__edge").count(),
+      labels: await page.locator(".react-flow__node").evaluateAll((items) => items.map((item) => item.textContent)),
+      allNodesVisible: draftGeometry.all_nodes_visible
+    };
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "24-context-flow-draft.png"));
+    await smartReadDraftNode.click();
+    await page.locator(".node-inspector").waitFor({ state: "visible" });
+    citedDraft.sourceVersion = await page.getByLabel("Literal for source_version_id").inputValue();
+    citedDraft.firstLine = await page.getByLabel("Literal for line_start").inputValue();
+    citedDraft.lastLine = await page.getByLabel("Literal for line_end").inputValue();
+    record(
+      "the generated Flow draft opens as a complete canvas and exposes source version, read window, Memory recall, cited handoff, and nested council as ordinary editable nodes",
+      citedDraft.nodes === 4 &&
+        citedDraft.routes === 3 &&
+        citedDraft.allNodesVisible === true &&
+        citedDraft.labels.some((label) => label.includes("SmartRead focus")) &&
+        citedDraft.labels.some((label) => label.includes("Governed Memory recall")) &&
+        citedDraft.labels.some((label) => label.includes("Cited context handoff")) &&
+        citedDraft.labels.some((label) => label.includes(boardRoom.name)) &&
+        citedDraft.sourceVersion === knowledgeSource.version.id &&
+        citedDraft.firstLine === "1" &&
+        citedDraft.lastLine === "11",
+      citedDraft
+    );
+    await clickAndWait(page, page.getByRole("button", { name: "Publish Flow" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => value.studio.flows.some((flow) => flow.slug === "browser-cited-council-flow"),
+      "cited council Flow publication"
+    );
+    const citedFlow = snapshot.studio.flows.find((flow) => flow.slug === "browser-cited-council-flow");
+    const citedNodes = Object.fromEntries(citedFlow.version.nodes.map((node) => [node.id, node]));
+    record(
+      "the published graph pins the exact source read and maps cited source plus promoted Memory into the nested BoardRoom",
+      citedNodes["read-evidence"].input_mapping.source_version_id.value === knowledgeSource.version.id &&
+        citedNodes["recall-memory"].input_mapping.query.value === "parallel verdicts inspectable" &&
+        citedNodes["handoff-context"].input_mapping.knowledge_context.path === "context" &&
+        citedNodes["handoff-context"].input_mapping.memory_context.path === "context" &&
+        citedNodes["governed-council"].type === "flow" &&
+        citedNodes["governed-council"].input_mapping.context.node_id === "handoff-context",
+      { flow: citedFlow.id, version: citedFlow.version.id, nodes: citedFlow.version.nodes }
+    );
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await fieldControl(page.locator(".modal"), "Run input", "textarea").fill(JSON.stringify({ brief: "Decide the bounded launch from the automatically supplied cited context." }, null, 2));
+    await page.getByRole("button", { name: "Pin and start Run" }).click();
+    await awaitSurface(page, ".runs-page", "starting the cited council Flow");
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => value.studio.runs.some((run) => run.flow_id === citedFlow.id && ["waiting_approval", "completed", "failed", "blocked", "cancelled"].includes(run.status)),
+      "nested cited council Human gate",
+      30_000
+    );
+    let citedRun = snapshot.studio.runs.find((run) => run.flow_id === citedFlow.id);
+    if (citedRun.status !== "waiting_approval") {
+      throw new Error(`cited council Flow ended before Human approval: ${JSON.stringify({ status: citedRun.status, error_code: citedRun.error_code, error_message: citedRun.error_message, steps: citedRun.steps.map((step) => ({ node: step.node_id, status: step.status, error_code: step.error_code, error_message: step.error_message })) })}`);
+    }
+    const citedReadStep = citedRun.steps.find((step) => step.node_id === "read-evidence");
+    const citedRecallStep = citedRun.steps.find((step) => step.node_id === "recall-memory");
+    const citedHandoffStep = citedRun.steps.find((step) => step.node_id === "handoff-context");
+    const citedChild = snapshot.studio.runs.find((run) => run.parent_run_id === citedRun.id && run.relation_kind === "subflow");
+    record(
+      "one real Run automatically carries immutable source citations and active Human-promoted Memory into the nested BoardRoom",
+      citedReadStep?.output?.context.includes("browser-launch-evidence.md:L1-L11") &&
+        citedRecallStep?.output?.context.includes("Parallel verdicts remain inspectable") &&
+        citedRecallStep?.output?.context.includes(boardRoomRun.id) &&
+        citedHandoffStep?.output?.text.includes("CURRENT IMMUTABLE SOURCE EVIDENCE") &&
+        citedHandoffStep?.output?.text.includes("ACTIVE HUMAN-PROMOTED MEMORY") &&
+        citedChild?.status === "waiting_approval" &&
+        citedRun.ledger_verified === true,
+      { parent: citedRun.id, child: citedChild?.id, read_chars: citedReadStep?.output?.context.length, recalled_chars: citedRecallStep?.output?.context.length }
+    );
+    await page.locator(".run-list-item").filter({ hasText: shortId(citedChild.id) }).first().click();
+    await page.getByRole("button", { name: "Approve and resume" }).click();
+    await clickAndWait(page, page.getByRole("button", { name: "Record approval" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => value.studio.runs.some((run) => run.id === citedRun.id && run.status === "completed"),
+      "completed cited council parent Run"
+    );
+    citedRun = snapshot.studio.runs.find((run) => run.id === citedRun.id);
+    record(
+      "the nested Human decision resumes the same outer Flow without bypassing the BoardRoom authority boundary",
+      citedRun.status === "completed" && citedRun.output?.status === "approved" && verifyChain(citedRun),
+      { run: citedRun.id, status: citedRun.status, outcome: citedRun.outcome }
+    );
 
     progress("distilling, qualifying, and human-promoting an evidence-bound capability");
     const agentVersionsBeforeForge = snapshot.agents.map((agent) => `${agent.id}:${agent.current_version}`).sort();

@@ -160,10 +160,13 @@ def main() -> int:
         handler,
         control_plane=plane,
         model_configured=True,
-        # The journey now also runs two comparison sweeps, and a sweep is
-        # charged whole before its first sibling. The ceiling has to clear the
-        # journey's total or the budget refuses a comparison the check needs.
-        workspace_model_call_limit=28,
+        # The journey exercises two comparison sweeps plus two genuine
+        # four-call BoardRooms (the second is nested in the cited-context
+        # Flow). Keep the public product defaults strict; only this isolated,
+        # deterministic browser fixture gets enough headroom to finish every
+        # model-backed seam in one workspace and from one loopback address.
+        workspace_model_call_limit=40,
+        address_model_call_limit_per_hour=48,
     )
     print(f"Browser test runtime: http://{args.host}:{server.server_port}/app/", flush=True)
     try:

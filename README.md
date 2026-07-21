@@ -19,12 +19,13 @@ Kyn.ist: its agent execution, ratification, and maintenance contracts. It is a
 configurable workflow product—not a prescribed click-through and not a frontend
 simulation.
 
-The flagship loop is executable end to end:
+The flagship loop is executable end to end as one ordinary, editable Flow:
 
 ```text
-immutable source → SmartRead citations → parallel BoardRoom → Human gate
-        ↑                                                    ↓
- governed Memory ← exact-fingerprint promotion ← verified Run ledger
+immutable source → SmartRead Action ──────────────┐
+active promoted Memory → Recall Action ──────────┼→ cited handoff → BoardRoom subflow → Human gate
+                       ↑                         │                                ↓
+                       └── Human promotion ← verified child-Run evidence ←───────┘
 ```
 
 ## What you can build
@@ -52,6 +53,12 @@ immutable source → SmartRead citations → parallel BoardRoom → Human gate
   full—and returns exact version/fingerprint/line citations without a model
   call. The same primitives are ordinary Actions that Agents may receive only
   through exact Skill grants.
+- Turn any cited SmartRead result into a complete editable Flow draft. It pins
+  that exact source/read policy, recalls only active Human-promoted Memory,
+  combines both citation envelopes through a deterministic Action, and maps the
+  result into a published BoardRoom subflow. The first Run may recall nothing;
+  after promotion, the same pinned Flow automatically carries matching Memory
+  into its next Run.
 - Build a real **parallel BoardRoom** from two to eight pinned Action, Agent, or
   Flow members. Every member receives the same typed input and executes in its
   own operation session; code—not a model—owns all/quorum join semantics,
@@ -115,25 +122,27 @@ own mixed graph from scratch.
 
 1. Open the live Studio, create an isolated workspace, then save a restricted
    OpenAI project key in **Settings** for this tab.
-2. Open **Context & Memory**, import a short Markdown evidence brief, and run
-   SmartRead. Inspect the immutable source version, fingerprint, and exact line
-   citations; no model was called.
-3. Choose **Take context to BoardRoom**. Inspect the publication manifest: the
-   participant Prompts, Skills, Agents and Actions, final editor stack, quorum,
-   failure policy, Human gate, and editable Flow are all explicit. Publish it.
-4. Start the deliberation. Three participants run concurrently and independently
-   through the official OpenAI Responses API. In **Runs**, inspect the dedicated
-   parallel-evidence panel: child Steps, verdicts, code-owned affirmative count,
-   quorum result, and material dissent all remain visible before approval.
+2. Create a **BoardRoom** and inspect its publication manifest: participant
+   Prompts, Skills, Agents and Actions, final editor stack, quorum, failure
+   policy, Human gate, and ordinary reusable Flow are all explicit.
+3. Open **Context & Memory**, import a short Markdown evidence brief, run
+   SmartRead, and inspect its immutable source version, fingerprint, and exact
+   line citations. Choose **Compose cited Flow** and open the generated graph:
+   SmartRead → governed Memory recall → deterministic cited handoff → BoardRoom.
+4. Publish and start the Flow. Three BoardRoom participants run concurrently and
+   independently through the official OpenAI Responses API. In **Runs**, inspect
+   the source and recall Step outputs, nested child Run, verdicts, code-owned
+   affirmative count, quorum result, and material dissent before approval.
 5. Approve or reject the durable Human gate. Both decisions follow explicit
    routes; a write, if configured, can occur only after approval.
-6. Return to **Governed Memory**. Cite exact events from the completed Run,
-   create a quarantined candidate, run deterministic qualification, acknowledge
-   its exact fingerprint, promote it, then recall it with full provenance.
-7. Open the BoardRoom's **exact Flow**. Select its fan-out node, edit any of two
-   to eight Action/Agent/Flow members, shared mappings, all/quorum barrier,
-   affirmative values, failure policy, and named routes; publish a successor.
-8. Continue with the deeper proof surfaces: Capability Forge, acceptance
+6. Return to **Governed Memory**. Cite exact events from the completed nested
+   BoardRoom Run, create a quarantined candidate, run deterministic
+   qualification, acknowledge its exact fingerprint, and promote it.
+7. Run the same composed Flow again. Its unchanged Memory recall node now
+   carries the active promoted observation and source-Run provenance into the
+   deterministic handoff and nested council automatically.
+8. Continue with the deeper proof surfaces: editable registries, Capability
+   Forge, acceptance
    contracts, dead-end ratification/brake, controlled cross-model comparison,
    and evidence-owned repair with a linked proof Run.
 
@@ -190,8 +199,12 @@ Knowledge sources and versions are immutable flat records. SmartRead accepts
 only admitted source-version IDs—never server paths or remote URLs—and returns
 bounded source text with exact line citations and the immutable source
 fingerprint. Deterministic Knowledge search ranks only current admitted
-passages. SmartRead, Knowledge search, and Memory recall enter an Agent through
-the same exact-version Skill authority path as every other callable Action.
+passages. SmartRead, Knowledge search, and Memory recall are ordinary Flow
+Actions with strict structured results and directly mappable, bounded citation
+envelopes. They may also enter an Agent through the same exact-version Skill
+authority path as every other callable Action. A deterministic handoff Action
+can combine current-source and active-Memory envelopes without asking a model to
+rewrite provenance.
 
 ### Deliberation plane
 
