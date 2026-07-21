@@ -652,6 +652,30 @@ async function main() {
     await navigate(page, "Context & Memory");
     await clickAndWait(page, page.getByRole("button", { name: "Import source" }));
     const sourceDialog = page.locator(".modal");
+    const importConfirmation = sourceDialog.getByRole("button", { name: "Import immutable source" });
+    const importConfirmationGeometry = await sourceDialog.evaluate((dialog) => {
+      const body = dialog.querySelector(".modal-body");
+      const button = dialog.querySelector('.modal-footer button[type="submit"]');
+      if (!body || !button) return null;
+      const rect = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        viewport_height: window.innerHeight,
+        outside_scroll_region: !body.contains(button),
+        pointer_reachable: hit === button || button.contains(hit),
+      };
+    });
+    record(
+      "Knowledge import keeps its confirmation visible and reachable without scrolling the form",
+      await importConfirmation.isVisible() &&
+        importConfirmationGeometry?.top >= 0 &&
+        importConfirmationGeometry?.bottom <= importConfirmationGeometry?.viewport_height &&
+        importConfirmationGeometry?.outside_scroll_region === true &&
+        importConfirmationGeometry?.pointer_reachable === true,
+      importConfirmationGeometry
+    );
     await fieldControl(sourceDialog, "Name", "input").fill("Browser launch evidence");
     await fieldControl(sourceDialog, "Purpose", "textarea").fill("Immutable launch facts for a cited multi-agent decision.");
     await fieldControl(sourceDialog, "Display filename", "input").fill("browser-launch-evidence.md");

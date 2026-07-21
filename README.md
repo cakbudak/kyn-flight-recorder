@@ -589,9 +589,9 @@ Agent, proves all eight Capability Forge gates, and human-promotes an
 authority-free Skill without changing any Agent or Flow.
 Provider-shaped deterministic responses are used locally; the same journey can be
 run against the deployed OpenAI-backed service. The current local journey passes
-**55/55** checks, including keyboard focus containment, 4,310 rendered contrast
-samples across all thirteen workbenches in both themes, and a legible pannable 390 px
-graph; see
+**56/56** checks, including always-visible modal confirmation, keyboard focus
+containment, 4,310 rendered contrast samples across all thirteen workbenches in
+both themes, and a legible pannable 390 px graph; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 
 The same journey passes **55/55** against the deployed public origin at

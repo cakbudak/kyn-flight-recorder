@@ -468,11 +468,14 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
 
 /* modal and empty */
 .modal-backdrop { position: fixed; z-index: 200; inset: 0; display: grid; place-items: center; padding: 22px; background: var(--scrim); animation: modal-fade 160ms var(--ease-out); }
-.modal { width: min(var(--modal-width), calc(100vw - 34px)); max-height: min(88vh, 900px); overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-modal); animation: modal-in 240ms var(--ease-out); }
+.modal { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(var(--modal-width), calc(100vw - 34px)); max-height: min(88vh, 900px); overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-modal); animation: modal-in 240ms var(--ease-out); }
+.modal.has-footer { grid-template-rows: auto minmax(0, 1fr) auto; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .modal-header h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
 .modal-header p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-.modal-body { max-height: calc(88vh - 76px); overflow: auto; padding: 20px; }
+.modal-body { min-height: 0; max-height: calc(88vh - 76px); overflow: auto; padding: 20px; }
+.modal.has-footer .modal-body { max-height: none; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 13px 20px 15px; border-top: 1px solid var(--line); background: var(--surface-1); box-shadow: 0 -12px 30px color-mix(in srgb, var(--surface-0) 40%, transparent); }
 .modal-form { display: grid; gap: 16px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 @keyframes modal-fade { from { opacity: 0; } }
@@ -2003,6 +2006,9 @@ select { appearance: none; padding-right: 30px; background-image: linear-gradien
   .modal { width: calc(100vw - 16px); max-height: 94vh; }
   .modal-body { max-height: calc(94vh - 75px); padding: 14px; }
   .modal-actions { flex-wrap: wrap; }
+  .modal.has-footer .modal-body { max-height: none; }
+  .modal-footer { flex-wrap: wrap; padding: 10px 14px 12px; }
+  .modal-footer .button { flex: 1; justify-content: center; }
   .onboarding-top { padding: 0 14px; }
   .onboarding-actions { align-items: stretch; flex-direction: column; }
   .onboarding-copy h1 { font-size: 41px; }

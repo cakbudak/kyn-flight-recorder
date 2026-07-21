@@ -112,7 +112,7 @@ export function JsonField({ label, value, onChange, rows = 8, hint, readOnly = f
   );
 }
 
-export function Modal({ title, description, onClose, children, width = "680px" }) {
+export function Modal({ title, description, onClose, children, footer = null, width = "680px" }) {
   const closeRef = useRef(null);
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
@@ -157,7 +157,7 @@ export function Modal({ title, description, onClose, children, width = "680px" }
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section ref={dialogRef} tabIndex="-1" className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} style={{ "--modal-width": width }}>
+      <section ref={dialogRef} tabIndex="-1" className={`modal ${footer ? "has-footer" : ""}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} style={{ "--modal-width": width }}>
         <header className="modal-header">
           <div>
             <h2 id={titleId}>{title}</h2>
@@ -166,6 +166,7 @@ export function Modal({ title, description, onClose, children, width = "680px" }
           <IconButton ref={closeRef} icon="close" label="Close dialog" onClick={onClose} />
         </header>
         <div className="modal-body">{children}</div>
+        {footer ? <footer className="modal-footer">{footer}</footer> : null}
       </section>
     </div>
   );
