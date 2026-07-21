@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import re
 import json
+import re
 import threading
 from typing import Any, Callable, Mapping, Sequence
 
 from .contracts import (
+    DEFAULT_STUDIO_OUTPUT_TOKENS,
+    MAX_STUDIO_OUTPUT_TOKENS,
+    MIN_STUDIO_OUTPUT_TOKENS,
     canonical_json,
     Conflict,
     ContractViolation,
@@ -22,6 +25,7 @@ from .contracts import (
     normalize_judge_agent_version_id,
     normalize_outcomes,
     policy_marker,
+    require_completed_response,
     require_slug,
     require_string,
     require_string_list,
@@ -51,6 +55,29 @@ from .tools import ToolRegistry
 SUPPORTED_MODELS = frozenset({"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"})
 ROLE_NAMES = frozenset({"executor", "diagnostician", "repairer"})
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
+BOARDROOM_PARTICIPANT_OUTPUT_TOKENS = 2_000
+BOARDROOM_EDITOR_OUTPUT_TOKENS = DEFAULT_STUDIO_OUTPUT_TOKENS
+
+
+def _normalize_studio_output_tokens(
+    value: Any,
+    field: str,
+    *,
+    default: int,
+) -> int:
+    if value is None:
+        return default
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not MIN_STUDIO_OUTPUT_TOKENS <= value <= MAX_STUDIO_OUTPUT_TOKENS
+    ):
+        raise ContractViolation(
+            f"{field} must be between {MIN_STUDIO_OUTPUT_TOKENS} and "
+            f"{MAX_STUDIO_OUTPUT_TOKENS}"
+        )
+    return value
+
 
 BOARDROOM_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -935,16 +962,25 @@ class ControlPlane:
         outcome_ids = {item["id"] for item in normalized_outcomes}
         properties = set(normalized_input["properties"])
         if normalized_kind == "ai":
-            if normalized_agent is None or frozenset(normalized_config) not in {
-                frozenset({"max_tool_calls", "reasoning_effort"}),
-                frozenset({"max_tool_calls", "reasoning_effort", "outcome_path"}),
-            }:
+            required_config = {"max_tool_calls", "reasoning_effort"}
+            optional_config = {"outcome_path", "max_output_tokens"}
+            if (
+                normalized_agent is None
+                or not required_config.issubset(normalized_config)
+                or not set(normalized_config).issubset(required_config | optional_config)
+            ):
                 raise ContractViolation("AI Action config or Agent pin is invalid")
             max_calls = normalized_config["max_tool_calls"]
             if not isinstance(max_calls, int) or isinstance(max_calls, bool) or not 0 <= max_calls <= 4:
                 raise ContractViolation("AI Action max_tool_calls must be between zero and four")
             if normalized_config["reasoning_effort"] not in {"low", "medium", "high"}:
                 raise ContractViolation("AI Action reasoning_effort is invalid")
+            if "max_output_tokens" in normalized_config:
+                normalized_config["max_output_tokens"] = _normalize_studio_output_tokens(
+                    normalized_config["max_output_tokens"],
+                    "AI Action max_output_tokens",
+                    default=DEFAULT_STUDIO_OUTPUT_TOKENS,
+                )
             agent = self.studio.get_agent_runtime(workspace_id, normalized_agent)
             if set(agent["prompt"]["variables"]) != properties:
                 raise ContractViolation(
@@ -2870,6 +2906,11 @@ class ControlPlane:
         if self.store.in_write_transaction():
             raise RuntimeError("external model I/O under a SQLite write transaction")
         response = client.create(payload)
+        require_completed_response(
+            response,
+            max_output_tokens=payload["max_output_tokens"],
+            operation="OpenAI Memory distillation response",
+        )
         try:
             parsed = json.loads(extract_output_text(response))
         except json.JSONDecodeError:
@@ -3021,12 +3062,17 @@ class ControlPlane:
         )
         if normalized_collection is not None and approval_mode != "human":
             raise ContractViolation("BoardRoom writes require a human approval gate")
-        if not isinstance(editor, dict) or set(editor) != {
+        editor_required = {
             "name",
             "model",
             "instructions",
             "reasoning_effort",
-        }:
+        }
+        if (
+            not isinstance(editor, dict)
+            or not editor_required.issubset(editor)
+            or not set(editor).issubset(editor_required | {"max_output_tokens"})
+        ):
             raise ContractViolation("BoardRoom editor config is invalid")
         editor_model = require_string(editor["model"], "BoardRoom editor model", maximum=80)
         if editor_model not in SUPPORTED_MODELS:
@@ -3040,6 +3086,11 @@ class ControlPlane:
                 editor["instructions"], "BoardRoom editor instructions", maximum=4_000
             ),
             "reasoning_effort": editor["reasoning_effort"],
+            "max_output_tokens": _normalize_studio_output_tokens(
+                editor.get("max_output_tokens"),
+                "BoardRoom editor max_output_tokens",
+                default=BOARDROOM_EDITOR_OUTPUT_TOKENS,
+            ),
         }
 
         normalized_participants: list[dict[str, Any]] = []
@@ -3055,7 +3106,11 @@ class ControlPlane:
                 "max_tool_calls",
                 "reasoning_effort",
             }
-            if not isinstance(participant, dict) or set(participant) != required:
+            if (
+                not isinstance(participant, dict)
+                or not required.issubset(participant)
+                or not set(participant).issubset(required | {"max_output_tokens"})
+            ):
                 raise ContractViolation(f"BoardRoom participant {index} config is invalid")
             participant_id = require_slug(
                 participant["id"], f"BoardRoom participant {index} id"
@@ -3130,6 +3185,11 @@ class ControlPlane:
                     "allowed_action_version_ids": grants,
                     "max_tool_calls": max_calls,
                     "reasoning_effort": reasoning,
+                    "max_output_tokens": _normalize_studio_output_tokens(
+                        participant.get("max_output_tokens"),
+                        f"BoardRoom participant {participant_id} max_output_tokens",
+                        default=BOARDROOM_PARTICIPANT_OUTPUT_TOKENS,
+                    ),
                 }
             )
 
@@ -3236,6 +3296,7 @@ class ControlPlane:
                 config={
                     "max_tool_calls": participant["max_tool_calls"],
                     "reasoning_effort": participant["reasoning_effort"],
+                    "max_output_tokens": participant["max_output_tokens"],
                 },
                 agent_version_id=agent["version"]["id"],
             )
@@ -3313,6 +3374,7 @@ class ControlPlane:
             config={
                 "max_tool_calls": 0,
                 "reasoning_effort": normalized_editor["reasoning_effort"],
+                "max_output_tokens": normalized_editor["max_output_tokens"],
             },
             agent_version_id=editor_agent["version"]["id"],
         )
@@ -3691,8 +3753,11 @@ class ControlPlane:
             usage=summary["usage"],
             request_id=safe_request_id,
         )
-        if summary["status"] != "completed":
-            raise ProviderFailure("OpenAI Skill distillation response did not complete")
+        require_completed_response(
+            response,
+            max_output_tokens=payload.get("max_output_tokens"),
+            operation="OpenAI Skill distillation response",
+        )
         candidate = parse_candidate(response, source["material"])
         return self.studio.create_skill_candidate(
             workspace_id,

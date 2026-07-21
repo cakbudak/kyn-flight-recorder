@@ -316,6 +316,7 @@ class AgentStudioRuntimeContractTest(unittest.TestCase):
         self.assertEqual(run["status"], "waiting_approval")
         self.assertEqual(len(client.requests), 2)
         for request in client.requests:
+            self.assertEqual(request["max_output_tokens"], 4_000)
             self.assertEqual(request["include"], ["reasoning.encrypted_content"])
             self.assertEqual(request["reasoning"], {"effort": "medium"})
             self.assertEqual(
@@ -355,6 +356,48 @@ class AgentStudioRuntimeContractTest(unittest.TestCase):
         self.assertTrue(
             any(item.get("type") == "function_call_output" for item in second_input)
         )
+
+    def test_ai_action_output_budget_is_explicitly_bounded(self) -> None:
+        source = next(
+            action
+            for action in self.bootstrap["snapshot"]["studio"]["actions"]
+            if action["slug"] == "ai-launch-analysis"
+        )["version"]
+
+        for budget in (256, 8_000):
+            with self.subTest(budget=budget):
+                action = self.plane.create_action(
+                    self.workspace_id,
+                    name=f"Bounded AI {budget}",
+                    slug=f"bounded-ai-{budget}",
+                    description="Prove the inclusive response-budget boundary.",
+                    kind="ai",
+                    input_schema=source["input_schema"],
+                    output_schema=source["output_schema"],
+                    config={**source["config"], "max_output_tokens": budget},
+                    agent_version_id=source["agent_version_id"],
+                    outcomes=source["outcomes"],
+                )
+                self.assertEqual(action["version"]["config"]["max_output_tokens"], budget)
+
+        for index, budget in enumerate((255, 8_001, True)):
+            with self.subTest(invalid_budget=budget):
+                with self.assertRaisesRegex(
+                    ContractViolation,
+                    "AI Action max_output_tokens must be between 256 and 8000",
+                ):
+                    self.plane.create_action(
+                        self.workspace_id,
+                        name=f"Invalid bounded AI {index}",
+                        slug=f"invalid-bounded-ai-{index}",
+                        description="Reject an invalid response-budget boundary.",
+                        kind="ai",
+                        input_schema=source["input_schema"],
+                        output_schema=source["output_schema"],
+                        config={**source["config"], "max_output_tokens": budget},
+                        agent_version_id=source["agent_version_id"],
+                        outcomes=source["outcomes"],
+                    )
 
     def test_failed_provider_attempt_is_visible_without_provider_message_leakage(self) -> None:
         flow_id = self.bootstrap["snapshot"]["studio"]["flows"][0]["id"]

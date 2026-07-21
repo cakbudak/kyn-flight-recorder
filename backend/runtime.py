@@ -16,6 +16,7 @@ from .contracts import (
     require_string,
     require_string_list,
     render_prompt,
+    require_completed_response,
     safe_response_summary,
     stateless_replay_items,
 )
@@ -466,8 +467,10 @@ class AgentRuntime:
             output_hash=fingerprint(response),
             usage=summary["usage"],
         )
-        if summary["status"] != "completed":
-            raise ProviderFailure("OpenAI response did not complete")
+        require_completed_response(
+            response,
+            max_output_tokens=payload.get("max_output_tokens"),
+        )
         return response, model_call_id
 
     def _executor_payload(

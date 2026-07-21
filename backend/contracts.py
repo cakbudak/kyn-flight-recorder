@@ -18,6 +18,11 @@ SECRET_KEY_RE = re.compile(
     r"(?:authorization|api[_-]?key|password|secret|token|cookie|credential)",
     re.IGNORECASE,
 )
+PROVIDER_DIAGNOSTIC_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]+$")
+
+MIN_STUDIO_OUTPUT_TOKENS = 256
+MAX_STUDIO_OUTPUT_TOKENS = 8_000
+DEFAULT_STUDIO_OUTPUT_TOKENS = 4_000
 
 
 class RuntimeErrorBase(Exception):
@@ -1173,6 +1178,73 @@ def safe_response_summary(response: Mapping[str, Any]) -> dict[str, Any]:
             and value >= 0
         },
     }
+
+
+def require_completed_response(
+    response: Mapping[str, Any],
+    *,
+    max_output_tokens: Any = None,
+    operation: str = "OpenAI response",
+) -> None:
+    """Fail with bounded diagnostics when a Responses call ends non-terminally.
+
+    A valid HTTP response may itself carry ``status=incomplete``. Calling that a
+    generic transport failure hides the usual corrective action: raising the
+    declared output budget. Only enum-like provider fields cross the public
+    boundary; provider prose, model output, and request input remain excluded.
+    """
+
+    raw_status = response.get("status")
+    status = (
+        raw_status
+        if isinstance(raw_status, str)
+        and 0 < len(raw_status) <= 32
+        and PROVIDER_DIAGNOSTIC_RE.fullmatch(raw_status)
+        else "unknown"
+    )
+    if status == "completed":
+        return
+
+    raw_details = response.get("incomplete_details")
+    raw_reason = raw_details.get("reason") if isinstance(raw_details, dict) else None
+    reason = (
+        raw_reason
+        if isinstance(raw_reason, str)
+        and 0 < len(raw_reason) <= 80
+        and PROVIDER_DIAGNOSTIC_RE.fullmatch(raw_reason)
+        else None
+    )
+    request_id = response.get("_request_id")
+    detail: dict[str, Any] = {
+        "provider_code": (
+            "response_incomplete" if status == "incomplete" else "response_not_completed"
+        ),
+        "provider_type": status,
+    }
+    if reason is not None:
+        detail["provider_param"] = reason
+    if isinstance(request_id, str) and 0 < len(request_id) <= 128:
+        detail["request_id"] = request_id
+
+    if status == "incomplete" and reason == "max_output_tokens":
+        if (
+            isinstance(max_output_tokens, int)
+            and not isinstance(max_output_tokens, bool)
+            and max_output_tokens > 0
+        ):
+            message = (
+                f"{operation} reached the configured output-token limit "
+                f"({max_output_tokens:,} tokens)"
+            )
+        else:
+            message = f"{operation} reached its configured output-token limit"
+        raise ProviderFailure(message, detail=detail)
+
+    if status == "incomplete":
+        raise ProviderFailure(f"{operation} was incomplete", detail=detail)
+    raise ProviderFailure(
+        f"{operation} ended with provider status {status}", detail=detail
+    )
 
 
 def exact_set(actual: Iterable[str], expected: Iterable[str], field: str) -> list[str]:

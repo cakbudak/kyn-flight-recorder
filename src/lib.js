@@ -158,7 +158,7 @@ export const ACTION_PRESETS = {
       additionalProperties: false
     },
     outcomes: SUCCESS_ERROR,
-    config: { max_tool_calls: 2, reasoning_effort: "medium" }
+    config: { max_tool_calls: 2, max_output_tokens: 4000, reasoning_effort: "medium" }
   },
   transform: {
     label: "Transform",

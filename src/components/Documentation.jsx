@@ -99,9 +99,11 @@ export default function Documentation({ setView }) {
             <div className="doc-two-column"><div><h3>OpenAI owns</h3><ul><li>Model inference</li><li>Responses transport</li><li>Reasoning and function-call proposals</li><li>Strict structured output generation</li></ul></div><div><h3>Kyn owns</h3><ul><li>Graph orchestration and durable state</li><li>Version and authority pins</li><li>Action dispatch and validation</li><li>Approval, receipts, evidence, repair and replay truth</li></ul></div></div>
             <Code title="AI executor policy">{`{
   "max_tool_calls": 2,
+  "max_output_tokens": 4000,
   "reasoning_effort": "medium",
   "outcome_path": "decision"
 }`}</Code>
+            <p><code>max_output_tokens</code> is the Action’s explicit response ceiling (256–8,000; 4,000 by default). Larger synthesis nodes can budget more than narrow worker nodes without removing the hard cost boundary. If OpenAI reaches that ceiling, the Run records an actionable incomplete-response failure instead of a generic transport error.</p>
             <p>If <code>outcome_path</code> is configured, the corresponding strict output field must be a string enum that exactly matches every non-error Action outcome. That is how AI decisions become typed graph ports—not parsed prose.</p>
           </DocSection>
 

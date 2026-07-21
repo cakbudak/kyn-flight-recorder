@@ -135,6 +135,7 @@ class BoardRoomClient:
         self.verdicts: dict[str, str] = {}
         self.requests: list[dict[str, object]] = []
         self.editor_requests: list[dict[str, object]] = []
+        self.minimum_editor_output_tokens = 0
         self._lock = threading.Lock()
         self._barrier = threading.Barrier(2)
 
@@ -177,6 +178,23 @@ class BoardRoomClient:
         elif "decision" in schema["properties"]:
             with self._lock:
                 self.editor_requests.append(request)
+            output_budget = payload.get("max_output_tokens")
+            if (
+                isinstance(output_budget, int)
+                and output_budget < self.minimum_editor_output_tokens
+            ):
+                return {
+                    "id": f"resp_{len(self.requests)}",
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "max_output_tokens"},
+                    "model": payload["model"],
+                    "usage": {
+                        "input_tokens": 2_705,
+                        "output_tokens": output_budget,
+                        "total_tokens": 2_705 + output_budget,
+                    },
+                    "output": [],
+                }
             output = {
                 "decision": "Proceed with a governed context-to-decision demonstration.",
                 "consensus": ["The runtime evidence must remain inspectable."],
@@ -672,6 +690,12 @@ class BoardRoomProductContractTest(unittest.TestCase):
 
     def test_factory_builds_an_editable_parallel_flow_and_preserves_dissent(self) -> None:
         room = self._room(slug="launch-evidence-council")
+        # Regression for the live 2026-07-21 failure: three participant records
+        # made the synthesis request materially larger than an individual vote.
+        # A 1,500-token ceiling let OpenAI return status=incomplete before the
+        # strict editor object existed. The provider-shaped seam reproduces that
+        # exact status until the generated editor carries its larger budget.
+        self.client.minimum_editor_output_tokens = 4_000
         self._configure(room)
         flow = room["flow"]
         node_types = [node["type"] for node in flow["version"]["nodes"]]
@@ -707,6 +731,20 @@ class BoardRoomProductContractTest(unittest.TestCase):
         self.assertEqual(run["output"]["approval_reason"], "")
         self.assertEqual(len(run["model_calls"]), 4)
         self.assertEqual(len(self.client.editor_requests), 1)
+        self.assertEqual(
+            room["editor"]["action"]["version"]["config"]["max_output_tokens"],
+            4_000,
+        )
+        self.assertEqual(
+            {
+                item["action"]["version"]["config"]["max_output_tokens"]
+                for item in room["participant_resources"]
+            },
+            {2_000},
+        )
+        self.assertEqual(
+            self.client.editor_requests[0]["max_output_tokens"], 4_000
+        )
         self.assertLess(elapsed, 2)
         editor_prompt = self.client.editor_requests[0]["input"][0]["content"]
         self.assertIn('"verdict":"challenge"', editor_prompt)
@@ -731,6 +769,26 @@ class BoardRoomProductContractTest(unittest.TestCase):
                 nodes=nodes,
                 routes=flow["version"]["routes"],
             )
+
+    def test_editor_token_ceiling_is_reported_as_an_actionable_provider_failure(self) -> None:
+        room = self._room(slug="bounded-editor-council")
+        self.client.minimum_editor_output_tokens = 4_001
+        self._configure(room)
+
+        run = self.plane.start_studio_run(
+            self.workspace_id,
+            room["flow"]["id"],
+            input_data={
+                "brief": "Preserve all material dissent in a bounded synthesis.",
+                "context": "launch-brief@v1:L1-L3",
+            },
+        )
+
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["error_code"], "provider_failure")
+        self.assertIn("configured output-token limit (4,000 tokens)", run["error_message"])
+        self.assertEqual(run["model_calls"][-1]["status"], "incomplete")
+        self.assertEqual(run["model_calls"][-1]["usage"]["output_tokens"], 4_000)
 
     def test_human_gate_precedes_a_bounded_write_and_rejection_has_no_effect(self) -> None:
         room = self._room(

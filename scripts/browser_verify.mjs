@@ -735,9 +735,11 @@ async function main() {
     await clickAndWait(page, page.getByRole("button", { name: "Take context to BoardRoom" }));
     await page.locator(".boardroom-builder").waitFor({ state: "visible" });
     const roomManifest = await page.locator(".factory-manifest").innerText();
+    const boardRoomFormValid = await page.locator(".boardroom-builder").evaluate((form) => form.checkValidity());
     record(
       "the BoardRoom factory exposes every Prompt, Skill, Agent, Action, Flow, quorum, and downstream authority choice before publication",
-      roomManifest.includes("4\nPrompts") &&
+      boardRoomFormValid &&
+        roomManifest.includes("4\nPrompts") &&
         roomManifest.includes("4\nSkills") &&
         roomManifest.includes("4\nAgents") &&
         roomManifest.includes("7\nActions") &&
@@ -745,7 +747,7 @@ async function main() {
         await page.locator(".participant-editor").count() === 3 &&
         await page.getByLabel("Quorum").inputValue() === "2" &&
         await page.getByRole("radio", { name: /Require human decision/ }).isChecked(),
-      { manifest: roomManifest.replaceAll("\n", " · ") }
+      { manifest: roomManifest.replaceAll("\n", " · "), default_form_valid: boardRoomFormValid }
     );
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "20-boardroom-factory.png"));
     await clickAndWait(page, page.locator(".builder-publish"));

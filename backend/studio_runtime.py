@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 
 from .contracts import (
     ActionBlocked,
+    DEFAULT_STUDIO_OUTPUT_TOKENS,
     MAX_ACCEPTANCE_CRITERIA,
     MAX_FLOW_NODES,
     PLACEHOLDER_RE,
@@ -29,6 +30,7 @@ from .contracts import (
     normalize_json_schema,
     redact,
     render_prompt,
+    require_completed_response,
     require_string,
     safe_response_summary,
     stateless_replay_items,
@@ -689,7 +691,7 @@ class StudioRuntime:
         repository: StudioStore,
         client: ResponseTransport,
         *,
-        max_output_tokens: int = 1_500,
+        max_output_tokens: int = DEFAULT_STUDIO_OUTPUT_TOKENS,
         context: ContextStore | None = None,
     ) -> None:
         self.repository = repository
@@ -2541,6 +2543,9 @@ class StudioRuntime:
         tool_definitions = [item["definition"] for item in granted_actions]
         input_items: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         max_tool_calls = int(action["config"].get("max_tool_calls", 0))
+        max_output_tokens = int(
+            action["config"].get("max_output_tokens", self.max_output_tokens)
+        )
         used_tool_calls = 0
         effective_model = self._effective_model(workspace_id, run_id, agent)
         while True:
@@ -2549,7 +2554,7 @@ class StudioRuntime:
                 "instructions": instructions,
                 "input": input_items,
                 "parallel_tool_calls": False,
-                "max_output_tokens": self.max_output_tokens,
+                "max_output_tokens": max_output_tokens,
                 "store": False,
                 "reasoning": {"effort": action["config"]["reasoning_effort"]},
                 "text": {
@@ -2785,6 +2790,8 @@ class StudioRuntime:
                 else None
             ),
         )
-        if summary["status"] != "completed":
-            raise ProviderFailure("OpenAI response did not complete")
+        require_completed_response(
+            response,
+            max_output_tokens=payload.get("max_output_tokens"),
+        )
         return response
