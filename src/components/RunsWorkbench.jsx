@@ -265,9 +265,21 @@ function LedgerState({ run }) {
   return <Badge tone={valid ? "success" : "danger"} title={valid ? "Every event hash recomputed from its material and re-linked" : "The recorded chain does not match its material"}><Icon name={valid ? "check" : "warning"} size={12} />{valid ? `${run.events.length} verified events` : "Ledger mismatch"}</Badge>;
 }
 
+function approvalMessageParts(message) {
+  const text = String(message ?? "").trim();
+  const match = text.match(/^(.+?[.!?])(?:\s+)([\s\S]+)$/);
+  return match ? { headline: match[1], detail: match[2] } : { headline: text, detail: "" };
+}
+
+function ApprovalRationale({ detail }) {
+  if (!detail) return null;
+  return <details className="approval-rationale"><summary>Read the complete request rationale</summary><p>{detail}</p></details>;
+}
+
 function ApprovalCallout({ run, onDecision }) {
   const request = run.pending_approval;
-  return <section className="approval-callout"><span className="approval-icon"><Icon name="lock" size={22} /></span><div><p className="panel-kicker">Human gate · Step {shortId(request.step_id)}</p><h3>{request.message}</h3><p>The Run is durably paused. No downstream capability or effect runs until a named human records a reason.</p></div><div><Button tone="danger" onClick={() => onDecision(false)}>Reject</Button><Button tone="primary" icon="check" onClick={() => onDecision(true)}>Approve and resume</Button></div></section>;
+  const copy = approvalMessageParts(request.message);
+  return <section className="approval-callout"><span className="approval-icon"><Icon name="lock" size={22} /></span><div><p className="panel-kicker">Human gate · Step {shortId(request.step_id)}</p><h3>{copy.headline}</h3><p>The Run is durably paused. No downstream capability or effect runs until a named human records a reason.</p><ApprovalRationale detail={copy.detail} /></div><div className="approval-actions"><Button tone="danger" onClick={() => onDecision(false)}>Reject</Button><Button tone="primary" icon="check" onClick={() => onDecision(true)}>Approve and resume</Button></div></section>;
 }
 
 function deadEndTone(state) { return RATIFICATION_TONE[state] ?? "neutral"; }
@@ -486,8 +498,9 @@ function StartRunModal({ snapshot, mutate, onClose, onStarted }) {
 function ApprovalModal({ run, material, mutate, onClose }) {
   const [actor, setActor] = useState("build-week-operator");
   const [reason, setReason] = useState(material.approved ? "I reviewed the pinned context and authorize this bounded continuation." : "The pinned context does not justify the requested continuation.");
+  const copy = approvalMessageParts(material.request.message);
   const submit = async (event) => { event.preventDefault(); const result = await mutate(() => api(`/api/v1/studio/approvals/${material.request.id}/decisions`, { method: "POST", keyMode: "optional", body: { approved: material.approved, actor, reason } }), { success: material.approved ? "Approval recorded; Run resumed" : "Rejection recorded; Run followed its declared route" }); if (result) onClose(); };
-  return <Modal title={material.approved ? "Approve and resume" : "Reject this continuation"} description={`Decision for ${shortId(run.id)} · ${material.request.node_id}`} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className={`decision-summary ${material.approved ? "is-approved" : "is-rejected"}`}><Icon name={material.approved ? "check" : "warning"} size={21} /><div><strong>{material.request.message}</strong><p>The actor and reason become append-only Run evidence.</p></div></div><Field label="Actor"><input required value={actor} onChange={(event) => setActor(event.target.value)} /></Field><Field label="Decision reason" hint="Minimum 12 characters"><textarea required minLength="12" rows="5" value={reason} onChange={(event) => setReason(event.target.value)} /></Field><div className="modal-actions"><Button tone="quiet" type="button" onClick={onClose}>Cancel</Button><Button tone={material.approved ? "primary" : "danger"} type="submit">Record {material.approved ? "approval" : "rejection"}</Button></div></form></Modal>;
+  return <Modal title={material.approved ? "Approve and resume" : "Reject this continuation"} description={`Decision for ${shortId(run.id)} · ${material.request.node_id}`} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className={`decision-summary ${material.approved ? "is-approved" : "is-rejected"}`}><Icon name={material.approved ? "check" : "warning"} size={21} /><div><strong>{copy.headline}</strong><p>The actor and reason become append-only Run evidence.</p><ApprovalRationale detail={copy.detail} /></div></div><Field label="Actor"><input required value={actor} onChange={(event) => setActor(event.target.value)} /></Field><Field label="Decision reason" hint="Minimum 12 characters"><textarea required minLength="12" rows="5" value={reason} onChange={(event) => setReason(event.target.value)} /></Field><div className="modal-actions"><Button tone="quiet" type="button" onClick={onClose}>Cancel</Button><Button tone={material.approved ? "primary" : "danger"} type="submit">Record {material.approved ? "approval" : "rejection"}</Button></div></form></Modal>;
 }
 
 function RepairModal({ run, proposal, mutate, onClose }) {

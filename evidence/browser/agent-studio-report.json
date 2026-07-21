@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-07-21T14:58:47.248Z",
+  "generated_at": "2026-07-21T15:35:22.098Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:37215",
+    "base_url": "http://127.0.0.1:46625",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_b07f06ad34f545178648d298ccfe90b1",
+        "prompt": "prmv_6e0c88798acc46c0941d60fb4aa8b0a1",
         "skills": [
-          "sklv_ecf9f14fdbee4301bc507e0cf4f2dd43"
+          "sklv_69fec808a38645a79d5c8f51658b287b"
         ],
         "actions": [
-          "actv_6401a12fb6eb436e846dbcedfcc32ba3"
+          "actv_204670180bab4a33a821f51a40f4c941"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_6401a12fb6eb436e846dbcedfcc32ba3"
+          "version_id": "actv_204670180bab4a33a821f51a40f4c941"
         }
       }
     },
@@ -199,7 +199,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_c1a5cae941324dc4a192c3441a4c7a6d",
+        "id": "arun_49ff58a1ec6d44d78988648ed1273089",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -237,15 +237,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_47d5d89cff4d4eee9b2eacad6af01e1a"
+        "version_id": "aflowv_00c6716bad164c26a4cc705d35a5eb96"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_14a976d9ef1942cfa4b63b16d2f210a4",
-        "child": "arun_221baad0bbd64f159f19c2640ec42369",
+        "parent": "arun_909c32f22d37421cb42d2b5d283bf90e",
+        "child": "arun_953b99e41bd347df90cca6b3ce5ed3a8",
         "outcome": "standard"
       }
     },
@@ -253,8 +253,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_634ba2bd60f845d69d3af71efe62ea00",
-        "run": "arun_aee48c7141b94d5f806ab151ba7de20d",
+        "trigger": "atrg_4471452d8805449c906c0f2e9f9c341c",
+        "run": "arun_b194e50a00404633bb01348f17decf31",
         "outcome": "priority"
       }
     },
@@ -269,7 +269,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_55426d651afc4f58a007a9fbb093d471",
+        "run": "arun_cc41fb4262704d2a81e57e0b4f58fe82",
         "calls": 1,
         "steps": [
           "completed",
@@ -309,9 +309,9 @@
       "name": "SmartRead returns bounded source text with an immutable version, fingerprint, and exact line citation",
       "status": "pass",
       "detail": {
-        "source": "ksrc_13a8d78ab8c94dc0b45658f61cc03741",
-        "version": "ksv_070bc7b3e60b4943968acbe8f7a43371",
-        "fingerprint": "6af4c7e58634ce02d3ef4c26e5c6748d90595a948883813b071fa58cce547913",
+        "source": "ksrc_0a2e9bc8a3134f278e95f6e473ff2c06",
+        "version": "ksv_51ea6ae9a21645cfbd957d1034248402",
+        "fingerprint": "95098b1307db9fc8a1663f47739f346f8c7465b3a3e0dfbcecc1f419b100b0aa",
         "lines": 11
       }
     },
@@ -326,7 +326,7 @@
       "name": "SmartRead transfers the cited envelope into the real BoardRoom Run contract without flattening provenance",
       "status": "pass",
       "detail": {
-        "flow": "aflow_cfa2bc8d20a54334bd95ea8a3e8680fc",
+        "flow": "aflow_d2db136178ae4506bffbb9c27c94a4d3",
         "forecast_calls": 4
       }
     },
@@ -334,7 +334,7 @@
       "name": "three independent model Steps join through a code-owned barrier while the actual verdict distribution remains first-class evidence",
       "status": "pass",
       "detail": {
-        "run": "arun_8be019fcaa7f4ddf9ea588332aabf9f2",
+        "run": "arun_0ac250f5797a499088a13bc5a8ee3e18",
         "model_calls": 4,
         "member_steps": [
           "product",
@@ -361,7 +361,7 @@
       "status": "pass",
       "detail": {
         "characters": 526,
-        "contrast_samples": 189,
+        "contrast_samples": 191,
         "minimum_contrast": 4.9,
         "contrast_failures": [],
         "members": 3,
@@ -408,31 +408,31 @@
       "name": "Run-derived learning enters append-only quarantine and remains absent from recall",
       "status": "pass",
       "detail": {
-        "candidate": "memc_6a2a0cd36c9348c1b07cca9395732a58",
+        "candidate": "memc_ab90a79bf70d487388641646e5526139",
         "citations": 6,
-        "fingerprint": "ed8d56f9a671efdb4ba96c1a1220e83b8aa18f1ea93dc768f191f0845ec8916d"
+        "fingerprint": "fabfdb0a5d476637b7ea3d672a627dd8572e05cd7bb1c0339b9535a337f1cd04"
       }
     },
     {
       "name": "only a qualified, fingerprint-acknowledged human promotion becomes recallable with full provenance",
       "status": "pass",
       "detail": {
-        "memory": "mem_6e26d48805e04a049ebee39f55c9d8c3",
+        "memory": "mem_1e82a29e8c9f4646a48deda40fd34940",
         "state": "active",
-        "source_candidate": "memc_6a2a0cd36c9348c1b07cca9395732a58",
-        "source_run": "arun_8be019fcaa7f4ddf9ea588332aabf9f2"
+        "source_candidate": "memc_ab90a79bf70d487388641646e5526139",
+        "source_run": "arun_0ac250f5797a499088a13bc5a8ee3e18"
       }
     },
     {
       "name": "Capability Forge distils one completed model Step through a different logical Agent into an authority-free quarantine",
       "status": "pass",
       "detail": {
-        "candidate": "skc_e6682a6568f84ca4b3e61647d8cdad76",
-        "source_run": "arun_55426d651afc4f58a007a9fbb093d471",
-        "source_agent": "agt_27b38e0de92f4101910e8a2ecc72e673",
-        "source_agent_version": "agtv_44d5271fd84f450caccd6114bb987f98",
-        "distiller_agent": "agt_917b247744f24598b245800c195b8c5e",
-        "distiller_agent_version": "agtv_c876edd1039644f39bc5e21162b4471f",
+        "candidate": "skc_fb164084bad949e4a94e3796bd5f76b4",
+        "source_run": "arun_cc41fb4262704d2a81e57e0b4f58fe82",
+        "source_agent": "agt_ee7b6a42181e4d36a29a363606571d17",
+        "source_agent_version": "agtv_c80b755b011645399821079bd06f004e",
+        "distiller_agent": "agt_33e51b49d99148a3ad9fef8a9af7ba9d",
+        "distiller_agent_version": "agtv_9504739732c14a25bd3f6f40890c5e99",
         "cited_events": 1,
         "authority_delta": 0
       }
@@ -458,7 +458,7 @@
       "name": "human promotion publishes one immutable Skill v1 while every Agent and Flow remains pinned until a later successor",
       "status": "pass",
       "detail": {
-        "skill": "skl_7db580161bdd4419b500bd01a04cf3e8",
+        "skill": "skl_09d5ba798bd94eb1b28f45aaddbfea4e",
         "version": 1,
         "agents_changed": false,
         "authority_delta": 0
@@ -469,17 +469,17 @@
       "status": "pass",
       "detail": {
         "controlled": {
-          "id": "cmp_32b1238f2568400cab4e15aa0264dda4",
+          "id": "cmp_2203a21e85f3475ba47ada7c57645376",
           "usable": true,
           "pinned_versions": [
-            "aflowv_4af8554c624740df8326ade7bb9841d7"
+            "aflowv_d6ec2d62c22843bea379f982d8ec5a0d"
           ],
           "enforced": 4,
           "uncontrolled": 5,
           "rows": 2
         },
         "aliased": {
-          "id": "cmp_0068e485a0cf429d99abe8a3eb841054",
+          "id": "cmp_c925b207e1de4022be59936cce876dcc",
           "usable": false,
           "problems": [
             "response_model_mismatch"
@@ -521,7 +521,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_2a8564dcde536",
+        "citation_opened": "arun_694a269c2ce81",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -545,7 +545,7 @@
       "name": "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
       "status": "pass",
       "detail": {
-        "judge": "agtv_5c579f803b594db185726f2432ff9ced",
+        "judge": "agtv_6b3a4c0e418241168073468ce9830655",
         "criteria": [
           {
             "evidence_kind": "effect",
@@ -578,7 +578,7 @@
       "name": "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
       "status": "pass",
       "detail": {
-        "run": "arun_f763199100a0464fb69bf6d22b84c302",
+        "run": "arun_5858eb604be14303be26d39a22a7bc37",
         "status": "failed",
         "error_code": "completion_unevidenced",
         "status_history": [
@@ -597,7 +597,7 @@
       "name": "the Runs console renders the stop-seam refusal and names every declared promise that carried no accepted evidence",
       "status": "pass",
       "detail": {
-        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_726f2432ff9ced\n\nEach declared acceptance criterion was read against this Run's own evidence at the sites the criterion pinned.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\n1 run-owned step record(s) were minted at a declared site.\n\nSURVIVING ANCHORS · 1\n\nastep_42a603c98214aa",
+        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_73468ce9830655\n\nEach declared acceptance criterion was read against this Run's own evidence at the sites the criterion pinned.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\n1 run-owned step record(s) were minted at a declared site.\n\nSURVIVING ANCHORS · 1\n\nastep_a4c4afb1744347",
         "tone": 1,
         "criteria": 3,
         "unevidenced": 2,
@@ -608,9 +608,9 @@
       "name": "the identical pinned Flow version admits when the Run actually reached the declared work, so the refusal was about this Run's data and not the definition",
       "status": "pass",
       "detail": {
-        "refused": "arun_f763199100a0464fb69bf6d22b84c302",
-        "admitted": "arun_5a0c23282bd44cc2ab0b39671a5105a4",
-        "shared_flow_version": "aflowv_d396f4d9b66843ad9faff1f4ad89b94a",
+        "refused": "arun_5858eb604be14303be26d39a22a7bc37",
+        "admitted": "arun_f46f63216a12486e84bf81b0a7519d84",
+        "shared_flow_version": "aflowv_46c38b0dcd474c3499ba1c58aa2c9e19",
         "effects": 1,
         "model_calls": 1,
         "adjudications_added_by_this_beat": 2
@@ -688,26 +688,26 @@
   ],
   "diagnostics": {
     "server_output": [
-      "21/Jul/2026 16:58:44 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:44 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:45 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/assets/studio-DTa896TM.css HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/assets/studio-B3rWKrPu.js HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "21/Jul/2026 16:58:46 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      "21/Jul/2026 17:35:19 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:19 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:19 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:20 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:20 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:20 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:20 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:20 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:20 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:20 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/assets/studio-DjACw4PK.css HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/assets/studio-cWJ08jHn.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "21/Jul/2026 17:35:21 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
     ],
     "page_errors": [],
     "failed_requests": [],
