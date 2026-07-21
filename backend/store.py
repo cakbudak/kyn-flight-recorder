@@ -27,6 +27,7 @@ from .contracts import (
 )
 from .schema import (
     AUTOMATION_RUN_GUARDS_SQL,
+    AUTOMATION_STEP_GUARDS_SQL,
     DEAD_END_STRUCTURE_INDEX_SQL,
     RUN_COMPARISON_INDEX_SQL,
     SCHEMA_SQL,
@@ -162,25 +163,43 @@ class Store:
 
     @staticmethod
     def _migrate_studio_step_node_types(connection: sqlite3.Connection) -> None:
-        """Add the truthful `flow` Step kind without rewriting any Step row."""
+        """Add fan-out/member Step identity without rewriting existing values."""
 
         row = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' "
             "AND name = 'automation_run_steps'"
         ).fetchone()
-        if row is None or "'flow'" in str(row["sql"]):
+        columns = {
+            item["name"]
+            for item in connection.execute("PRAGMA table_info(automation_run_steps)")
+        }
+        if (
+            row is None
+            or (
+                "'fan_out'" in str(row["sql"])
+                and {"parent_step_id", "member_id"}.issubset(columns)
+            )
+        ):
+            connection.executescript(AUTOMATION_STEP_GUARDS_SQL)
             return
+        parent_expression = "parent_step_id" if "parent_step_id" in columns else "NULL"
+        member_expression = "member_id" if "member_id" in columns else "NULL"
         connection.execute("PRAGMA foreign_keys=OFF")
         try:
             connection.executescript(
-                """
+                f"""
                 BEGIN IMMEDIATE;
-                CREATE TABLE automation_run_steps_v4 (
+                CREATE TABLE automation_run_steps_v5 (
                     id TEXT PRIMARY KEY,
                     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
                     run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+                    parent_step_id TEXT
+                        REFERENCES automation_run_steps_v5(id) ON DELETE RESTRICT,
+                    member_id TEXT,
                     node_id TEXT NOT NULL,
-                    node_type TEXT NOT NULL CHECK (node_type IN ('action', 'agent', 'flow')),
+                    node_type TEXT NOT NULL CHECK (
+                        node_type IN ('action', 'agent', 'flow', 'fan_out')
+                    ),
                     target_version_id TEXT NOT NULL,
                     attempt INTEGER NOT NULL CHECK (attempt >= 1),
                     status TEXT NOT NULL CHECK (status IN (
@@ -194,36 +213,23 @@ class Store:
                     error_message TEXT,
                     started_at TEXT NOT NULL,
                     finished_at TEXT,
-                    UNIQUE (run_id, node_id, attempt)
+                    CHECK ((parent_step_id IS NULL) = (member_id IS NULL)),
+                    CHECK (member_id IS NULL OR node_type <> 'fan_out')
                 );
-                INSERT INTO automation_run_steps_v4 (
-                    id, workspace_id, run_id, node_id, node_type, target_version_id,
+                INSERT INTO automation_run_steps_v5 (
+                    id, workspace_id, run_id, parent_step_id, member_id,
+                    node_id, node_type, target_version_id,
                     attempt, status, revision, input_json, output_json, route_outcome,
                     error_code, error_message, started_at, finished_at
                 )
                 SELECT
-                    id, workspace_id, run_id, node_id, node_type, target_version_id,
+                    id, workspace_id, run_id, {parent_expression}, {member_expression},
+                    node_id, node_type, target_version_id,
                     attempt, status, revision, input_json, output_json, route_outcome,
                     error_code, error_message, started_at, finished_at
                 FROM automation_run_steps;
                 DROP TABLE automation_run_steps;
-                ALTER TABLE automation_run_steps_v4 RENAME TO automation_run_steps;
-                CREATE INDEX ix_automation_steps_run
-                ON automation_run_steps(run_id, started_at, id);
-                CREATE TRIGGER trg_automation_steps_transition_shape
-                BEFORE UPDATE OF status ON automation_run_steps
-                WHEN NEW.status <> OLD.status
-                AND NOT (
-                    (OLD.status = 'running' AND NEW.status IN (
-                        'waiting_approval', 'completed', 'blocked', 'failed', 'skipped'
-                    )) OR
-                    (OLD.status = 'waiting_approval' AND NEW.status IN ('completed', 'blocked'))
-                )
-                BEGIN SELECT RAISE(ABORT, 'illegal automation step status transition'); END;
-                CREATE TRIGGER trg_automation_steps_revision_fence
-                BEFORE UPDATE OF status ON automation_run_steps
-                WHEN NEW.status <> OLD.status AND NEW.revision <> OLD.revision + 1
-                BEGIN SELECT RAISE(ABORT, 'automation step transition must advance one revision'); END;
+                ALTER TABLE automation_run_steps_v5 RENAME TO automation_run_steps;
                 COMMIT;
                 """
             )
@@ -233,6 +239,7 @@ class Store:
             raise
         finally:
             connection.execute("PRAGMA foreign_keys=ON")
+        connection.executescript(AUTOMATION_STEP_GUARDS_SQL)
         violation = connection.execute("PRAGMA foreign_key_check").fetchone()
         if violation is not None:
             raise RuntimeError("Studio Step migration violated a foreign key")

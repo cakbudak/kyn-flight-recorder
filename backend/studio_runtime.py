@@ -6,6 +6,7 @@ import json
 import math
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
@@ -25,6 +26,7 @@ from .contracts import (
     extract_output_text,
     fingerprint,
     function_calls,
+    normalize_json_schema,
     redact,
     render_prompt,
     require_string,
@@ -44,6 +46,8 @@ from .studio_store import StudioStore
 
 
 NODE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+FAN_OUT_VERSION_ID = "fanout-v1"
+FAN_OUT_MEMBER_TYPES = frozenset({"action", "agent", "flow"})
 CALLABLE_ACTION_KINDS = frozenset(
     {
         "template",
@@ -148,7 +152,7 @@ def validate_flow_definition(
     ids: set[str] = set()
     for index, node in enumerate(nodes):
         required_node_keys = {"id", "type", "version_id", "input_mapping"}
-        optional_node_keys = {"position", "settings"}
+        optional_node_keys = {"position", "settings", "members", "barrier"}
         if (
             not isinstance(node, dict)
             or not required_node_keys.issubset(node)
@@ -160,11 +164,103 @@ def validate_flow_definition(
             raise ContractViolation("Flow node ids must be unique lowercase slugs")
         ids.add(node_id)
         node_type = node["type"]
-        if node_type not in {"action", "agent", "flow"}:
-            raise ContractViolation("Flow node type must be action, agent, or flow")
+        if node_type not in {"action", "agent", "flow", "fan_out"}:
+            raise ContractViolation(
+                "Flow node type must be action, agent, flow, or fan_out"
+            )
         version_id = require_string(
             node["version_id"], f"Flow node {node_id} version", maximum=80
         )
+        normalized_members: list[dict[str, str]] | None = None
+        normalized_barrier: dict[str, Any] | None = None
+        if node_type == "fan_out":
+            if version_id != FAN_OUT_VERSION_ID:
+                raise ContractViolation("fan-out node must pin fanout-v1")
+            members = node.get("members")
+            if not isinstance(members, list) or not 2 <= len(members) <= 8:
+                raise ContractViolation("fan-out node must contain two to eight members")
+            member_ids: set[str] = set()
+            member_targets: set[tuple[str, str]] = set()
+            normalized_members = []
+            for member_index, member in enumerate(members):
+                if not isinstance(member, dict) or set(member) != {
+                    "id",
+                    "type",
+                    "version_id",
+                }:
+                    raise ContractViolation(
+                        f"fan-out member {member_index} has an invalid shape"
+                    )
+                member_id = require_string(
+                    member["id"], f"fan-out member {member_index} id", maximum=64
+                )
+                member_type = member["type"]
+                member_version = require_string(
+                    member["version_id"],
+                    f"fan-out member {member_id} version",
+                    maximum=80,
+                )
+                if not NODE_ID_RE.fullmatch(member_id) or member_id in member_ids:
+                    raise ContractViolation("fan-out member ids must be unique lowercase slugs")
+                if member_type not in FAN_OUT_MEMBER_TYPES:
+                    raise ContractViolation("fan-out member type is not supported")
+                target = (str(member_type), member_version)
+                if target in member_targets:
+                    raise ContractViolation(
+                        "fan-out members must pin distinct target versions"
+                    )
+                member_ids.add(member_id)
+                member_targets.add(target)
+                normalized_members.append(
+                    {
+                        "id": member_id,
+                        "type": str(member_type),
+                        "version_id": member_version,
+                    }
+                )
+            barrier = node.get("barrier")
+            if not isinstance(barrier, dict) or set(barrier) != {
+                "mode",
+                "quorum",
+                "verdict_path",
+                "affirmative_values",
+                "on_member_error",
+            }:
+                raise ContractViolation("fan-out barrier has an invalid shape")
+            mode = barrier["mode"]
+            quorum = barrier["quorum"]
+            if mode not in {"all", "quorum"}:
+                raise ContractViolation("fan-out barrier mode is invalid")
+            if (
+                not isinstance(quorum, int)
+                or isinstance(quorum, bool)
+                or not 1 <= quorum <= len(normalized_members)
+            ):
+                raise ContractViolation("fan-out quorum is impossible")
+            if mode == "all" and quorum != len(normalized_members):
+                raise ContractViolation("an all barrier quorum must equal its member count")
+            verdict_path = _normalize_path(
+                barrier["verdict_path"], "fan-out verdict path"
+            )
+            affirmative_values = barrier["affirmative_values"]
+            if (
+                not isinstance(affirmative_values, list)
+                or not 1 <= len(affirmative_values) <= 8
+                or len({canonical_json(item) for item in affirmative_values})
+                != len(affirmative_values)
+            ):
+                raise ContractViolation("fan-out affirmative values are invalid")
+            if barrier["on_member_error"] not in {"isolate", "fail_fast"}:
+                raise ContractViolation("fan-out member error policy is invalid")
+            normalized_barrier = {
+                "mode": str(mode),
+                "quorum": quorum,
+                "verdict_path": verdict_path,
+                "affirmative_values": json.loads(canonical_json(affirmative_values)),
+                "on_member_error": str(barrier["on_member_error"]),
+            }
+        elif "members" in node or "barrier" in node:
+            raise ContractViolation("only fan-out nodes may declare members or a barrier")
         mapping = node["input_mapping"]
         if not isinstance(mapping, dict) or len(mapping) > 32:
             raise ContractViolation(f"Flow node {node_id} input mapping is invalid")
@@ -250,8 +346,9 @@ def validate_flow_definition(
             raise ContractViolation(f"Flow node {node_id} retry_on is invalid")
         if on_error not in {"fail", "continue"}:
             raise ContractViolation(f"Flow node {node_id} on_error is invalid")
-        normalized_nodes.append(
-            {
+        if node_type == "fan_out" and max_attempts != 1:
+            raise ContractViolation("fan-out nodes execute exactly once per Run")
+        normalized_node: dict[str, Any] = {
                 "id": node_id,
                 "type": node_type,
                 "version_id": version_id,
@@ -264,7 +361,10 @@ def validate_flow_definition(
                     "on_error": on_error,
                 },
             }
-        )
+        if normalized_members is not None and normalized_barrier is not None:
+            normalized_node["members"] = normalized_members
+            normalized_node["barrier"] = normalized_barrier
+        normalized_nodes.append(normalized_node)
     if start not in ids:
         raise ContractViolation("Flow start node does not exist")
     if not isinstance(routes, list) or len(routes) > 192:
@@ -414,6 +514,10 @@ def validate_acceptance_contract(
         pinned_agent = (node_contracts.get(node_id) or {}).get("agent_version_id")
         if pinned_agent:
             cast_by.setdefault(str(pinned_agent), []).append(node_id)
+        for pinned_agent in (node_contracts.get(node_id) or {}).get(
+            "agent_version_ids", ()
+        ):
+            cast_by.setdefault(str(pinned_agent), []).append(node_id)
         for inherited in subflow_cast.get(node_id, ()):
             cast_by.setdefault(str(inherited), []).append(node_id)
     casting = cast_by.get(judge_agent_version_id)
@@ -442,6 +546,91 @@ def _value_at(root: Any, path: str, *, field: str) -> Any:
         else:
             raise ContractViolation(f"{field} path {path} was not produced")
     return json.loads(canonical_json(current))
+
+
+def fan_out_outcomes(mode: str) -> list[dict[str, str]]:
+    ids = (
+        ("success", "partial", "error")
+        if mode == "all"
+        else ("converged", "review", "error")
+    )
+    tones = {
+        "success": "success",
+        "converged": "success",
+        "partial": "warning",
+        "review": "warning",
+        "error": "danger",
+    }
+    return [
+        {
+            "id": outcome,
+            "label": outcome.replace("-", " ").title(),
+            "description": "",
+            "tone": tones[outcome],
+        }
+        for outcome in ids
+    ]
+
+
+def fan_out_output_schema(
+    member_contracts: Mapping[str, Mapping[str, Any]]
+) -> dict[str, Any]:
+    member_properties: dict[str, Any] = {}
+    for member_id, contract in member_contracts.items():
+        fields = {
+            "status": {
+                "type": "string",
+                "enum": ["completed", "blocked", "failed"],
+            },
+            "outcome": {"type": "string", "maxLength": 64},
+            "output": contract["output_schema"],
+            "error_code": {"type": "string", "maxLength": 80},
+            "error": {"type": "string", "maxLength": 500},
+            "step_id": {"type": "string", "maxLength": 80},
+            "duration_ms": {"type": "integer", "minimum": 0},
+        }
+        member_properties[member_id] = {
+            "type": "object",
+            "properties": fields,
+            "required": ["status", "outcome", "step_id", "duration_ms"],
+            "additionalProperties": False,
+        }
+    barrier_fields = {
+        "mode": {"type": "string", "enum": ["all", "quorum"]},
+        "expected": {"type": "integer", "minimum": 2, "maximum": 8},
+        "completed": {"type": "integer", "minimum": 0, "maximum": 8},
+        "failed": {"type": "integer", "minimum": 0, "maximum": 8},
+        "affirmative": {"type": "integer", "minimum": 0, "maximum": 8},
+        "quorum": {"type": "integer", "minimum": 1, "maximum": 8},
+        "converged": {"type": "boolean"},
+        "dissenting_members": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 64},
+            "maxItems": 8,
+        },
+    }
+    return normalize_json_schema(
+        {
+            "type": "object",
+            "properties": {
+                "members": {
+                    "type": "object",
+                    "properties": member_properties,
+                    "required": list(member_properties),
+                    "additionalProperties": False,
+                },
+                "barrier": {
+                    "type": "object",
+                    "properties": barrier_fields,
+                    "required": list(barrier_fields),
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["members", "barrier"],
+            "additionalProperties": False,
+        },
+        "fan-out output schema",
+    )
 
 
 class StudioRuntime:
@@ -677,14 +866,16 @@ class StudioRuntime:
         completed_outputs = {
             step["node_id"]: step["output"]
             for step in run["steps"]
-            if step["status"] == "completed"
+            if step["status"] == "completed" and step.get("member_id") is None
         }
         node_id = run["current_node_id"]
         last_output = run["output"]
         terminal_resume_outcome: str | None = None
         if node_id is None:
             completed_steps = [
-                step for step in run["steps"] if step["status"] == "completed"
+                step
+                for step in run["steps"]
+                if step["status"] == "completed" and step.get("member_id") is None
             ]
             if completed_steps:
                 last_step = completed_steps[-1]
@@ -772,13 +963,21 @@ class StudioRuntime:
                             agent_version_id=node["version_id"],
                             input_data=mapped_input,
                         )
-                    else:
+                    elif node["type"] == "flow":
                         result = self._invoke_subflow(
                             workspace_id,
                             run_id,
                             step_id,
                             node_id=node_id,
                             flow_version_id=node["version_id"],
+                            input_data=mapped_input,
+                        )
+                    else:
+                        result = self._invoke_fan_out(
+                            workspace_id,
+                            run_id,
+                            step_id,
+                            node=node,
                             input_data=mapped_input,
                         )
                 except (
@@ -1106,9 +1305,10 @@ class StudioRuntime:
         """
 
         for step in reversed(run["steps"]):
-            if step["status"] == "completed":
+            if step["status"] == "completed" and step.get("member_id") is None:
                 return step["id"]
-        return run["steps"][-1]["id"] if run["steps"] else None
+        graph_steps = [step for step in run["steps"] if step.get("member_id") is None]
+        return graph_steps[-1]["id"] if graph_steps else None
 
     def _adjudicate_completion(
         self,
@@ -1481,6 +1681,11 @@ class StudioRuntime:
     def _node_input_schema(
         self, workspace_id: str, node: Mapping[str, Any]
     ) -> Mapping[str, Any]:
+        if node["type"] == "fan_out":
+            members = node.get("members")
+            if not isinstance(members, list) or not members:
+                raise ContractViolation("Pinned fan-out has no members")
+            return self._member_contract(workspace_id, members[0])["input_schema"]
         if node["type"] == "action":
             return self.repository.get_action_version(
                 workspace_id, node["version_id"]
@@ -1504,6 +1709,16 @@ class StudioRuntime:
     def _node_output_schema(
         self, workspace_id: str, node: Mapping[str, Any]
     ) -> Mapping[str, Any]:
+        if node["type"] == "fan_out":
+            members = node.get("members")
+            if not isinstance(members, list) or not members:
+                raise ContractViolation("Pinned fan-out has no members")
+            return fan_out_output_schema(
+                {
+                    str(member["id"]): self._member_contract(workspace_id, member)
+                    for member in members
+                }
+            )
         if node["type"] == "action":
             return self.repository.get_action_version(
                 workspace_id, node["version_id"]
@@ -1520,6 +1735,48 @@ class StudioRuntime:
             "properties": {"text": {"type": "string"}},
             "required": ["text"],
             "additionalProperties": False,
+        }
+
+    def _member_contract(
+        self, workspace_id: str, member: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        if member["type"] == "action":
+            action = self.repository.get_action_version(
+                workspace_id, member["version_id"]
+            )
+            return {
+                "input_schema": action["input_schema"],
+                "output_schema": action["output_schema"],
+            }
+        if member["type"] == "flow":
+            flow = self.repository.get_flow_version_by_id(
+                workspace_id, member["version_id"]
+            )
+            if flow["output_schema"] is None:
+                raise ContractViolation("Pinned fan-out member Flow has no output contract")
+            return {
+                "input_schema": flow["input_schema"],
+                "output_schema": flow["output_schema"],
+            }
+        agent = self.repository.get_agent_runtime(
+            workspace_id, member["version_id"]
+        )
+        return {
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    variable: {"type": "string"}
+                    for variable in agent["prompt"]["variables"]
+                },
+                "required": list(agent["prompt"]["variables"]),
+                "additionalProperties": False,
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
         }
 
     @staticmethod
@@ -1544,6 +1801,272 @@ class StudioRuntime:
             return "success"
         raise ContractViolation("terminal node outcome is not declared by the Flow")
 
+    def _invoke_fan_out(
+        self,
+        workspace_id: str,
+        run_id: str,
+        step_id: str,
+        *,
+        node: Mapping[str, Any],
+        input_data: Mapping[str, Any],
+    ) -> ActionResult:
+        members = node.get("members")
+        barrier = node.get("barrier")
+        if not isinstance(members, list) or not isinstance(barrier, dict):
+            raise ContractViolation("Pinned fan-out composition is missing")
+        self.repository.append_event(
+            workspace_id,
+            run_id,
+            event_type="fan_out.dispatched",
+            actor_type="runtime",
+            actor_id=None,
+            payload={
+                "step_id": step_id,
+                "node_id": node["id"],
+                "member_ids": [member["id"] for member in members],
+                "barrier": barrier,
+                "input_fingerprint": fingerprint(dict(input_data)),
+            },
+        )
+        completed: dict[str, dict[str, Any]] = {}
+        # Two to eight is publication-validated. One worker per pinned member is
+        # therefore a hard concurrency bound rather than an elastic pool.
+        with ThreadPoolExecutor(
+            max_workers=len(members), thread_name_prefix="kyn-fanout"
+        ) as pool:
+            futures = {
+                pool.submit(
+                    self._invoke_fan_out_member,
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    node_id=str(node["id"]),
+                    member=member,
+                    input_data=json.loads(canonical_json(dict(input_data))),
+                ): str(member["id"])
+                for member in members
+            }
+            for future in as_completed(futures):
+                member_id = futures[future]
+                try:
+                    completed[member_id] = future.result()
+                except BaseException as error:
+                    # A worker's own executor closes every Step for all expected
+                    # runtime failures. Reaching this branch means a coding or
+                    # infrastructure failure escaped before it could construct a
+                    # truthful member record, so the parent must fail rather than
+                    # manufacture a result or a step id.
+                    raise ContractViolation(
+                        f"fan-out member {member_id} escaped its execution boundary"
+                    ) from error
+        ordered = {str(member["id"]): completed[str(member["id"])] for member in members}
+        completed_count = sum(
+            item["status"] == "completed" for item in ordered.values()
+        )
+        failed_count = len(ordered) - completed_count
+        affirmative_values = {
+            canonical_json(item) for item in barrier["affirmative_values"]
+        }
+        affirmative = 0
+        dissenting: list[str] = []
+        for member_id, item in ordered.items():
+            if item["status"] != "completed":
+                continue
+            try:
+                verdict = _value_at(
+                    item["output"],
+                    barrier["verdict_path"],
+                    field=f"fan-out member {member_id} verdict",
+                )
+            except ContractViolation:
+                dissenting.append(member_id)
+                continue
+            if canonical_json(verdict) in affirmative_values:
+                affirmative += 1
+            else:
+                dissenting.append(member_id)
+        mode = str(barrier["mode"])
+        quorum = int(barrier["quorum"])
+        converged = (
+            completed_count == len(members)
+            if mode == "all"
+            else affirmative >= quorum
+        )
+        barrier_output = {
+            "mode": mode,
+            "expected": len(members),
+            "completed": completed_count,
+            "failed": failed_count,
+            "affirmative": affirmative,
+            "quorum": quorum,
+            "converged": converged,
+            "dissenting_members": dissenting,
+        }
+        self.repository.append_event(
+            workspace_id,
+            run_id,
+            event_type="fan_out.barrier_reached",
+            actor_type="runtime",
+            actor_id=None,
+            payload={
+                "step_id": step_id,
+                "node_id": node["id"],
+                "member_step_ids": {
+                    member_id: item["step_id"] for member_id, item in ordered.items()
+                },
+                "barrier": barrier_output,
+            },
+        )
+        if failed_count and barrier["on_member_error"] == "fail_fast":
+            failed_members = [
+                member_id
+                for member_id, item in ordered.items()
+                if item["status"] != "completed"
+            ]
+            raise ContractViolation(
+                "fan-out member failure closed the node: " + ", ".join(failed_members)
+            )
+        if mode == "all":
+            outcome = (
+                "success"
+                if completed_count == len(members)
+                else ("partial" if completed_count else "error")
+            )
+        else:
+            outcome = (
+                "converged"
+                if affirmative >= quorum
+                else ("review" if completed_count else "error")
+            )
+        return ActionResult(
+            output={"members": ordered, "barrier": barrier_output},
+            route_outcome=outcome,
+        )
+
+    def _invoke_fan_out_member(
+        self,
+        workspace_id: str,
+        run_id: str,
+        parent_step_id: str,
+        *,
+        node_id: str,
+        member: Mapping[str, Any],
+        input_data: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        started = time.monotonic()
+        member_id = str(member["id"])
+        step_id: str | None = None
+        with self.repository.store.operation_session():
+            try:
+                contract = self._member_contract(workspace_id, member)
+                validated_input = validate_json_schema(
+                    dict(input_data),
+                    contract["input_schema"],
+                    f"fan-out member {member_id} input",
+                )
+                step_id = self.repository.start_step(
+                    workspace_id,
+                    run_id,
+                    node_id=node_id,
+                    node_type=str(member["type"]),
+                    target_version_id=str(member["version_id"]),
+                    input_data=validated_input,
+                    parent_step_id=parent_step_id,
+                    member_id=member_id,
+                )
+                if member["type"] == "action":
+                    action = self.repository.get_action_version(
+                        workspace_id, member["version_id"]
+                    )
+                    result = self._invoke_action(
+                        workspace_id,
+                        run_id,
+                        step_id,
+                        node_id=node_id,
+                        action=action,
+                        input_data=validated_input,
+                        attempt=1,
+                        invocation_key=f"fanout:{parent_step_id}:{member_id}",
+                    )
+                elif member["type"] == "agent":
+                    result = self._invoke_agent_node(
+                        workspace_id,
+                        run_id,
+                        step_id,
+                        node_id=node_id,
+                        agent_version_id=str(member["version_id"]),
+                        input_data=validated_input,
+                    )
+                else:
+                    result = self._invoke_subflow(
+                        workspace_id,
+                        run_id,
+                        step_id,
+                        node_id=node_id,
+                        flow_version_id=str(member["version_id"]),
+                        input_data=validated_input,
+                        invocation_key=f"fanout:{parent_step_id}:{member_id}",
+                    )
+                if result.paused:
+                    raise ContractViolation("fan-out member attempted to pause at its barrier")
+                validated_output = validate_json_schema(
+                    result.output,
+                    contract["output_schema"],
+                    f"fan-out member {member_id} output",
+                )
+                self.repository.finish_step(
+                    workspace_id,
+                    run_id,
+                    step_id,
+                    status="completed",
+                    output=validated_output,
+                    route_outcome=result.route_outcome,
+                )
+                return {
+                    "status": "completed",
+                    "outcome": result.route_outcome,
+                    "output": validated_output,
+                    "step_id": step_id,
+                    "duration_ms": max(0, int((time.monotonic() - started) * 1_000)),
+                }
+            except (
+                ContractViolation,
+                ProviderFailure,
+                ActionBlocked,
+                BrakeEngaged,
+                Conflict,
+            ) as error:
+                status = (
+                    "blocked"
+                    if isinstance(error, (ActionBlocked, BrakeEngaged))
+                    else "failed"
+                )
+                message = _public_error_message(error)
+                if step_id is not None:
+                    try:
+                        self.repository.finish_step(
+                            workspace_id,
+                            run_id,
+                            step_id,
+                            status=status,
+                            output=None,
+                            route_outcome="error",
+                            error_code=error.code,
+                            error_message=message,
+                        )
+                    except (Conflict, ContractViolation):
+                        pass
+                if step_id is None:
+                    raise
+                return {
+                    "status": status,
+                    "outcome": "error",
+                    "error_code": error.code,
+                    "error": message[:500],
+                    "step_id": step_id,
+                    "duration_ms": max(0, int((time.monotonic() - started) * 1_000)),
+                }
+
     def _invoke_subflow(
         self,
         workspace_id: str,
@@ -1553,6 +2076,7 @@ class StudioRuntime:
         node_id: str,
         flow_version_id: str,
         input_data: Mapping[str, Any],
+        invocation_key: str | None = None,
     ) -> ActionResult:
         target = self.repository.get_flow_version_by_id(
             workspace_id, flow_version_id
@@ -1568,7 +2092,11 @@ class StudioRuntime:
             correlation_id=self.repository.get_run(workspace_id, run_id)[
                 "correlation_id"
             ],
-            idempotency_key=f"subflow:{run_id}:{node_id}",
+            idempotency_key=(
+                f"subflow:{run_id}:{invocation_key}"
+                if invocation_key is not None
+                else f"subflow:{run_id}:{node_id}"
+            ),
         )
         if child["status"] == "waiting_approval":
             return ActionResult(

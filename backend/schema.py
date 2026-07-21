@@ -340,8 +340,10 @@ CREATE TABLE IF NOT EXISTS automation_run_steps (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
     run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    parent_step_id TEXT REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    member_id TEXT,
     node_id TEXT NOT NULL,
-    node_type TEXT NOT NULL CHECK (node_type IN ('action', 'agent', 'flow')),
+    node_type TEXT NOT NULL CHECK (node_type IN ('action', 'agent', 'flow', 'fan_out')),
     target_version_id TEXT NOT NULL,
     attempt INTEGER NOT NULL CHECK (attempt >= 1),
     status TEXT NOT NULL CHECK (status IN (
@@ -355,7 +357,8 @@ CREATE TABLE IF NOT EXISTS automation_run_steps (
     error_message TEXT,
     started_at TEXT NOT NULL,
     finished_at TEXT,
-    UNIQUE (run_id, node_id, attempt)
+    CHECK ((parent_step_id IS NULL) = (member_id IS NULL)),
+    CHECK (member_id IS NULL OR node_type <> 'fan_out')
 );
 
 CREATE TABLE IF NOT EXISTS automation_events (
@@ -1052,6 +1055,41 @@ CREATE TRIGGER IF NOT EXISTS trg_automation_runs_revision_fence
 BEFORE UPDATE OF status ON automation_runs
 WHEN NEW.status <> OLD.status AND NEW.revision <> OLD.revision + 1
 BEGIN SELECT RAISE(ABORT, 'automation run transition must advance one revision'); END;
+"""
+
+
+# Fan-out member Steps share their parent's graph node id and are distinguished
+# by a pinned member id. Two partial indexes preserve the old uniqueness
+# guarantee for ordinary Steps while making each member attempt independently
+# fenced. The migration rebuild drops the old table's triggers, so one shared
+# constant reinstalls the exact same guards for fresh and upgraded databases.
+AUTOMATION_STEP_GUARDS_SQL = """
+CREATE INDEX IF NOT EXISTS ix_automation_steps_run
+ON automation_run_steps(run_id, started_at, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_automation_steps_graph_attempt
+ON automation_run_steps(run_id, node_id, attempt)
+WHERE member_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_automation_steps_member_attempt
+ON automation_run_steps(parent_step_id, member_id, attempt)
+WHERE member_id IS NOT NULL;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_steps_transition_shape
+BEFORE UPDATE OF status ON automation_run_steps
+WHEN NEW.status <> OLD.status
+AND NOT (
+    (OLD.status = 'running' AND NEW.status IN (
+        'waiting_approval', 'completed', 'blocked', 'failed', 'skipped'
+    )) OR
+    (OLD.status = 'waiting_approval' AND NEW.status IN ('completed', 'blocked'))
+)
+BEGIN SELECT RAISE(ABORT, 'illegal automation step status transition'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_automation_steps_revision_fence
+BEFORE UPDATE OF status ON automation_run_steps
+WHEN NEW.status <> OLD.status AND NEW.revision <> OLD.revision + 1
+BEGIN SELECT RAISE(ABORT, 'automation step transition must advance one revision'); END;
 """
 
 

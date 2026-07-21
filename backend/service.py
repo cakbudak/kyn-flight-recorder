@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from .contracts import (
     canonical_json,
+    Conflict,
     ContractViolation,
     extract_output_text,
     NotFound,
@@ -34,9 +35,12 @@ from .runtime import AgentRuntime, ResponseTransport
 from .skill_forge import build_distillation_payload, parse_candidate
 from .store import Store
 from .studio_runtime import (
+    CALLABLE_ACTION_KINDS,
     JUDGE_PROMPT_VARIABLES,
     StudioRuntime,
     action_mints_effect,
+    fan_out_outcomes,
+    fan_out_output_schema,
     validate_acceptance_contract,
     validate_flow_definition,
 )
@@ -47,6 +51,96 @@ from .tools import ToolRegistry
 SUPPORTED_MODELS = frozenset({"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"})
 ROLE_NAMES = frozenset({"executor", "diagnostician", "repairer"})
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
+
+BOARDROOM_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "brief": {"type": "string", "minLength": 1, "maxLength": 8_000},
+        "context": {"type": "string", "maxLength": 12_000},
+    },
+    "required": ["brief", "context"],
+    "additionalProperties": False,
+}
+BOARDROOM_PARTICIPANT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "verdict": {
+            "type": "string",
+            "enum": ["commit", "challenge", "abstain"],
+        },
+        "analysis": {"type": "string", "minLength": 1, "maxLength": 3_000},
+        "recommendations": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 500},
+            "maxItems": 8,
+        },
+        "risks": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 500},
+            "maxItems": 8,
+        },
+        "citations": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 200},
+            "maxItems": 16,
+        },
+    },
+    "required": ["verdict", "analysis", "recommendations", "risks", "citations"],
+    "additionalProperties": False,
+}
+BOARDROOM_EDITOR_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "decision": {"type": "string", "minLength": 1, "maxLength": 3_000},
+        "consensus": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 500},
+            "maxItems": 12,
+        },
+        "dissent": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 500},
+            "maxItems": 12,
+        },
+        "open_questions": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 500},
+            "maxItems": 12,
+        },
+        "citations": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 200},
+            "maxItems": 20,
+        },
+    },
+    "required": ["decision", "consensus", "dissent", "open_questions", "citations"],
+    "additionalProperties": False,
+}
+BOARDROOM_RESULT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["synthesized", "approved", "rejected", "written"],
+        },
+        **json.loads(canonical_json(BOARDROOM_EDITOR_SCHEMA["properties"])),
+        "approval_reason": {"type": "string", "maxLength": 2_000},
+        "effect_id": {"type": "string", "maxLength": 100},
+        "collection": {"type": "string", "maxLength": 64},
+    },
+    "required": [
+        "status",
+        "decision",
+        "consensus",
+        "dissent",
+        "open_questions",
+        "citations",
+        "approval_reason",
+        "effect_id",
+        "collection",
+    ],
+    "additionalProperties": False,
+}
 
 
 class ControlPlane:
@@ -1129,6 +1223,62 @@ class ControlPlane:
                     None, "Agent outcomes", default_kind="agent"
                 ),
             }
+        if node["type"] == "fan_out":
+            members = node.get("members")
+            barrier = node.get("barrier")
+            if not isinstance(members, list) or not isinstance(barrier, dict):
+                raise ContractViolation("fan-out node is missing its pinned composition")
+            member_contracts: dict[str, dict[str, Any]] = {}
+            cast_agents: set[str] = set()
+            for member in members:
+                member_contract = self._studio_node_contract(workspace_id, member)
+                self._assert_fan_out_target_safe(
+                    workspace_id, member, seen_flow_versions=set()
+                )
+                member_contracts[member["id"]] = member_contract
+                if member["type"] == "agent":
+                    cast_agents.add(str(member["version_id"]))
+                pinned = member_contract.get("agent_version_id")
+                if pinned:
+                    cast_agents.add(str(pinned))
+                cast_agents.update(
+                    str(item) for item in member_contract.get("agent_version_ids", [])
+                )
+            input_schemas = [
+                canonical_json(contract["input_schema"])
+                for contract in member_contracts.values()
+            ]
+            if len(set(input_schemas)) != 1:
+                raise ContractViolation(
+                    "fan-out members must accept the identical mapped input contract"
+                )
+            for member_id, contract in member_contracts.items():
+                verdict_schema = self._schema_at_path(
+                    contract["output_schema"],
+                    str(barrier["verdict_path"]),
+                    field=f"fan-out member {member_id} verdict",
+                )
+                for affirmative in barrier["affirmative_values"]:
+                    try:
+                        validate_json_schema(
+                            affirmative,
+                            verdict_schema,
+                            f"fan-out member {member_id} affirmative value",
+                        )
+                    except ContractViolation as error:
+                        raise ContractViolation(
+                            f"fan-out affirmative value is incompatible with member {member_id} verdict"
+                        ) from error
+            return {
+                "input_schema": next(iter(member_contracts.values()))["input_schema"],
+                "output_schema": fan_out_output_schema(member_contracts),
+                "outcomes": fan_out_outcomes(str(barrier["mode"])),
+                "mints_effect": False,
+                "mints_receipt": any(
+                    member["type"] == "action" for member in members
+                ),
+                "agent_version_ids": sorted(cast_agents),
+            }
         flow = self.studio.get_flow_version_by_id(
             workspace_id, node["version_id"]
         )
@@ -1140,7 +1290,84 @@ class ControlPlane:
             "input_schema": flow["input_schema"],
             "output_schema": flow["output_schema"],
             "outcomes": flow["outcomes"],
+            "agent_version_ids": sorted(
+                self.studio.flow_version_cast_agents(workspace_id, node["version_id"])
+            ),
         }
+
+    @staticmethod
+    def _schema_at_path(
+        schema: Mapping[str, Any], path: str, *, field: str
+    ) -> Mapping[str, Any]:
+        current: Mapping[str, Any] = schema
+        for part in path.split("."):
+            if current.get("type") != "object":
+                raise ContractViolation(f"{field} path leaves an object contract")
+            properties = current.get("properties")
+            if not isinstance(properties, dict) or part not in properties:
+                raise ContractViolation(f"{field} path is not declared by its output contract")
+            current = properties[part]
+        return current
+
+    def _assert_fan_out_target_safe(
+        self,
+        workspace_id: str,
+        target: Mapping[str, Any],
+        *,
+        seen_flow_versions: set[str],
+    ) -> None:
+        """Keep concurrent members read/model-only and bounded.
+
+        Approval and effect Actions remain valid immediately downstream of the
+        barrier. They are refused *inside* a fan-out because one paused member
+        cannot safely suspend a shared barrier and concurrent writes would turn
+        participant multiplicity into authority multiplicity.
+        """
+
+        target_type = target["type"]
+        version_id = str(target["version_id"])
+        if target_type == "agent":
+            self.studio.get_agent_runtime(workspace_id, version_id)
+            return
+        if target_type == "action":
+            action = self.studio.get_action_version(workspace_id, version_id)
+            if action["kind"] == "approval" or action_mints_effect(
+                action["kind"], action["config"]
+            ):
+                raise ContractViolation(
+                    "fan-out members may not pause or mint effects; route approval and writes after the barrier"
+                )
+            if action["kind"] == "ai" and action["agent_version_id"]:
+                agent = self.studio.get_agent_runtime(
+                    workspace_id, action["agent_version_id"]
+                )
+                for granted_version_id in agent["effective_action_version_ids"]:
+                    granted = self.studio.get_action_version(
+                        workspace_id, granted_version_id
+                    )
+                    if granted["kind"] == "approval" or action_mints_effect(
+                        granted["kind"], granted["config"]
+                    ):
+                        raise ContractViolation(
+                            "fan-out AI member grants an Action that may pause or mint an effect"
+                        )
+            return
+        if target_type != "flow":
+            raise ContractViolation("fan-out member target type is invalid")
+        if version_id in seen_flow_versions:
+            raise ContractViolation("fan-out member Flow recursion is not supported")
+        seen_flow_versions.add(version_id)
+        flow = self.studio.get_flow_version_by_id(workspace_id, version_id)
+        for node in flow["nodes"]:
+            if node["type"] == "fan_out":
+                raise ContractViolation(
+                    "a fan-out member Flow may not contain another fan-out"
+                )
+            self._assert_fan_out_target_safe(
+                workspace_id, node, seen_flow_versions=seen_flow_versions
+            )
+        seen_flow_versions.remove(version_id)
+
 
     def _normalize_acceptance_contract(
         self,
@@ -1970,6 +2197,9 @@ class ControlPlane:
     def studio_snapshot(self, workspace_id: str) -> dict[str, Any]:
         snapshot = self.studio.snapshot(workspace_id)
         snapshot.update(self.context.snapshot(workspace_id))
+        snapshot["boardrooms"] = self._boardroom_projections(
+            workspace_id, snapshot["flows"]
+        )
         snapshot["comparisons"] = self.list_comparisons(workspace_id, limit=10)
         # The comparison surface has to offer exactly the models the override
         # membership check will accept. Projecting the set the server enforces
@@ -1977,6 +2207,106 @@ class ControlPlane:
         # start offering a model the runtime refuses, or hiding one it allows.
         snapshot["supported_models"] = sorted(SUPPORTED_MODELS)
         return snapshot
+
+    def _boardroom_projections(
+        self, workspace_id: str, flows: Sequence[Mapping[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Derive BoardRooms from ordinary editable fan-out Flows.
+
+        BoardRoom deliberately owns no second persistence or execution model.
+        This projection is a lens over the generic Flow contract, so opening a
+        room in Flow Studio edits the exact resource the runtime executes.
+        """
+
+        projected: list[dict[str, Any]] = []
+        for flow in flows:
+            version = flow["version"]
+            fan_nodes = [
+                node for node in version["nodes"] if node["type"] == "fan_out"
+            ]
+            if not fan_nodes:
+                continue
+            fan_node = fan_nodes[0]
+            members: list[dict[str, Any]] = []
+            for member in fan_node["members"]:
+                label = member["id"]
+                model = None
+                if member["type"] == "action":
+                    target = self.studio.get_action_version(
+                        workspace_id, member["version_id"]
+                    )
+                    label = target["name"]
+                    if target["agent_version_id"] is not None:
+                        agent = self.studio.get_agent_runtime(
+                            workspace_id, target["agent_version_id"]
+                        )
+                        model = agent["model"]
+                elif member["type"] == "agent":
+                    agent = self.studio.get_agent_runtime(
+                        workspace_id, member["version_id"]
+                    )
+                    label = agent["name"]
+                    model = agent["model"]
+                else:
+                    subflow = self.studio.get_flow_version_by_id(
+                        workspace_id, member["version_id"]
+                    )
+                    label = subflow["name"]
+                members.append(
+                    {
+                        "id": member["id"],
+                        "type": member["type"],
+                        "version_id": member["version_id"],
+                        "label": label,
+                        "model": model,
+                    }
+                )
+
+            approval_mode = "none"
+            write_collection = None
+            for node in version["nodes"]:
+                if node["type"] != "action":
+                    continue
+                action = self.studio.get_action_version(
+                    workspace_id, node["version_id"]
+                )
+                if action["kind"] == "approval":
+                    approval_mode = "human"
+                if action["kind"] == "data_store" and action_mints_effect(
+                    action["kind"], action["config"]
+                ):
+                    write_collection = action["config"]["collection"]
+            editor_node_id = next(
+                (
+                    route["to"]
+                    for route in version["routes"]
+                    if route["from"] == fan_node["id"]
+                    and route["outcome"] in {"converged", "review"}
+                ),
+                None,
+            )
+            projected.append(
+                {
+                    "id": flow["id"],
+                    "flow_id": flow["id"],
+                    "flow_version_id": version["id"],
+                    "name": flow["name"],
+                    "slug": flow["slug"],
+                    "purpose": flow["description"],
+                    "revision": flow["revision"],
+                    "composition_node_id": fan_node["id"],
+                    "editor_node_id": editor_node_id,
+                    "members": members,
+                    "barrier": fan_node["barrier"],
+                    "approval_mode": approval_mode,
+                    "write_collection": write_collection,
+                    "model_call_forecast": self.studio_flow_model_call_forecast(
+                        workspace_id, flow["id"]
+                    ),
+                    "editable_in_flow_studio": True,
+                }
+            )
+        return projected
 
     # -- Context: Knowledge, SmartRead, and governed Memory ------------
 
@@ -2321,6 +2651,610 @@ class ControlPlane:
     ) -> dict[str, Any]:
         return self.context.search_memories(workspace_id, query, max_results=max_results)
 
+    # -- BoardRoom: editable template over the generic fan-out motor -----
+
+    def create_boardroom(
+        self,
+        workspace_id: str,
+        *,
+        name: Any,
+        slug: Any,
+        purpose: Any,
+        participants: Any,
+        editor: Any,
+        quorum: Any,
+        error_policy: Any,
+        approval_mode: Any,
+        write_collection: Any = None,
+    ) -> dict[str, Any]:
+        room_name = require_string(name, "BoardRoom name", maximum=100)
+        room_slug = require_slug(slug, "BoardRoom slug")
+        room_purpose = require_string(purpose, "BoardRoom purpose", maximum=1_500)
+        if not isinstance(participants, list) or not 2 <= len(participants) <= 8:
+            raise ContractViolation("BoardRoom must contain two to eight participants")
+        if (
+            not isinstance(quorum, int)
+            or isinstance(quorum, bool)
+            or not 1 <= quorum <= len(participants)
+        ):
+            raise ContractViolation("BoardRoom quorum is impossible")
+        if error_policy not in {"isolate", "fail_fast"}:
+            raise ContractViolation("BoardRoom member error policy is invalid")
+        if approval_mode not in {"none", "human"}:
+            raise ContractViolation("BoardRoom approval mode is invalid")
+        normalized_collection = (
+            require_slug(write_collection, "BoardRoom write collection")
+            if write_collection is not None
+            else None
+        )
+        if normalized_collection is not None and approval_mode != "human":
+            raise ContractViolation("BoardRoom writes require a human approval gate")
+        if not isinstance(editor, dict) or set(editor) != {
+            "name",
+            "model",
+            "instructions",
+            "reasoning_effort",
+        }:
+            raise ContractViolation("BoardRoom editor config is invalid")
+        editor_model = require_string(editor["model"], "BoardRoom editor model", maximum=80)
+        if editor_model not in SUPPORTED_MODELS:
+            raise ContractViolation("BoardRoom editor model is not supported")
+        if editor["reasoning_effort"] not in {"low", "medium", "high"}:
+            raise ContractViolation("BoardRoom editor reasoning effort is invalid")
+        normalized_editor = {
+            "name": require_string(editor["name"], "BoardRoom editor name", maximum=100),
+            "model": editor_model,
+            "instructions": require_string(
+                editor["instructions"], "BoardRoom editor instructions", maximum=4_000
+            ),
+            "reasoning_effort": editor["reasoning_effort"],
+        }
+
+        normalized_participants: list[dict[str, Any]] = []
+        participant_ids: set[str] = set()
+        for index, participant in enumerate(participants):
+            required = {
+                "id",
+                "name",
+                "perspective",
+                "model",
+                "instructions",
+                "allowed_action_version_ids",
+                "max_tool_calls",
+                "reasoning_effort",
+            }
+            if not isinstance(participant, dict) or set(participant) != required:
+                raise ContractViolation(f"BoardRoom participant {index} config is invalid")
+            participant_id = require_slug(
+                participant["id"], f"BoardRoom participant {index} id"
+            )
+            if participant_id in participant_ids:
+                raise ContractViolation("BoardRoom participant ids must be unique")
+            participant_ids.add(participant_id)
+            model = require_string(
+                participant["model"],
+                f"BoardRoom participant {participant_id} model",
+                maximum=80,
+            )
+            if model not in SUPPORTED_MODELS:
+                raise ContractViolation(
+                    f"BoardRoom participant {participant_id} model is not supported"
+                )
+            grants = require_string_list(
+                participant["allowed_action_version_ids"],
+                f"BoardRoom participant {participant_id} Action grants",
+                maximum_items=12,
+                maximum_item_length=80,
+            )
+            for version_id in grants:
+                granted = self.studio.get_action_version(workspace_id, version_id)
+                if granted["kind"] not in CALLABLE_ACTION_KINDS:
+                    raise ContractViolation(
+                        f"BoardRoom participant {participant_id} grants a non-callable Action"
+                    )
+                if granted["kind"] == "approval" or action_mints_effect(
+                    granted["kind"], granted["config"]
+                ):
+                    raise ContractViolation(
+                        "BoardRoom participant grants may not pause or mint effects"
+                    )
+            max_calls = participant["max_tool_calls"]
+            if (
+                not isinstance(max_calls, int)
+                or isinstance(max_calls, bool)
+                or not 0 <= max_calls <= 4
+            ):
+                raise ContractViolation(
+                    f"BoardRoom participant {participant_id} tool budget is invalid"
+                )
+            if max_calls and not grants:
+                raise ContractViolation(
+                    f"BoardRoom participant {participant_id} has a tool budget but no Action grant"
+                )
+            reasoning = participant["reasoning_effort"]
+            if reasoning not in {"low", "medium", "high"}:
+                raise ContractViolation(
+                    f"BoardRoom participant {participant_id} reasoning effort is invalid"
+                )
+            normalized_participants.append(
+                {
+                    "id": participant_id,
+                    "name": require_string(
+                        participant["name"],
+                        f"BoardRoom participant {participant_id} name",
+                        maximum=100,
+                    ),
+                    "perspective": require_string(
+                        participant["perspective"],
+                        f"BoardRoom participant {participant_id} perspective",
+                        maximum=1_500,
+                    ),
+                    "model": model,
+                    "instructions": require_string(
+                        participant["instructions"],
+                        f"BoardRoom participant {participant_id} instructions",
+                        maximum=4_000,
+                    ),
+                    "allowed_action_version_ids": grants,
+                    "max_tool_calls": max_calls,
+                    "reasoning_effort": reasoning,
+                }
+            )
+
+        final_statuses = (
+            ["synthesized"]
+            if approval_mode == "none"
+            else ["rejected", "approved" if normalized_collection is None else "written"]
+        )
+        generated_slugs = {
+            "prompts": [
+                *(f"{room_slug}-{item['id']}-prompt" for item in normalized_participants),
+                f"{room_slug}-editor-prompt",
+            ],
+            "skills": [
+                *(f"{room_slug}-{item['id']}-skill" for item in normalized_participants),
+                f"{room_slug}-editor-skill",
+            ],
+            "agents": [
+                *(f"{room_slug}-{item['id']}-agent" for item in normalized_participants),
+                f"{room_slug}-editor-agent",
+            ],
+            "actions": [
+                *(f"{room_slug}-{item['id']}-vote" for item in normalized_participants),
+                f"{room_slug}-synthesis",
+                *(f"{room_slug}-result-{status}" for status in final_statuses),
+                *([f"{room_slug}-approval"] if approval_mode == "human" else []),
+                *([f"{room_slug}-write"] if normalized_collection is not None else []),
+            ],
+            "automation_flows": [room_slug],
+        }
+        for resource_slugs in generated_slugs.values():
+            for generated_slug in resource_slugs:
+                require_slug(generated_slug, "generated BoardRoom resource slug")
+            if len(set(resource_slugs)) != len(resource_slugs):
+                raise ContractViolation("BoardRoom generated resource slugs collide")
+        with self.store.read() as connection:
+            for table, resource_slugs in generated_slugs.items():
+                placeholders = ",".join("?" for _ in resource_slugs)
+                conflict = connection.execute(
+                    f'SELECT slug FROM "{table}" '
+                    f"WHERE workspace_id = ? AND slug IN ({placeholders}) LIMIT 1",
+                    (workspace_id, *resource_slugs),
+                ).fetchone()
+                if conflict is not None:
+                    raise Conflict(
+                        f"BoardRoom resource slug already exists: {conflict['slug']}"
+                    )
+
+        # Every field above is normalized, every grant resolved, and every
+        # authority boundary checked before the first resource is published.
+        participant_resources: list[dict[str, Any]] = []
+        for participant in normalized_participants:
+            resource_slug = f"{room_slug}-{participant['id']}"
+            prompt = self.create_prompt(
+                workspace_id,
+                name=f"{participant['name']} · {room_name}",
+                slug=f"{resource_slug}-prompt",
+                template=(
+                    "Review the brief independently. Do not infer another participant's "
+                    "position. Cite the supplied context when it supports a claim.\n\n"
+                    "Brief:\n{{brief}}\n\nEvidence context:\n{{context}}"
+                ),
+                variables=["brief", "context"],
+            )
+            skill = self.create_skill(
+                workspace_id,
+                name=f"{participant['name']} perspective",
+                slug=f"{resource_slug}-skill",
+                instructions=(
+                    f"Perspective: {participant['perspective']}\n\n"
+                    "Return an independent verdict. Preserve uncertainty and cite only "
+                    "context actually supplied to this run."
+                ),
+                allowed_tools=[],
+                allowed_action_version_ids=participant["allowed_action_version_ids"],
+            )
+            agent = self.create_agent(
+                workspace_id,
+                name=participant["name"],
+                slug=f"{resource_slug}-agent",
+                role="executor",
+                model=participant["model"],
+                instructions=(
+                    f"BoardRoom purpose: {room_purpose}\n\n"
+                    f"{participant['instructions']}\n\n"
+                    "You cannot see other participant outputs. Verdict must be commit, "
+                    "challenge, or abstain."
+                ),
+                prompt_version_id=prompt["version"]["id"],
+                skill_version_ids=[skill["version"]["id"]],
+            )
+            action = self.create_action(
+                workspace_id,
+                name=f"{participant['name']} independent vote",
+                slug=f"{resource_slug}-vote",
+                description=(
+                    f"Runs the {participant['name']} perspective independently and "
+                    "returns a strict verdict with analysis, risk, and citations."
+                ),
+                kind="ai",
+                input_schema=BOARDROOM_INPUT_SCHEMA,
+                output_schema=BOARDROOM_PARTICIPANT_SCHEMA,
+                outcomes=None,
+                config={
+                    "max_tool_calls": participant["max_tool_calls"],
+                    "reasoning_effort": participant["reasoning_effort"],
+                },
+                agent_version_id=agent["version"]["id"],
+            )
+            participant_resources.append(
+                {
+                    "id": participant["id"],
+                    "prompt": prompt,
+                    "skill": skill,
+                    "agent": agent,
+                    "action": action,
+                }
+            )
+
+        editor_prompt = self.create_prompt(
+            workspace_id,
+            name=f"{normalized_editor['name']} · {room_name}",
+            slug=f"{room_slug}-editor-prompt",
+            template=(
+                "Synthesize the completed participant records. Preserve every material "
+                "dissent and failed member; do not turn quorum into unanimity.\n\n"
+                "Participants:\n{{members}}\n\nCode-owned barrier:\n{{barrier}}"
+            ),
+            variables=["members", "barrier"],
+        )
+        editor_skill = self.create_skill(
+            workspace_id,
+            name=f"{room_name} dissent-preserving synthesis",
+            slug=f"{room_slug}-editor-skill",
+            instructions=(
+                "The deterministic barrier owns quorum. The editor explains its result, "
+                "retains dissent verbatim in substance, and grants no authority."
+            ),
+            allowed_tools=[],
+            allowed_action_version_ids=[],
+        )
+        editor_agent = self.create_agent(
+            workspace_id,
+            name=normalized_editor["name"],
+            slug=f"{room_slug}-editor-agent",
+            role="executor",
+            model=normalized_editor["model"],
+            instructions=(
+                f"BoardRoom purpose: {room_purpose}\n\n"
+                f"{normalized_editor['instructions']}"
+            ),
+            prompt_version_id=editor_prompt["version"]["id"],
+            skill_version_ids=[editor_skill["version"]["id"]],
+        )
+        member_contracts = {
+            item["id"]: {"output_schema": BOARDROOM_PARTICIPANT_SCHEMA}
+            for item in participant_resources
+        }
+        fan_schema = fan_out_output_schema(member_contracts)
+        editor_input_schema = {
+            "type": "object",
+            "properties": {
+                "members": fan_schema["properties"]["members"],
+                "barrier": fan_schema["properties"]["barrier"],
+            },
+            "required": ["members", "barrier"],
+            "additionalProperties": False,
+        }
+        editor_action = self.create_action(
+            workspace_id,
+            name=f"{room_name} synthesis",
+            slug=f"{room_slug}-synthesis",
+            description=(
+                "Synthesizes only completed participant records after code has computed "
+                "quorum, retaining dissent and open questions as strict data."
+            ),
+            kind="ai",
+            input_schema=editor_input_schema,
+            output_schema=BOARDROOM_EDITOR_SCHEMA,
+            outcomes=None,
+            config={
+                "max_tool_calls": 0,
+                "reasoning_effort": normalized_editor["reasoning_effort"],
+            },
+            agent_version_id=editor_agent["version"]["id"],
+        )
+
+        nodes: list[dict[str, Any]] = [
+            {
+                "id": "council",
+                "type": "fan_out",
+                "version_id": "fanout-v1",
+                "input_mapping": {
+                    "brief": {"source": "input", "path": "brief"},
+                    "context": {"source": "input", "path": "context"},
+                },
+                "members": [
+                    {
+                        "id": item["id"],
+                        "type": "action",
+                        "version_id": item["action"]["version"]["id"],
+                    }
+                    for item in participant_resources
+                ],
+                "barrier": {
+                    "mode": "quorum",
+                    "quorum": quorum,
+                    "verdict_path": "verdict",
+                    "affirmative_values": ["commit"],
+                    "on_member_error": error_policy,
+                },
+                "position": {"x": 160, "y": 220},
+            },
+            {
+                "id": "editor",
+                "type": "action",
+                "version_id": editor_action["version"]["id"],
+                "input_mapping": {
+                    "members": {"source": "step", "node_id": "council", "path": "members"},
+                    "barrier": {"source": "step", "node_id": "council", "path": "barrier"},
+                },
+                "position": {"x": 540, "y": 220},
+            },
+        ]
+        routes: list[dict[str, str]] = [
+            {"from": "council", "to": "editor", "outcome": outcome}
+            for outcome in ("converged", "review", "error")
+        ]
+
+        approval_action: dict[str, Any] | None = None
+        write_action: dict[str, Any] | None = None
+        final_actions: list[dict[str, Any]] = []
+
+        def publish_final_action(status: str) -> dict[str, Any]:
+            action = self.create_action(
+                workspace_id,
+                name=f"{room_name} {status} result",
+                slug=f"{room_slug}-result-{status}",
+                description=f"Normalizes the BoardRoom {status} terminal result.",
+                kind="transform",
+                input_schema=BOARDROOM_RESULT_SCHEMA,
+                output_schema=BOARDROOM_RESULT_SCHEMA,
+                outcomes=None,
+                config={
+                    "operation": "map",
+                    "mappings": {
+                        key: {"source": "input", "path": key}
+                        for key in BOARDROOM_RESULT_SCHEMA["properties"]
+                    },
+                },
+                agent_version_id=None,
+            )
+            final_actions.append(action)
+            return action
+
+        def result_mapping(
+            *,
+            status: str,
+            approval_node: str | None = None,
+            effect_node: str | None = None,
+        ) -> dict[str, Any]:
+            mapping: dict[str, Any] = {
+                key: {"source": "step", "node_id": "editor", "path": key}
+                for key in BOARDROOM_EDITOR_SCHEMA["properties"]
+            }
+            mapping["status"] = {"source": "literal", "value": status}
+            mapping["approval_reason"] = (
+                {"source": "step", "node_id": approval_node, "path": "reason"}
+                if approval_node
+                else {"source": "literal", "value": ""}
+            )
+            mapping["effect_id"] = (
+                {"source": "step", "node_id": effect_node, "path": "effect_id"}
+                if effect_node
+                else {"source": "literal", "value": ""}
+            )
+            mapping["collection"] = (
+                {"source": "step", "node_id": effect_node, "path": "collection"}
+                if effect_node
+                else {"source": "literal", "value": ""}
+            )
+            return mapping
+
+        if approval_mode == "none":
+            final = publish_final_action("synthesized")
+            nodes.append(
+                {
+                    "id": "finalize",
+                    "type": "action",
+                    "version_id": final["version"]["id"],
+                    "input_mapping": result_mapping(status="synthesized"),
+                    "position": {"x": 900, "y": 220},
+                }
+            )
+            routes.append({"from": "editor", "to": "finalize", "outcome": "success"})
+        else:
+            approval_action = self.create_action(
+                workspace_id,
+                name=f"Approve {room_name} decision",
+                slug=f"{room_slug}-approval",
+                description="Requires a human decision before any BoardRoom write.",
+                kind="approval",
+                input_schema=BOARDROOM_EDITOR_SCHEMA,
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "approved": {"type": "boolean"},
+                        "reason": {"type": "string", "maxLength": 2_000},
+                    },
+                    "required": ["approved", "reason"],
+                    "additionalProperties": False,
+                },
+                outcomes=None,
+                config={
+                    "message_template": (
+                        "Approve this BoardRoom decision: {{decision}}\n\n"
+                        "Dissent retained: {{dissent}}"
+                    )
+                },
+                agent_version_id=None,
+            )
+            nodes.append(
+                {
+                    "id": "approval",
+                    "type": "action",
+                    "version_id": approval_action["version"]["id"],
+                    "input_mapping": {
+                        key: {"source": "step", "node_id": "editor", "path": key}
+                        for key in BOARDROOM_EDITOR_SCHEMA["properties"]
+                    },
+                    "position": {"x": 860, "y": 220},
+                }
+            )
+            routes.append({"from": "editor", "to": "approval", "outcome": "success"})
+            rejected = publish_final_action("rejected")
+            nodes.append(
+                {
+                    "id": "rejected-result",
+                    "type": "action",
+                    "version_id": rejected["version"]["id"],
+                    "input_mapping": result_mapping(
+                        status="rejected", approval_node="approval"
+                    ),
+                    "position": {"x": 1_180, "y": 390},
+                }
+            )
+            routes.append(
+                {"from": "approval", "to": "rejected-result", "outcome": "rejected"}
+            )
+            if normalized_collection is None:
+                approved = publish_final_action("approved")
+                nodes.append(
+                    {
+                        "id": "approved-result",
+                        "type": "action",
+                        "version_id": approved["version"]["id"],
+                        "input_mapping": result_mapping(
+                            status="approved", approval_node="approval"
+                        ),
+                        "position": {"x": 1_180, "y": 120},
+                    }
+                )
+                routes.append(
+                    {"from": "approval", "to": "approved-result", "outcome": "approved"}
+                )
+            else:
+                write_action = self.create_action(
+                    workspace_id,
+                    name=f"Write {room_name} decision",
+                    slug=f"{room_slug}-write",
+                    description="Writes the approved synthesis to the bounded workspace collection.",
+                    kind="data_store",
+                    input_schema=BOARDROOM_EDITOR_SCHEMA,
+                    output_schema={
+                        "type": "object",
+                        "properties": {
+                            "effect_id": {"type": "string"},
+                            "collection": {"type": "string"},
+                        },
+                        "required": ["effect_id", "collection"],
+                        "additionalProperties": False,
+                    },
+                    outcomes=None,
+                    config={
+                        "operation": "append_record",
+                        "collection": normalized_collection,
+                        "write_enabled": True,
+                    },
+                    agent_version_id=None,
+                )
+                nodes.append(
+                    {
+                        "id": "write",
+                        "type": "action",
+                        "version_id": write_action["version"]["id"],
+                        "input_mapping": {
+                            key: {"source": "step", "node_id": "editor", "path": key}
+                            for key in BOARDROOM_EDITOR_SCHEMA["properties"]
+                        },
+                        "position": {"x": 1_160, "y": 120},
+                    }
+                )
+                routes.append({"from": "approval", "to": "write", "outcome": "approved"})
+                written = publish_final_action("written")
+                nodes.append(
+                    {
+                        "id": "written-result",
+                        "type": "action",
+                        "version_id": written["version"]["id"],
+                        "input_mapping": result_mapping(
+                            status="written",
+                            approval_node="approval",
+                            effect_node="write",
+                        ),
+                        "position": {"x": 1_480, "y": 120},
+                    }
+                )
+                routes.append({"from": "write", "to": "written-result", "outcome": "success"})
+
+        flow = self.create_studio_flow(
+            workspace_id,
+            name=room_name,
+            slug=room_slug,
+            description=room_purpose,
+            input_schema=BOARDROOM_INPUT_SCHEMA,
+            output_schema=BOARDROOM_RESULT_SCHEMA,
+            outcomes=None,
+            start_node_id="council",
+            nodes=nodes,
+            routes=routes,
+        )
+        return {
+            "name": room_name,
+            "slug": room_slug,
+            "purpose": room_purpose,
+            "participant_resources": participant_resources,
+            "editor": {
+                "prompt": editor_prompt,
+                "skill": editor_skill,
+                "agent": editor_agent,
+                "action": editor_action,
+            },
+            "approval_action": approval_action,
+            "write_action": write_action,
+            "final_actions": final_actions,
+            "flow": flow,
+            "runtime": {
+                "composition": "fan_out",
+                "parallel_members": len(participant_resources),
+                "barrier_mode": "quorum",
+                "quorum": quorum,
+                "error_policy": error_policy,
+                "approval_mode": approval_mode,
+                "write_collection": normalized_collection,
+            },
+        }
+
     def check_brake(self, workspace_id: str, flow_id: str) -> dict[str, Any]:
         """Report, without writing, whether a canonical dead end VETOES this Flow.
 
@@ -2651,26 +3585,35 @@ class ControlPlane:
         for route in flow_version["routes"]:
             adjacency[route["from"]].append(route["to"])
         weights: dict[str, int] = {}
-        for node_id, node in nodes.items():
-            if node["type"] == "agent":
-                weights[node_id] = 1
-                continue
-            if node["type"] == "flow":
+
+        def target_weight(target: Mapping[str, Any]) -> int:
+            if target["type"] == "agent":
+                return 1
+            if target["type"] == "flow":
                 child = self.studio.get_flow_version_by_id(
-                    workspace_id, node["version_id"]
+                    workspace_id, target["version_id"]
                 )
-                weights[node_id] = self.studio_flow_model_call_forecast(
+                return self.studio_flow_model_call_forecast(
                     workspace_id,
                     child["flow_id"],
                     version=int(child["version"]),
                 )
-                continue
-            action = self.studio.get_action_version(workspace_id, node["version_id"])
-            weights[node_id] = (
+            action = self.studio.get_action_version(
+                workspace_id, target["version_id"]
+            )
+            return (
                 int(action["config"].get("max_tool_calls", 0)) + 1
                 if action["kind"] == "ai"
                 else 0
             )
+
+        for node_id, node in nodes.items():
+            if node["type"] == "fan_out":
+                weights[node_id] = sum(
+                    target_weight(member) for member in node["members"]
+                )
+                continue
+            weights[node_id] = target_weight(node)
         memo: dict[str, int] = {}
 
         def maximum_path(node_id: str) -> int:

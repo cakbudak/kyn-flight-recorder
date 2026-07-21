@@ -381,6 +381,25 @@ class ApiApplication:
                 ),
                 status=HTTPStatus.CREATED,
             )
+        if request.path == "/api/v1/studio/boardrooms":
+            self._require_exact_keys(
+                body,
+                {
+                    "name",
+                    "slug",
+                    "purpose",
+                    "participants",
+                    "editor",
+                    "quorum",
+                    "error_policy",
+                    "approval_mode",
+                    "write_collection",
+                },
+            )
+            return self._ok(
+                self.control_plane.create_boardroom(workspace_id, **body),
+                status=HTTPStatus.CREATED,
+            )
         if request.path == "/api/v1/studio/actions":
             self._require_keys(
                 body,

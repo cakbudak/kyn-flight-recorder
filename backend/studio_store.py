@@ -588,6 +588,108 @@ class StudioStore:
                     }
                 )
                 requires_model = True
+            elif node["type"] == "fan_out":
+                pinned.append(
+                    {
+                        "node_id": node["id"],
+                        "type": "fan_out",
+                        "version_id": version_id,
+                        "fingerprint": fingerprint(
+                            {
+                                "version_id": version_id,
+                                "members": node["members"],
+                                "barrier": node["barrier"],
+                            }
+                        ),
+                    }
+                )
+                expanded_nodes += len(node["members"])
+                for member in node["members"]:
+                    member_version_id = str(member["version_id"])
+                    member_type = str(member["type"])
+                    if member_type == "action":
+                        member_row = connection.execute(
+                            "SELECT id, kind, executor_kind, fingerprint "
+                            "FROM action_versions WHERE id = ? AND workspace_id = ?",
+                            (member_version_id, workspace_id),
+                        ).fetchone()
+                        if member_row is None:
+                            raise ContractViolation(
+                                "fan-out Action version does not belong to the workspace"
+                            )
+                        pinned.append(
+                            {
+                                "node_id": node["id"],
+                                "member_id": member["id"],
+                                "type": "action",
+                                "version_id": member_row["id"],
+                                "fingerprint": member_row["fingerprint"],
+                            }
+                        )
+                        requires_model = requires_model or (
+                            member_row["executor_kind"] or member_row["kind"]
+                        ) == "ai"
+                    elif member_type == "agent":
+                        member_row = connection.execute(
+                            "SELECT id, fingerprint FROM agent_versions "
+                            "WHERE id = ? AND workspace_id = ?",
+                            (member_version_id, workspace_id),
+                        ).fetchone()
+                        if member_row is None:
+                            raise ContractViolation(
+                                "fan-out Agent version does not belong to the workspace"
+                            )
+                        pinned.append(
+                            {
+                                "node_id": node["id"],
+                                "member_id": member["id"],
+                                "type": "agent",
+                                "version_id": member_row["id"],
+                                "fingerprint": member_row["fingerprint"],
+                            }
+                        )
+                        requires_model = True
+                    else:
+                        member_row = connection.execute(
+                            """
+                            SELECT afv.id, afv.flow_id, afv.version, afv.fingerprint,
+                                   afv.requires_model
+                            FROM automation_flow_versions afv
+                            WHERE afv.id = ? AND afv.workspace_id = ?
+                            """,
+                            (member_version_id, workspace_id),
+                        ).fetchone()
+                        if member_row is None:
+                            raise ContractViolation(
+                                "fan-out Flow version does not belong to the workspace"
+                            )
+                        if owner_flow_id is not None and StudioStore._flow_version_reaches_flow(
+                            connection, str(member_row["id"]), owner_flow_id
+                        ):
+                            raise ContractViolation(
+                                "fan-out Flow reuse dependency would create a cycle"
+                            )
+                        pinned.append(
+                            {
+                                "node_id": node["id"],
+                                "member_id": member["id"],
+                                "type": "flow",
+                                "version_id": member_row["id"],
+                                "flow_id": member_row["flow_id"],
+                                "version": int(member_row["version"]),
+                                "fingerprint": member_row["fingerprint"],
+                            }
+                        )
+                        requires_model = requires_model or bool(
+                            member_row["requires_model"]
+                        )
+                        expanded_nodes += StudioStore._flow_version_node_count(
+                            connection, str(member_row["id"])
+                        )
+                if expanded_nodes > 200:
+                    raise ContractViolation(
+                        "Flow, fan-out members, and subflows exceed two hundred nodes"
+                    )
             else:
                 row = connection.execute(
                     """
@@ -2012,7 +2114,11 @@ class StudioStore:
         node_type: str,
         target_version_id: str,
         input_data: Mapping[str, Any],
+        parent_step_id: str | None = None,
+        member_id: str | None = None,
     ) -> str:
+        if (parent_step_id is None) != (member_id is None):
+            raise ContractViolation("member Step identity is incomplete")
         with self.store.write() as connection:
             run = connection.execute(
                 "SELECT status FROM automation_runs WHERE id = ? AND workspace_id = ?",
@@ -2022,24 +2128,51 @@ class StudioStore:
                 raise NotFound("Automation Run was not found")
             if run["status"] != "running":
                 raise Conflict("Automation Run is not running")
-            prior = connection.execute(
-                "SELECT COALESCE(MAX(attempt), 0) AS attempt FROM automation_run_steps WHERE run_id = ? AND node_id = ?",
-                (run_id, node_id),
-            ).fetchone()
+            if parent_step_id is not None:
+                parent = connection.execute(
+                    """
+                    SELECT id FROM automation_run_steps
+                    WHERE id = ? AND run_id = ? AND workspace_id = ?
+                      AND status = 'running' AND node_type = 'fan_out'
+                    """,
+                    (parent_step_id, run_id, workspace_id),
+                ).fetchone()
+                if parent is None:
+                    raise Conflict("fan-out parent Step is not running")
+                prior = connection.execute(
+                    """
+                    SELECT COALESCE(MAX(attempt), 0) AS attempt
+                    FROM automation_run_steps
+                    WHERE parent_step_id = ? AND member_id = ?
+                    """,
+                    (parent_step_id, member_id),
+                ).fetchone()
+            else:
+                prior = connection.execute(
+                    """
+                    SELECT COALESCE(MAX(attempt), 0) AS attempt
+                    FROM automation_run_steps
+                    WHERE run_id = ? AND node_id = ? AND member_id IS NULL
+                    """,
+                    (run_id, node_id),
+                ).fetchone()
             attempt = int(prior["attempt"]) + 1
             step_id = new_id("astep")
             now = utc_now()
             connection.execute(
                 """
                 INSERT INTO automation_run_steps
-                    (id, workspace_id, run_id, node_id, node_type, target_version_id,
-                     attempt, status, revision, input_json, started_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'running', 1, ?, ?)
+                    (id, workspace_id, run_id, parent_step_id, member_id,
+                     node_id, node_type, target_version_id, attempt, status,
+                     revision, input_json, started_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 1, ?, ?)
                 """,
                 (
                     step_id,
                     workspace_id,
                     run_id,
+                    parent_step_id,
+                    member_id,
                     node_id,
                     node_type,
                     target_version_id,
@@ -2061,6 +2194,8 @@ class StudioStore:
                     "node_type": node_type,
                     "target_version_id": target_version_id,
                     "attempt": attempt,
+                    "parent_step_id": parent_step_id,
+                    "member_id": member_id,
                     "input_fingerprint": fingerprint(dict(input_data)),
                 },
             )
@@ -2116,6 +2251,8 @@ class StudioStore:
                     "step_id": step_id,
                     "node_id": row["node_id"],
                     "attempt": row["attempt"],
+                    "parent_step_id": row["parent_step_id"],
+                    "member_id": row["member_id"],
                     "route_outcome": route_outcome,
                     "output_fingerprint": fingerprint(output) if output is not None else None,
                     "error_code": error_code,
@@ -2420,7 +2557,12 @@ class StudioStore:
                     raise Conflict("Approval request already has a different decision")
                 return str(request["run_id"])
             run = connection.execute(
-                "SELECT * FROM automation_runs WHERE id = ? AND workspace_id = ?",
+                """
+                SELECT r.*, v.routes_json AS flow_routes_json
+                FROM automation_runs r
+                JOIN automation_flow_versions v ON v.id = r.flow_version_id
+                WHERE r.id = ? AND r.workspace_id = ?
+                """,
                 (request["run_id"], workspace_id),
             ).fetchone()
             step = connection.execute(
@@ -2440,8 +2582,19 @@ class StudioStore:
                 """,
                 (decision_id, workspace_id, request_id, int(approved), actor, reason, now),
             )
-            step_status = "completed" if approved else "blocked"
             route = "approved" if approved else "rejected"
+            selected_target = next(
+                (
+                    item.get("to")
+                    for item in _decode(run["flow_routes_json"])
+                    if item.get("from") == step["node_id"]
+                    and item.get("outcome") == route
+                ),
+                None,
+            )
+            rejection_is_routed = not approved and isinstance(selected_target, str)
+            resumes = approved or rejection_is_routed
+            step_status = "completed" if resumes else "blocked"
             connection.execute(
                 """
                 UPDATE automation_run_steps
@@ -2458,8 +2611,12 @@ class StudioStore:
                     step["revision"],
                 ),
             )
-            next_status = "running" if approved else "blocked"
-            next_node = run["current_node_id"] if approved else None
+            next_status = "running" if resumes else "blocked"
+            next_node = (
+                selected_target
+                if rejection_is_routed
+                else run["current_node_id"] if approved else None
+            )
             connection.execute(
                 """
                 UPDATE automation_runs
@@ -2470,10 +2627,10 @@ class StudioStore:
                 (
                     next_status,
                     next_node,
-                    None if approved else "rejected",
-                    None if approved else "approval_rejected",
-                    None if approved else reason,
-                    None if approved else now,
+                    None if resumes else "rejected",
+                    None if resumes else "approval_rejected",
+                    None if resumes else reason,
+                    None if resumes else now,
                     run["id"],
                     run["revision"],
                 ),
@@ -3249,6 +3406,8 @@ class StudioStore:
     def _step_projection(row: sqlite3.Row) -> dict[str, Any]:
         return {
             "id": row["id"],
+            "parent_step_id": row["parent_step_id"],
+            "member_id": row["member_id"],
             "node_id": row["node_id"],
             "node_type": row["node_type"],
             "target_version_id": row["target_version_id"],
@@ -4360,34 +4519,36 @@ class StudioStore:
                 raise NotFound("Goal-Judge Agent version was not found")
             models.add(str(judge["model"]))
         for node in _decode(row["nodes_json"]):
-            node_version_id = str(node["version_id"])
-            if node["type"] == "flow":
-                self._collect_pinned_models(
-                    connection, workspace_id, node_version_id, models, seen
-                )
-                continue
-            agent_version_id: str | None = None
-            if node["type"] == "agent":
-                agent_version_id = node_version_id
-            else:
-                action = connection.execute(
-                    "SELECT kind, executor_kind, agent_version_id FROM action_versions "
-                    "WHERE id = ? AND workspace_id = ?",
-                    (node_version_id, workspace_id),
+            targets = node["members"] if node["type"] == "fan_out" else [node]
+            for target in targets:
+                target_version_id = str(target["version_id"])
+                if target["type"] == "flow":
+                    self._collect_pinned_models(
+                        connection, workspace_id, target_version_id, models, seen
+                    )
+                    continue
+                agent_version_id: str | None = None
+                if target["type"] == "agent":
+                    agent_version_id = target_version_id
+                else:
+                    action = connection.execute(
+                        "SELECT kind, executor_kind, agent_version_id FROM action_versions "
+                        "WHERE id = ? AND workspace_id = ?",
+                        (target_version_id, workspace_id),
+                    ).fetchone()
+                    if action is None:
+                        raise NotFound("Action version was not found")
+                    if (action["executor_kind"] or action["kind"]) == "ai":
+                        agent_version_id = action["agent_version_id"]
+                if agent_version_id is None:
+                    continue
+                agent = connection.execute(
+                    "SELECT model FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                    (agent_version_id, workspace_id),
                 ).fetchone()
-                if action is None:
-                    raise NotFound("Action version was not found")
-                if (action["executor_kind"] or action["kind"]) == "ai":
-                    agent_version_id = action["agent_version_id"]
-            if agent_version_id is None:
-                continue
-            agent = connection.execute(
-                "SELECT model FROM agent_versions WHERE id = ? AND workspace_id = ?",
-                (agent_version_id, workspace_id),
-            ).fetchone()
-            if agent is None:
-                raise NotFound("Agent version was not found")
-            models.add(str(agent["model"]))
+                if agent is None:
+                    raise NotFound("Agent version was not found")
+                models.add(str(agent["model"]))
 
     def get_run(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         with self.store.read() as connection:

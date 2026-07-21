@@ -115,6 +115,64 @@ class RuntimeHttpTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["data"]["workspace"]["id"], bootstrap["workspace_id"])
 
+    def test_http_boardroom_factory_publishes_an_editable_parallel_flow(self) -> None:
+        cookie, _bootstrap = self.create_workspace()
+        status, _headers, payload = self.request(
+            "POST",
+            "/api/v1/studio/boardrooms",
+            body={
+                "name": "HTTP launch council",
+                "slug": "http-launch-council",
+                "purpose": "Challenge a launch brief with independent evidence-bound roles.",
+                "participants": [
+                    {
+                        "id": identifier,
+                        "name": name,
+                        "perspective": perspective,
+                        "model": "gpt-5.6",
+                        "instructions": "Review independently and retain uncertainty.",
+                        "allowed_action_version_ids": [],
+                        "max_tool_calls": 0,
+                        "reasoning_effort": "low",
+                    }
+                    for identifier, name, perspective in (
+                        ("product", "Product Steward", "Product coherence."),
+                        ("risk", "Risk Challenger", "Unsupported claims."),
+                        ("operations", "Runtime Operator", "Repeatable evidence."),
+                    )
+                ],
+                "editor": {
+                    "name": "Dissent Editor",
+                    "model": "gpt-5.6",
+                    "instructions": "Synthesize without erasing material dissent.",
+                    "reasoning_effort": "medium",
+                },
+                "quorum": 2,
+                "error_policy": "isolate",
+                "approval_mode": "human",
+                "write_collection": None,
+            },
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 201)
+        room = payload["data"]
+        self.assertEqual(room["runtime"]["parallel_members"], 3)
+        self.assertEqual(room["flow"]["version"]["nodes"][0]["type"], "fan_out")
+
+        status, _headers, payload = self.request(
+            "GET", "/api/v1/studio", cookie=cookie
+        )
+        self.assertEqual(status, 200)
+        projected = next(
+            item
+            for item in payload["data"]["boardrooms"]
+            if item["flow_id"] == room["flow"]["id"]
+        )
+        self.assertEqual(projected["approval_mode"], "human")
+        self.assertEqual(projected["model_call_forecast"], 4)
+        self.assertTrue(projected["editable_in_flow_studio"])
+
     def test_http_agent_studio_defines_flows_runs_approvals_and_reruns(self) -> None:
         cookie, bootstrap = self.create_workspace()
         studio = bootstrap["snapshot"]["studio"]

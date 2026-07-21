@@ -1040,7 +1040,23 @@ def render_prompt(
     if unexpected:
         raise ContractViolation(f"unexpected prompt values: {', '.join(unexpected)}")
 
-    rendered = PLACEHOLDER_RE.sub(lambda match: str(values[match.group(1)]), template)
+    def render_value(variable: str) -> str:
+        value = values[variable]
+        if isinstance(value, str):
+            return value
+        try:
+            return canonical_json(value)
+        except (TypeError, ValueError):
+            raise ContractViolation(
+                f"prompt value {variable} is not JSON-serializable"
+            ) from None
+
+    # Structured Flow outputs enter later prompts as canonical JSON, not as a
+    # Python repr. Besides being stable across processes this preserves the
+    # actual type boundary the model is being asked to inspect.
+    rendered = PLACEHOLDER_RE.sub(
+        lambda match: render_value(match.group(1)), template
+    )
     if len(rendered) > maximum_output:
         raise ContractViolation("rendered prompt is too long")
     return rendered

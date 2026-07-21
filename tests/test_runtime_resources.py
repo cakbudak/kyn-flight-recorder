@@ -41,6 +41,21 @@ class ResourceContractTest(unittest.TestCase):
                 values={"artifact": "kyn@1", "secret": "must-not-enter"},
             )
 
+    def test_prompt_renderer_serializes_structured_values_as_canonical_json(self) -> None:
+        rendered = render_prompt(
+            "Members: {{members}}; ready={{ready}}; count={{count}}",
+            declared_variables=["members", "ready", "count"],
+            values={
+                "members": {"risk": {"verdict": "challenge"}},
+                "ready": True,
+                "count": 3,
+            },
+        )
+        self.assertEqual(
+            rendered,
+            'Members: {"risk":{"verdict":"challenge"}}; ready=true; count=3',
+        )
+
     def test_custom_resources_are_explicit_and_version_pinned(self) -> None:
         prompt = self.plane.create_prompt(
             self.workspace_id,
