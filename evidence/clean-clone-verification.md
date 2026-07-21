@@ -34,17 +34,25 @@ separate because it consumes the visitor's API quota.
 ## Current clean-clone proof
 
 On 2026-07-21, public runtime commit
-`8013539dceff432318b17e4da580dea718f534da` was cloned from the public GitHub URL
-with the credential helper and global/system Git configuration disabled. In that
-untouched clone:
+`1e44c329ac247cc2a8b80dd5c15c9ccdfda5b9ed` was cloned from the public GitHub URL
+with interactive authentication and the credential helper disabled. In that
+untouched clone, with `OPENAI_API_KEY` removed from the process environment:
 
 - `pip install -r requirements.txt` and `npm ci` completed;
-- 274 Python contract tests passed;
+- 291 Python contract tests passed;
 - 9 pure browser-state tests passed;
 - the production frontend rebuilt byte-for-byte to the committed asset names;
-- the deterministic Chromium product journey passed 45/45, including completion
-  refusal/admission on one pinned Flow version and the complete Capability Forge
-  quarantine/qualification/promotion path;
+- the deterministic Chromium product journey passed 55/55, including exact
+  SmartRead citations, a concurrent three-member BoardRoom with a code-owned
+  quorum barrier, governed Memory promotion and recall, completion
+  refusal/admission on one pinned Flow version, and the complete Capability
+  Forge quarantine/qualification/promotion path;
+- the 64-node/63-route runtime load gate passed at 331.015 ms p95 for a complete
+  Run and 151.854 ms p95 for the loaded workspace snapshot, below the 2,000 ms
+  and 400 ms release limits;
+- the 64-node Chromium editor rendered in 184.551 ms, Fit View completed in
+  71.929 ms, all 128 independent source handles were present, and the page had
+  zero document overflow;
 - `npm audit` reported zero vulnerabilities;
 - `pip check` reported no broken requirements;
 - `.env` and `OPENAI_API_KEY` were absent;
