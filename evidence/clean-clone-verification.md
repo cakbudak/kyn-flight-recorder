@@ -34,7 +34,7 @@ separate because it consumes the visitor's API quota.
 ## Current clean-clone proof
 
 On 2026-07-21, public runtime commit
-`1e44c329ac247cc2a8b80dd5c15c9ccdfda5b9ed` was cloned from the public GitHub URL
+`de5746c4ce28f58ed3cead0722ce7eb928f539b2` was cloned from the public GitHub URL
 with interactive authentication and the credential helper disabled. In that
 untouched clone, with `OPENAI_API_KEY` removed from the process environment:
 
@@ -47,15 +47,16 @@ untouched clone, with `OPENAI_API_KEY` removed from the process environment:
   quorum barrier, governed Memory promotion and recall, completion
   refusal/admission on one pinned Flow version, and the complete Capability
   Forge quarantine/qualification/promotion path;
-- the 64-node/63-route runtime load gate passed at 331.015 ms p95 for a complete
-  Run and 151.854 ms p95 for the loaded workspace snapshot, below the 2,000 ms
+- the 64-node/63-route runtime load gate passed at 382.279 ms p95 for a complete
+  Run and 206.543 ms p95 for the loaded workspace snapshot, below the 2,000 ms
   and 400 ms release limits;
-- the 64-node Chromium editor rendered in 184.551 ms, Fit View completed in
-  71.929 ms, all 128 independent source handles were present, and the page had
+- the 64-node Chromium editor rendered in 186.993 ms, Fit View completed in
+  97.273 ms, all 128 independent source handles were present, and the page had
   zero document overflow;
 - `npm audit` reported zero vulnerabilities;
 - `pip check` reported no broken requirements;
 - `.env` and `OPENAI_API_KEY` were absent;
+- the private `deploy/` and `submission/` release-material directories were absent;
 - `git status --short` remained empty after build and verification.
 
 The clean clone path was temporary and contained no configuration symlink,
