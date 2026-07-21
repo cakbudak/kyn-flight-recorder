@@ -648,6 +648,275 @@ async function main() {
     );
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "06-run-evidence.png"));
 
+    progress("carrying immutable SmartRead citations through a parallel BoardRoom");
+    await navigate(page, "Context & Memory");
+    await clickAndWait(page, page.getByRole("button", { name: "Import source" }));
+    const sourceDialog = page.locator(".modal");
+    await fieldControl(sourceDialog, "Name", "input").fill("Browser launch evidence");
+    await fieldControl(sourceDialog, "Purpose", "textarea").fill("Immutable launch facts for a cited multi-agent decision.");
+    await fieldControl(sourceDialog, "Display filename", "input").fill("browser-launch-evidence.md");
+    await fieldControl(sourceDialog, "Source content", "textarea").fill([
+      "# Browser launch evidence",
+      "",
+      "## User value",
+      "The context-to-decision loop must remain inspectable from source line to final Run.",
+      "",
+      "## Authority",
+      "No parallel participant may approve work or mint an effect.",
+      "A human decision is required after independent synthesis.",
+      "",
+      "## Falsifier",
+      "Quorum without visible dissent is not acceptable evidence."
+    ].join("\n"));
+    await clickAndWait(page, sourceDialog.getByRole("button", { name: "Import immutable source" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => (value.studio.knowledge_sources ?? []).some((source) => source.slug === "browser-launch-evidence"),
+      "immutable Knowledge source"
+    );
+    const knowledgeSource = snapshot.studio.knowledge_sources.find((source) => source.slug === "browser-launch-evidence");
+    await page.getByRole("radio", { name: /Focus/ }).check();
+    await page.getByLabel("Last line").waitFor({ state: "visible" });
+    record(
+      "SmartRead focus initializes a legal bounded range for the selected immutable version",
+      await page.getByLabel("First line").inputValue() === "1" &&
+        await page.getByLabel("Last line").inputValue() === "11" &&
+        await page.getByLabel("Last line").getAttribute("max") === "11",
+      {
+        first: await page.getByLabel("First line").inputValue(),
+        last: await page.getByLabel("Last line").inputValue(),
+        source_lines: knowledgeSource.version.line_count
+      }
+    );
+    await page.getByRole("radio", { name: /Glance/ }).check();
+    await clickAndWait(page, page.getByRole("button", { name: "Read cited context" }));
+    await page.locator(".read-result").waitFor({ state: "visible" });
+    const citedReadText = await page.locator(".read-result").innerText();
+    record(
+      "SmartRead returns bounded source text with an immutable version, fingerprint, and exact line citation",
+        knowledgeSource.current_version === 1 &&
+        knowledgeSource.version.line_count === 11 &&
+        citedReadText.includes("browser-launch-evidence.md:L1-L11") &&
+        citedReadText.includes(shortId(knowledgeSource.version.fingerprint, 14)) &&
+        citedReadText.includes("No parallel participant may approve work"),
+      {
+        source: knowledgeSource.id,
+        version: knowledgeSource.version.id,
+        fingerprint: knowledgeSource.version.fingerprint,
+        lines: knowledgeSource.version.line_count
+      }
+    );
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "19-smartread-citations.png"));
+
+    await clickAndWait(page, page.getByRole("button", { name: "Take context to BoardRoom" }));
+    await page.locator(".boardroom-builder").waitFor({ state: "visible" });
+    const roomManifest = await page.locator(".factory-manifest").innerText();
+    record(
+      "the BoardRoom factory exposes every Prompt, Skill, Agent, Action, Flow, quorum, and downstream authority choice before publication",
+      roomManifest.includes("4\nPrompts") &&
+        roomManifest.includes("4\nSkills") &&
+        roomManifest.includes("4\nAgents") &&
+        roomManifest.includes("7\nActions") &&
+        roomManifest.includes("1\neditable Flow") &&
+        await page.locator(".participant-editor").count() === 3 &&
+        await page.getByLabel("Quorum").inputValue() === "2" &&
+        await page.getByRole("radio", { name: /Require human decision/ }).isChecked(),
+      { manifest: roomManifest.replaceAll("\n", " · ") }
+    );
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "20-boardroom-factory.png"));
+    await clickAndWait(page, page.locator(".builder-publish"));
+    snapshot = await waitForSnapshot(page, (value) => (value.studio.boardrooms ?? []).some((room) => room.slug === "launch-decision-room"), "BoardRoom publication");
+    const boardRoom = snapshot.studio.boardrooms.find((room) => room.slug === "launch-decision-room");
+    const boardRoomDialog = page.locator(".modal");
+    await boardRoomDialog.waitFor({ state: "visible" });
+    const transferredContext = await fieldControl(boardRoomDialog, "Cited context", "textarea").inputValue();
+    record(
+      "SmartRead transfers the cited envelope into the real BoardRoom Run contract without flattening provenance",
+      transferredContext.includes("browser-launch-evidence.md:L1-L11") &&
+        transferredContext.includes(knowledgeSource.version.fingerprint.slice(0, 12)) &&
+        boardRoom.model_call_forecast === 4 &&
+        boardRoom.editable_in_flow_studio === true,
+      { flow: boardRoom.flow_id, forecast_calls: boardRoom.model_call_forecast }
+    );
+    await clickAndWait(page, boardRoomDialog.getByRole("button", { name: "Pin and start deliberation" }));
+    await awaitSurface(page, ".runs-page", "starting the BoardRoom");
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => value.studio.runs.some((run) => run.flow_id === boardRoom.flow_id && run.status === "waiting_approval"),
+      "BoardRoom human gate"
+    );
+    let boardRoomRun = snapshot.studio.runs.find((run) => run.flow_id === boardRoom.flow_id && run.status === "waiting_approval");
+    const fanOutStep = boardRoomRun.steps.find((step) => step.node_type === "fan_out" && step.member_id === null);
+    const participantSteps = boardRoomRun.steps.filter((step) => step.parent_step_id === fanOutStep?.id);
+    const barrier = fanOutStep?.output?.barrier;
+    record(
+      "three independent model Steps join through code-owned quorum while material dissent remains first-class evidence",
+      boardRoomRun.model_calls.length === 4 &&
+        participantSteps.length === 3 &&
+        new Set(participantSteps.map((step) => step.member_id)).size === 3 &&
+        participantSteps.every((step) => step.status === "completed") &&
+        barrier?.affirmative === 2 &&
+        barrier?.converged === true &&
+        barrier?.dissenting_members?.join(",") === "risk" &&
+        boardRoomRun.effects.length === 0 &&
+        boardRoomRun.pending_approval !== null &&
+        verifyChain(boardRoomRun),
+      {
+        run: boardRoomRun.id,
+        model_calls: boardRoomRun.model_calls.length,
+        member_steps: participantSteps.map((step) => step.member_id),
+        barrier,
+        effects_before_approval: boardRoomRun.effects.length
+      }
+    );
+    await page.getByRole("button", { name: "Approve and resume" }).waitFor({ state: "visible" });
+    await page.locator(".parallel-evidence").waitFor({ state: "visible" });
+    await page.waitForFunction(() => {
+      const text = document.querySelector(".parallel-evidence")?.textContent ?? "";
+      return text.includes("Quorum reached") && text.includes("Dissent: risk") && text.includes("3 separately persisted member Steps");
+    });
+    const parallelEvidenceText = await page.locator(".parallel-evidence").innerText();
+    const parallelEvidenceUi = {
+      members: await page.locator(".parallel-member-grid > article").count(),
+      dissentCards: await page.locator(".parallel-member-grid > article.is-dissent").count(),
+      authorityNotes: await page.locator(".parallel-evidence footer").getByText("members cannot pause or mint effects", { exact: true }).count(),
+      metrics: await page.locator(".parallel-proof-metrics article").evaluateAll((items) => Object.fromEntries(items.map((item) => [item.querySelector("span")?.textContent?.trim().toLowerCase(), item.querySelector("strong")?.textContent?.trim()])))
+    };
+    const parallelEvidenceContrast = await auditTextContrast(page);
+    record(
+      "the Runs console makes the fan-out, member verdicts, deterministic join, and surviving dissent visible without opening raw JSON",
+      parallelEvidenceUi.members === 3 &&
+        parallelEvidenceUi.dissentCards === 1 &&
+        parallelEvidenceUi.metrics.completed === "3/3" &&
+        parallelEvidenceUi.metrics.affirmative === "2" &&
+        parallelEvidenceUi.metrics.dissenting === "1" &&
+        parallelEvidenceUi.authorityNotes === 1 &&
+        parallelEvidenceContrast.failureCount === 0,
+      {
+        characters: parallelEvidenceText.length,
+        contrast_samples: parallelEvidenceContrast.tested,
+        minimum_contrast: parallelEvidenceContrast.minimum,
+        contrast_failures: parallelEvidenceContrast.failures,
+        ...parallelEvidenceUi
+      }
+    );
+    await page.locator(".parallel-evidence").scrollIntoViewIfNeeded();
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "21-boardroom-evidence.png"));
+    await page.getByRole("button", { name: "Approve and resume" }).click();
+    await clickAndWait(page, page.getByRole("button", { name: "Record approval" }));
+    snapshot = await waitForSnapshot(page, (value) => value.studio.runs.some((run) => run.id === boardRoomRun.id && run.status === "completed"), "approved BoardRoom");
+    boardRoomRun = snapshot.studio.runs.find((run) => run.id === boardRoomRun.id);
+    record(
+      "the human gate resumes the exact pinned BoardRoom into an explicit result without granting hidden write authority",
+      boardRoomRun.output?.status === "approved" &&
+        boardRoomRun.output?.dissent?.length === 1 &&
+        boardRoomRun.approvals[0]?.decision?.approved === true &&
+        boardRoomRun.effects.length === 0 &&
+        verifyChain(boardRoomRun),
+      { status: boardRoomRun.output?.status, dissent: boardRoomRun.output?.dissent, effects: boardRoomRun.effects.length }
+    );
+
+    await navigate(page, "BoardRooms");
+    await clickAndWait(page, page.getByRole("button", { name: "Edit exact Flow" }));
+    await awaitSurface(page, ".flow-studio", "opening the generated BoardRoom Flow");
+    await page.locator(".react-flow__node").filter({ hasText: "Parallel fan-out" }).click();
+    await page.locator(".fan-out-inspector").waitFor({ state: "visible" });
+    const memberIdInputs = page.locator(".fanout-member-editor input");
+    const memberIdValues = await memberIdInputs.evaluateAll((items) => items.map((item) => item.value));
+    const riskMemberIndex = memberIdValues.indexOf("risk");
+    if (riskMemberIndex < 0) throw new Error(`generated BoardRoom fan-out did not expose its risk member: ${memberIdValues.join(", ")}`);
+    const riskMemberId = memberIdInputs.nth(riskMemberIndex);
+    await riskMemberId.fill("risk-review");
+    await riskMemberId.blur();
+    if (await page.locator(".toast").count()) await page.locator(".toast").waitFor({ state: "hidden", timeout: 6000 });
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "23-boardroom-flow-editor.png"));
+    await clickAndWait(page, page.getByRole("button", { name: "Publish successor" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => value.studio.flows.some((flow) => flow.id === boardRoom.flow_id && flow.current_version === 2),
+      "editable BoardRoom successor"
+    );
+    const revisedBoardRoomFlow = snapshot.studio.flows.find((flow) => flow.id === boardRoom.flow_id);
+    const revisedFanOut = revisedBoardRoomFlow.version.nodes.find((node) => node.type === "fan_out");
+    const pinnedBoardRoomRun = snapshot.studio.runs.find((run) => run.id === boardRoomRun.id);
+    record(
+      "a BoardRoom opens as the ordinary full graph, edits its fan-out composition, and publishes forward without rewriting prior Run truth",
+      revisedBoardRoomFlow.current_version === 2 &&
+        revisedFanOut?.members.some((member) => member.id === "risk-review") &&
+        pinnedBoardRoomRun.flow_version === 1 &&
+        pinnedBoardRoomRun.steps.some((step) => step.member_id === "risk") &&
+        pinnedBoardRoomRun.steps.every((step) => step.member_id !== "risk-review"),
+      {
+        current_flow_version: revisedBoardRoomFlow.current_version,
+        current_members: revisedFanOut?.members.map((member) => member.id),
+        pinned_run_version: pinnedBoardRoomRun.flow_version,
+        pinned_member_ids: pinnedBoardRoomRun.steps.map((step) => step.member_id).filter(Boolean)
+      }
+    );
+
+    progress("promoting cited Run evidence through governed Memory");
+    await navigate(page, "Context & Memory");
+    await page.getByRole("tab", { name: /^Governed Memory/ }).click();
+    const memoryForm = page.locator(".memory-candidate-form");
+    await memoryForm.waitFor({ state: "visible" });
+    await fieldControl(memoryForm, "Completed source Run", "select").selectOption(boardRoomRun.id);
+    await delay(100);
+    await fieldControl(memoryForm, "Memory title", "input").fill("Dissent must survive an affirmative quorum");
+    await fieldControl(memoryForm, "Content", "textarea").fill("When a quorum converges, preserve every completed member record and name dissenting members in the barrier evidence.");
+    await fieldControl(memoryForm, "Why these events prove it", "textarea").fill("The cited BoardRoom Run completed with two affirmative votes while the risk member remained explicitly dissenting.");
+    await clickAndWait(page, memoryForm.getByRole("button", { name: "Create quarantined candidate" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => (value.studio.memory_candidates ?? []).some((candidate) => candidate.source_run_id === boardRoomRun.id),
+      "quarantined Memory candidate"
+    );
+    let memoryCandidate = snapshot.studio.memory_candidates.find((candidate) => candidate.source_run_id === boardRoomRun.id);
+    record(
+      "Run-derived learning enters append-only quarantine and remains absent from recall",
+      memoryCandidate.decision === null &&
+        memoryCandidate.qualification === null &&
+        memoryCandidate.evidence_event_ids.length >= 1 &&
+        !(snapshot.studio.memories ?? []).some((memory) => memory.version?.source_candidate_id === memoryCandidate.id),
+      { candidate: memoryCandidate.id, citations: memoryCandidate.evidence_event_ids.length, fingerprint: memoryCandidate.fingerprint }
+    );
+    await clickAndWait(page, page.getByRole("button", { name: "Run deterministic qualification" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => (value.studio.memory_candidates ?? []).some((candidate) => candidate.id === memoryCandidate.id && candidate.qualification?.passed === true),
+      "qualified Memory candidate"
+    );
+    memoryCandidate = snapshot.studio.memory_candidates.find((candidate) => candidate.id === memoryCandidate.id);
+    await fieldControl(page.locator(".memory-decision"), "Memory slug", "input").fill("dissent-survives-quorum");
+    await page.getByRole("checkbox", { name: "I reviewed this exact fingerprint" }).check();
+    await clickAndWait(page, page.getByRole("button", { name: "Promote to Memory" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => (value.studio.memory_candidates ?? []).some((candidate) => candidate.id === memoryCandidate.id && candidate.decision?.decision === "promoted"),
+      "promoted Memory"
+    );
+    memoryCandidate = snapshot.studio.memory_candidates.find((candidate) => candidate.id === memoryCandidate.id);
+    const promotedMemory = (snapshot.studio.memories ?? []).find((memory) => memory.slug === "dissent-survives-quorum");
+    await fieldControl(page.locator(".memory-recall-panel"), "Recall terms", "input").fill("dissent quorum evidence");
+    await clickAndWait(page, page.locator(".memory-recall-panel").getByRole("button", { name: "Recall Memory" }));
+    await page.locator(".memory-result-list article").waitFor({ state: "visible" });
+    const recalledText = await page.locator(".memory-result-list").innerText();
+    record(
+      "only a qualified, fingerprint-acknowledged human promotion becomes recallable with full provenance",
+      memoryCandidate.qualification?.passed === true &&
+        memoryCandidate.decision?.candidate_fingerprint === memoryCandidate.fingerprint &&
+        promotedMemory?.state === "active" &&
+        promotedMemory.version.source_candidate_id === memoryCandidate.id &&
+        recalledText.includes("Dissent must survive an affirmative quorum") &&
+        recalledText.includes(shortId(boardRoomRun.id, 14)),
+      {
+        memory: promotedMemory?.id,
+        state: promotedMemory?.state,
+        source_candidate: promotedMemory?.version?.source_candidate_id,
+        source_run: boardRoomRun.id
+      }
+    );
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "22-memory-recall.png"));
+
     progress("distilling, qualifying, and human-promoting an evidence-bound capability");
     const agentVersionsBeforeForge = snapshot.agents.map((agent) => `${agent.id}:${agent.current_version}`).sort();
     const skillsBeforeForge = snapshot.skills.length;
@@ -1262,7 +1531,8 @@ async function main() {
       "twelve outputs", "ai is visible", "first-class node",
       "observe and control work as runs", "evidence decides whether it becomes true",
       "non-authoritative", "canonical", "before provider i/o", "forward recovery",
-      "capability forge", "provenance is not performance", "browser tab", "public boundary"
+      "capability forge", "provenance is not performance", "browser tab", "public boundary",
+      "smartread", "parallel boardrooms", "governed memory"
     ];
     const normalizedDocumentation = documentationText.toLowerCase();
     const missingDocumentation = requiredDocumentation.filter((phrase) => !normalizedDocumentation.includes(phrase));
@@ -1281,7 +1551,7 @@ async function main() {
     const contrastResults = [];
     for (const theme of ["light", "dark"]) {
       await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
-      for (const view of ["Overview", "Flow Studio", "Actions", "Agents", "Prompts", "Skills", "Runs", "Capability Forge", "Comparisons", "Documentation", "Settings"]) {
+      for (const view of ["Overview", "Flow Studio", "BoardRooms", "Context & Memory", "Actions", "Agents", "Prompts", "Skills", "Runs", "Capability Forge", "Comparisons", "Documentation", "Settings"]) {
         await navigate(page, view);
         contrastResults.push({ theme, view, ...await auditTextContrast(page) });
       }

@@ -4,13 +4,14 @@ The active evidence set proves **Kyn.ist Agent Studio**: user-defined Actions an
 Flows, version-pinned Agent resources, webhook activation, executable Runs,
 Human approval, linked reruns, evidence-bound completion, dead-end ratification,
 controlled model comparison, integrated bounded maintenance, and evidence-bound
-Skill distillation. Superseded
+Skill distillation, citation-first SmartRead, concurrent BoardRooms, and
+governed Memory. Superseded
 Recorder artifacts are removed from the active tree and remain recoverable in
 Git history.
 
 ## Deterministic full-stack browser proof
 
-`browser/agent-studio-report.json` records the 45-check Chromium journey against
+`browser/agent-studio-report.json` records the full Chromium journey against
 the real Python server, same-origin HTTP API, control plane, flat SQLite stores,
 Action dispatcher, visual canvas, trigger path, approvals, integrated
 maintenance, and browser UI. Only provider responses come from a deterministic
@@ -37,6 +38,11 @@ Expected screenshots:
 - `browser/16-completion-admitted.png`
 - `browser/17-forge-quarantine.png`
 - `browser/18-forge-promoted.png`
+- `browser/19-smartread-citations.png`
+- `browser/20-boardroom-factory.png`
+- `browser/21-boardroom-evidence.png`
+- `browser/22-memory-recall.png`
+- `browser/23-boardroom-flow-editor.png`
 
 ## Public HTTPS + real-model proof
 
@@ -65,6 +71,13 @@ The committed proof shows:
 - one completed model Step is distilled by a different logical Agent into an
   authority-free quarantine, passes eight deterministic provenance gates, and
   is Human-promoted into immutable Skill v1 without changing an Agent or Flow.
+- an immutable Knowledge source is read through SmartRead with exact
+  version/fingerprint/line citations and transferred into a real BoardRoom;
+- three independent participants execute concurrently, code reaches quorum while
+  retaining a dissenting member, and the editor remains downstream of the
+  barrier;
+- a completed ledger-verified Run becomes a quarantined, qualified,
+  exact-fingerprint Human-promoted Memory and is recalled with provenance.
 
 Screenshots:
 
@@ -87,6 +100,11 @@ Screenshots:
 - [`live/16-completion-admitted.png`](live/16-completion-admitted.png)
 - [`live/17-forge-quarantine.png`](live/17-forge-quarantine.png)
 - [`live/18-forge-promoted.png`](live/18-forge-promoted.png)
+- [`live/19-smartread-citations.png`](live/19-smartread-citations.png)
+- [`live/20-boardroom-factory.png`](live/20-boardroom-factory.png)
+- [`live/21-boardroom-evidence.png`](live/21-boardroom-evidence.png)
+- [`live/22-memory-recall.png`](live/22-memory-recall.png)
+- [`live/23-boardroom-flow-editor.png`](live/23-boardroom-flow-editor.png)
 
 ## Maximum-graph release-host proof
 

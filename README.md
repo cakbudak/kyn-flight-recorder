@@ -1,7 +1,7 @@
 # Kyn.ist Agent Studio
 
-**Define typed Actions, connect AI through versioned Agents, Prompts, and Skills,
-compose executable Flows, and operate every Run from authoritative evidence.**
+**Build agent workflows that read cited evidence, deliberate independently,
+execute through bounded authority, and learn only through governed promotion.**
 
 **[Open the live Studio](https://buildweek.kyn.ist/app/)** ·
 **[Inspect the source](https://github.com/cakbudak/kyn-agent-studio)**
@@ -19,12 +19,20 @@ Kyn.ist: its agent execution, ratification, and maintenance contracts. It is a
 configurable workflow product—not a prescribed click-through and not a frontend
 simulation.
 
+The flagship loop is executable end to end:
+
+```text
+immutable source → SmartRead citations → parallel BoardRoom → Human gate
+        ↑                                                    ↓
+ governed Memory ← exact-fingerprint promotion ← verified Run ledger
+```
+
 ## What you can build
 
 - **Define Actions** with strict input/output JSON Schemas and up to twelve named
   outcomes. Built-in execution kinds are AI, template, transform, delay,
-  condition, multi-branch router, assertion, Human approval, and an idempotent
-  workspace data store.
+  condition, multi-branch router, assertion, Human approval, idempotent data
+  store, SmartRead, Knowledge search, and Memory recall.
 - **Build Flows visually** on a full node canvas. Drag pinned Action, Agent, or
   published Flow versions, connect exact outcome ports, map
   input/literal/predecessor data, set retry and error policy, then publish an
@@ -39,12 +47,32 @@ simulation.
   the visitor's browser-owned key instead of persisting a credential.
 - Create **Versioned Agents, Prompts, and Skills**. Skills grant exact callable
   Action version IDs; model text cannot widen authority.
+- Import immutable text or source code into the bounded **Knowledge layer**.
+  **SmartRead** exposes five intent-first modes—glance, outline, focus, grep, and
+  full—and returns exact version/fingerprint/line citations without a model
+  call. The same primitives are ordinary Actions that Agents may receive only
+  through exact Skill grants.
+- Build a real **parallel BoardRoom** from two to eight pinned Action, Agent, or
+  Flow members. Every member receives the same typed input and executes in its
+  own operation session; code—not a model—owns all/quorum join semantics,
+  failure isolation, affirmative counting, and dissenting-member IDs. A final
+  editor sees completed records only after the barrier and must preserve
+  dissent. Approval and any bounded write stay visibly downstream.
+- Treat every BoardRoom as an ordinary editable Flow. Open its exact graph,
+  replace members, change input mappings, publish a successor, or reuse the
+  finished Flow as a node elsewhere.
 - **Operate Runs live** through the same graph, with current-node state, bounded
   attempts/backoff, cancellation, Steps, model calls, Action receipts,
   approvals, effects, and hash-linked events.
 - Pause a live graph at a real Human approval, commit an attributable decision,
   then resume the same pinned Run.
 - Rerun a terminal execution as a linked child without rewriting its parent.
+- Close the context loop through **governed Memory**. Human or pinned-Agent
+  proposals begin in quarantine, cite exact events from a completed
+  ledger-verified Run, pass deterministic provenance qualification, and become
+  recallable only after a Human acknowledges the candidate fingerprint.
+  Rejection and retirement remain inspectable; neither Memory nor a model can
+  widen Agent authority or mutate a Flow.
 - On any supported blocked Run, use the integrated **maintenance loop**:
   code-owned causal evidence → constrained Agent explanation → bounded repair →
   human revision fence → immutable Action/Flow successors → linked proof Run.
@@ -85,38 +113,29 @@ own mixed graph from scratch.
 
 ## Three-minute judge path
 
-1. Open the live Studio and create an isolated workspace.
-2. Go to **Actions** and create a Template Action. Its schemas and configuration
-   are visible and editable.
-3. Go to **Flow Studio**, create a visual Flow, drag another capability onto the canvas,
-   connect it, inspect typed mappings and retry policy, then publish v1.
-4. Add a webhook trigger and invoke its URL (the secret is shown once; the URL itself stays usable), or start the Flow manually.
-   The Run is pinned before execution and becomes visible while the bounded worker
-   is active.
-5. Open **Settings**, paste your own OpenAI API key, and save it for this
-   browser tab.
-6. Start `Agent-reviewed launch`. The official OpenAI SDK executes its pinned
-   Agent/Prompt/Skill and the Run pauses at Human approval.
-7. Inspect Steps, model calls, receipts, and events. Approve the pending request;
-   the graph resumes and writes exactly one idempotent SQLite sandbox effect.
-8. Open **Capability Forge**, select that completed model Step, choose an
-   independent distiller Agent, and create a quarantined candidate. Run the 8/8
-   provenance gate, then human-promote it to Skill v1. The source Run and every
-   Agent remain unchanged.
-9. Edit the Flow on canvas and publish v2. Existing Runs still render and retain
-   their exact v1 graph.
-10. Create a Data Store Action with `write_enabled:false`, put it in a Flow, and
-   run it. From that blocked Run, execute Diagnose → Propose → Approve → Proof.
-   The parent stays blocked with zero effects; its linked child runs Flow v2 and
-   commits exactly one effect.
-11. Open `Contracted evidence publication` in **Flow Studio**. Add an acceptance
-    promise, choose its evidence kind and eligible graph site, and publish the
-    successor. Run the same pinned version once through the branch that skips
-    the declared write and once through the branch that reaches it: the first is
-    refused at the stop seam, the second is admitted with resolved anchors.
-12. Open **Comparisons**. The control panel shows the pre-I/O sibling manifest,
-    immutable Flow/input fingerprints, the model actually returned by the
-    provider, and every variable this surface does not claim to control.
+1. Open the live Studio, create an isolated workspace, then save a restricted
+   OpenAI project key in **Settings** for this tab.
+2. Open **Context & Memory**, import a short Markdown evidence brief, and run
+   SmartRead. Inspect the immutable source version, fingerprint, and exact line
+   citations; no model was called.
+3. Choose **Take context to BoardRoom**. Inspect the publication manifest: the
+   participant Prompts, Skills, Agents and Actions, final editor stack, quorum,
+   failure policy, Human gate, and editable Flow are all explicit. Publish it.
+4. Start the deliberation. Three participants run concurrently and independently
+   through the official OpenAI Responses API. In **Runs**, inspect the dedicated
+   parallel-evidence panel: child Steps, verdicts, code-owned affirmative count,
+   quorum result, and material dissent all remain visible before approval.
+5. Approve or reject the durable Human gate. Both decisions follow explicit
+   routes; a write, if configured, can occur only after approval.
+6. Return to **Governed Memory**. Cite exact events from the completed Run,
+   create a quarantined candidate, run deterministic qualification, acknowledge
+   its exact fingerprint, promote it, then recall it with full provenance.
+7. Open the BoardRoom's **exact Flow**. Select its fan-out node, edit any of two
+   to eight Action/Agent/Flow members, shared mappings, all/quorum barrier,
+   affirmative values, failure policy, and named routes; publish a successor.
+8. Continue with the deeper proof surfaces: Capability Forge, acceptance
+   contracts, dead-end ratification/brake, controlled cross-model comparison,
+   and evidence-owned repair with a linked proof Run.
 
 ## Browser-owned OpenAI credential
 
@@ -164,6 +183,35 @@ An AI Action pins an Agent. The Agent pins one Prompt and a set of Skills. Skill
 can grant only exact Action versions whose kinds are safe for model invocation.
 The runtime intersects those grants with its static public execution surface and
 uses strict OpenAI function schemas. A model response is data, never authority.
+
+### Context plane
+
+Knowledge sources and versions are immutable flat records. SmartRead accepts
+only admitted source-version IDs—never server paths or remote URLs—and returns
+bounded source text with exact line citations and the immutable source
+fingerprint. Deterministic Knowledge search ranks only current admitted
+passages. SmartRead, Knowledge search, and Memory recall enter an Agent through
+the same exact-version Skill authority path as every other callable Action.
+
+### Deliberation plane
+
+A generic `fan_out` Flow node pins two to eight distinct Action, Agent, or Flow
+versions with identical mapped input contracts. Members execute concurrently in
+separate operation sessions; no SQLite write transaction spans member or
+provider I/O. Code derives completed/failed counts, affirmative votes, quorum,
+convergence, and dissenting IDs. Member targets cannot pause or mint effects,
+and nested fan-out is bounded out of the public cut. A BoardRoom is a guided
+factory over this generic mechanism, not a hidden second runtime.
+
+### Memory plane
+
+Memory candidates cite up to twenty exact events from one completed,
+ledger-verified Run. Human-authored and model-distilled candidates both enter
+quarantine. Deterministic qualification replays source completion, event
+ownership, ledger validity, and the unchanged evidence snapshot. Promotion
+requires a Human decision over the exact candidate fingerprint; only active
+promoted versions enter recall. Rejection and retirement append state without
+deleting history.
 
 ### Completion plane
 
@@ -376,6 +424,10 @@ automation_runs → automation_run_steps
                 → automation_diagnoses → automation_repair_proposals
                                        → automation_repair_decisions
                 → automation_dead_end_evidence
+knowledge_sources → knowledge_source_versions → knowledge_passages
+memory_candidates → memory_candidate_qualifications
+                  → memory_candidate_decisions
+memories → memory_versions → memory_state_events
 ```
 
 SQLite WAL and short `BEGIN IMMEDIATE` transactions serialize mutations. Database
@@ -396,6 +448,9 @@ The mechanisms are real, and each is a projection of a deeper substrate:
 | Skill grants pinning exact Action versions | A capability catalog with per-operation maturity and live-proof ratification gating |
 | One attributable human approval | Risk-classed operations with separation of duties and crypto-shreddable decision reasons |
 | A hash-linked event ledger | The same ledger joined to a causal projection and saved graph lenses over one structure graph |
+| Citation-first SmartRead over immutable source versions | Purpose-directed reading over governed knowledge without exposing private storage semantics |
+| Generic fan-out plus code-owned quorum barriers | Independent multi-agent deliberation with richer private coordination and trust layers |
+| Quarantined, evidence-cited Memory promotion | Governed learning over deeper private memory and knowledge substrates |
 | Authorable acceptance contracts with an independent Goal-Judge | Goal/stop conditions joined to task and drift gates over the full intelligence runtime |
 | Pre-I/O cross-model manifests and invariance checks | The model-agnostic “Switch-the-Brain” evaluation axis in KynBench |
 
@@ -463,6 +518,17 @@ POST /api/v1/studio/skill-candidates/:id/rejection
 POST /api/v1/studio/flows/:id/comparisons
 GET  /api/v1/studio/comparisons
 GET  /api/v1/studio/comparisons/:id
+POST /api/v1/studio/knowledge-sources
+POST /api/v1/studio/knowledge-sources/:id/versions
+POST /api/v1/studio/knowledge/smart-read
+POST /api/v1/studio/knowledge/search
+POST /api/v1/studio/boardrooms
+POST /api/v1/studio/memory-candidates
+POST /api/v1/studio/memory-candidates/:id/qualifications
+POST /api/v1/studio/memory-candidates/:id/promotion
+POST /api/v1/studio/memory-candidates/:id/rejection
+POST /api/v1/studio/memories/search
+POST /api/v1/studio/memories/:id/retirement
 
 POST /api/v1/prompts
 POST /api/v1/prompts/:id/versions
@@ -497,8 +563,8 @@ Run the maximum supported 64-node release-host and Chromium load gates:
 The committed load proof executes twenty complete 64-node Runs (197
 hash-linked events each), snapshots the accumulated workspace thirty times,
 renders the same 64-node/63-edge graph in Chromium, and exercises Fit View. On
-the release host, complete deterministic Runs measured 404.844 ms p95 and
-snapshots 246.661 ms p95—each below its declared threshold (2000 ms and 400 ms)
+the release host, complete deterministic Runs measured 397.676 ms p95 and
+snapshots 181.487 ms p95—each below its declared threshold (2000 ms and 400 ms)
 and without model calls, overflow, failed requests, or page errors.
 
 Each Run projection recomputes its full event chain from event material—197
@@ -514,14 +580,17 @@ composition; deterministic execution; canvas successor publication; reusable
 subflow execution; webhook activation; asynchronous AI execution;
 approval/resume; live graph evidence; dead-end ratification and brake refusal;
 authorable completion contracts with refuse/admit evidence; pre-I/O comparison
-manifests; and integrated maintenance.
+manifests; integrated maintenance; immutable Knowledge import; bounded SmartRead
+with exact citations; parallel BoardRoom execution with code-owned quorum and
+visible dissent; editing that generated BoardRoom as a normal Flow successor;
+and quarantined, qualified, human-promoted Memory recall.
 The same journey also distils a completed model Step through a different logical
 Agent, proves all eight Capability Forge gates, and human-promotes an
 authority-free Skill without changing any Agent or Flow.
 Provider-shaped deterministic responses are used locally; the same journey can be
 run against the deployed OpenAI-backed service. The current local journey passes
-**45/45** checks, including keyboard focus containment, 3,430 rendered contrast
-samples across all eleven workbenches in both themes, and a legible pannable 390 px
+**55/55** checks, including keyboard focus containment, 4,310 rendered contrast
+samples across all thirteen workbenches in both themes, and a legible pannable 390 px
 graph; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 

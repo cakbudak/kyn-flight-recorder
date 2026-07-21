@@ -50,6 +50,58 @@ class AliasingResponsesClient(ScriptedResponsesClient):
 
     def create(self, payload: dict[str, object]) -> dict[str, object]:
         response = super().create(payload)
+        metadata = payload.get("metadata")
+        schema = (
+            ((payload.get("text") or {}).get("format") or {}).get("schema")
+            if isinstance(payload.get("text"), dict)
+            else None
+        )
+        properties = set(schema.get("properties", {})) if isinstance(schema, dict) else set()
+        if properties == {"verdict", "analysis", "recommendations", "risks", "citations"}:
+            instructions = str(payload.get("instructions", "")).casefold()
+            challenge = (
+                "artificial consensus" in instructions
+                or "unsupported claims" in instructions
+            )
+            self._set_json_output(
+                response,
+                {
+                    "verdict": "challenge" if challenge else "commit",
+                    "analysis": (
+                        "The cited authority boundary is sound, but material dissent remains visible."
+                        if challenge
+                        else "The cited context supports a bounded, inspectable decision path."
+                    ),
+                    "recommendations": ["Retain exact citations and inspect the completed member Steps."],
+                    "risks": ["Do not treat quorum as unanimity."] if challenge else [],
+                    "citations": ["launch-evidence.md:L1-L10"],
+                },
+            )
+        elif properties == {"decision", "consensus", "dissent", "open_questions", "citations"}:
+            self._set_json_output(
+                response,
+                {
+                    "decision": "Proceed through the explicit human gate with the cited runtime evidence attached.",
+                    "consensus": ["The decision path is bounded and replayable."],
+                    "dissent": ["Quorum does not erase the risk participant's challenge."],
+                    "open_questions": ["Verify the final browser evidence after the human decision."],
+                    "citations": ["launch-evidence.md:L1-L10"],
+                },
+            )
+        elif isinstance(metadata, dict) and metadata.get("operation") == "memory-distillation":
+            input_items = payload.get("input")
+            evidence = json.loads(str(input_items[0]["content"])) if isinstance(input_items, list) and input_items else {}
+            event_ids = [event["id"] for event in evidence.get("events", [])[:1]]
+            self._set_json_output(
+                response,
+                {
+                    "title": "Explicit authority follows verified evidence",
+                    "content": "Future work should retain cited evidence and place effects behind an explicit human decision.",
+                    "rationale": "The completed source Run records this boundary in its verified event ledger.",
+                    "tags": ["evidence", "authority"],
+                    "evidence_event_ids": event_ids,
+                },
+            )
         requested = payload.get("model")
         if not isinstance(requested, str) or not requested:
             return response
@@ -61,6 +113,15 @@ class AliasingResponsesClient(ScriptedResponsesClient):
                 response, CONFIDENT_SCORE if ordinal % 2 else UNCONFIDENT_SCORE
             )
         return response
+
+    @staticmethod
+    def _set_json_output(response: dict[str, object], value: dict[str, object]) -> None:
+        encoded = json.dumps(value, separators=(",", ":"))
+        for item in response.get("output") or []:
+            for part in item.get("content") or []:
+                if isinstance(part.get("text"), str):
+                    part["text"] = encoded
+                    return
 
     @staticmethod
     def _set_score(response: dict[str, object], score: float) -> None:

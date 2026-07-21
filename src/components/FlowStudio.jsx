@@ -19,6 +19,7 @@ import { api, commandId } from "../api.js";
 import { Icon } from "../icons.jsx";
 import {
   EMPTY_SCHEMA,
+  FAN_OUT_OUTCOMES,
   SUCCESS_ERROR,
   clone,
   defaultMapping,
@@ -46,7 +47,7 @@ import {
   Modal
 } from "./ui.jsx";
 
-const NODE_TYPES = { kynNode: KynNode };
+const NODE_TYPES = { kynNode: KynNode, fanOutNode: FanOutNode };
 const EDGE_DEFAULTS = {
   type: "smoothstep",
   markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
@@ -75,7 +76,7 @@ export default function FlowStudio(props) {
   return <ReactFlowProvider><FlowStudioInner {...props} /></ReactFlowProvider>;
 }
 
-function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startComparison }) {
+function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startComparison, focusFlowId, onFocusFlowHandled }) {
   const graph = useThemeTokens(GRAPH_TOKENS);
   const flows = snapshot.studio.flows;
   const [selectedFlowId, setSelectedFlowId] = useState(flows[0]?.id ?? null);
@@ -185,6 +186,12 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
     requestAnimationFrame(() => fitGraph(0.22, 280));
   }, [fitGraph, flows]);
 
+  useEffect(() => {
+    if (!focusFlowId || !flows.some((flow) => flow.id === focusFlowId)) return;
+    loadFlow(focusFlowId);
+    onFocusFlowHandled?.();
+  }, [flows, focusFlowId, loadFlow, onFocusFlowHandled]);
+
   const createNew = useCallback(() => {
     setSelectedFlowId(null);
     setDraft(flowDraft(null));
@@ -207,6 +214,47 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
     const version = material.version;
     const nodeId = uniqueNodeId(material.slug, draft.nodes);
     const preceding = draft.nodes.at(-1);
+    if (material.type === "fan_out") {
+      const candidates = concurrentMemberOptions(snapshot).filter((item) => item.resource.id !== draft.id);
+      const compatiblePair = firstCompatiblePair(candidates);
+      const members = compatiblePair.map((item, index) => ({
+        id: index === 0 ? "perspective-a" : "perspective-b",
+        type: item.type,
+        version_id: item.version.id
+      }));
+      const inputSchema = compatiblePair[0]?.inputSchema ?? EMPTY_SCHEMA;
+      const node = {
+        id: nodeId,
+        type: "fan_out",
+        version_id: "fanout-v1",
+        input_mapping: defaultMapping(inputSchema),
+        members,
+        barrier: {
+          mode: "quorum",
+          quorum: 2,
+          verdict_path: "verdict",
+          affirmative_values: ["commit"],
+          on_member_error: "isolate"
+        },
+        position: position ?? { x: 120 + draft.nodes.length * 70, y: 110 + draft.nodes.length * 45 },
+        settings: { max_attempts: 1, backoff_seconds: 0, retry_on: ["provider_failure"], on_error: "fail" }
+      };
+      replaceDraft((current) => ({
+        ...current,
+        nodes: [...current.nodes, node],
+        start_node_id: current.start_node_id || node.id,
+        input_schema_text: current.nodes.length === 0 && compatiblePair.length
+          ? JSON.stringify(inputSchema, null, 2)
+          : current.input_schema_text,
+        output_schema_text: current.nodes.length === 0
+          ? JSON.stringify(version.output_schema, null, 2)
+          : current.output_schema_text,
+        outcomes: current.nodes.length === 0 ? clone(FAN_OUT_OUTCOMES) : current.outcomes
+      }));
+      setSelectedNodeId(node.id);
+      setInspectorOpen(true);
+      return;
+    }
     const predecessorVersion = preceding ? versionForNode(snapshot, preceding) : null;
     const schema = material.type === "agent"
       ? agentInputSchema(snapshot, version)
@@ -304,6 +352,17 @@ function FlowStudioInner({ snapshot, mutate, busy, setView, focusRun, startCompa
     try {
       if (!draft.nodes.length) throw new Error("Add at least one Action, Agent, or Flow node before publishing.");
       if (!draft.start_node_id) throw new Error("Choose a start node before publishing.");
+      for (const node of draft.nodes.filter((candidate) => candidate.type === "fan_out")) {
+        if (!Array.isArray(node.members) || node.members.length < 2 || node.members.length > 8) throw new Error(`Fan-out ${node.id} needs two to eight members.`);
+        if (node.members.some((member) => !member.id)) throw new Error(`Every member in ${node.id} needs an ID.`);
+        if (new Set(node.members.map((member) => member.id)).size !== node.members.length) throw new Error(`Fan-out ${node.id} member IDs must be unique.`);
+        if (new Set(node.members.map((member) => `${member.type}:${member.version_id}`)).size !== node.members.length) throw new Error(`Fan-out ${node.id} must pin distinct target versions.`);
+        const memberSchemas = node.members.map((member) => fanOutInputSchema(snapshot, { members: [member] }));
+        if (new Set(memberSchemas.map(schemaKey)).size !== 1) throw new Error(`Every member in ${node.id} must accept the identical input contract.`);
+        if (!node.barrier?.affirmative_values?.length || !node.barrier.verdict_path?.trim()) throw new Error(`Fan-out ${node.id} needs a verdict path and at least one affirmative value.`);
+        if (node.barrier.mode === "all" && node.barrier.quorum !== node.members.length) throw new Error(`The all-members barrier in ${node.id} must require every member.`);
+        if (node.barrier.quorum < 1 || node.barrier.quorum > node.members.length) throw new Error(`Fan-out ${node.id} has an impossible quorum.`);
+      }
       if (draft.acceptance_criteria.some((criterion) => !criterion.id || !criterion.statement.trim())) throw new Error("Every completion criterion needs an ID and an observable promise.");
       if (new Set(draft.acceptance_criteria.map((criterion) => criterion.id)).size !== draft.acceptance_criteria.length) throw new Error("Completion criterion IDs must be unique.");
       if (draft.acceptance_criteria.some((criterion) => !criterion.node_ids.length)) throw new Error("Every completion criterion needs at least one evidence site.");
@@ -564,6 +623,26 @@ function flowDraft(flow) {
 
 function paletteResources(snapshot, selectedFlowId) {
   return {
+    control: [{
+      id: "fanout-v1",
+      type: "fan_out",
+      slug: "parallel-fan-out",
+      name: "Parallel fan-out + barrier",
+      description: "Dispatch 2–8 independent pinned members concurrently, then compute quorum and dissent in code.",
+      kind: "fan_out",
+      version: {
+        id: "fanout-v1",
+        version: 1,
+        input_schema: EMPTY_SCHEMA,
+        output_schema: {
+          type: "object",
+          properties: { members: { type: "object" }, barrier: { type: "object" } },
+          required: ["members", "barrier"],
+          additionalProperties: false
+        },
+        outcomes: FAN_OUT_OUTCOMES
+      }
+    }],
     actions: snapshot.studio.actions.map((action) => ({
       id: action.id, type: "action", slug: action.slug, name: action.name,
       description: action.description, kind: action.version.kind, version: action.version
@@ -585,7 +664,7 @@ function Palette({ section, setSection, query, setQuery, resources, counts, onAd
       <header><div><p className="panel-kicker">Node library</p><h2>Capabilities</h2></div><Badge tone="neutral">Drag or add</Badge></header>
       <label className="search-box"><Icon name="search" size={16} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a capability…" aria-label="Search node library" /></label>
       <div className="palette-tabs" role="tablist" aria-label="Capability type">
-        {["actions", "agents", "flows"].map((item) => (
+        {["control", "actions", "agents", "flows"].map((item) => (
           <button key={item} type="button" role="tab" aria-selected={section === item} className={section === item ? "is-active" : ""} onClick={() => setSection(item)}>{titleCase(item)}<span>{counts[item]}</span></button>
         ))}
       </div>
@@ -602,11 +681,11 @@ function Palette({ section, setSection, query, setQuery, resources, counts, onAd
             }}
             onClick={() => onAdd(resource)}
           >
-            <span className={`node-symbol symbol-${resource.kind}`}><Icon name={resource.type === "action" ? "action" : resource.type === "agent" ? "agent" : "flow"} size={16} /></span>
+            <span className={`node-symbol symbol-${resource.kind}`}><Icon name={resource.type === "fan_out" ? "parallel" : resource.type === "action" ? "action" : resource.type === "agent" ? "agent" : "flow"} size={16} /></span>
             <span><strong>{resource.name}</strong><small>{titleCase(resource.kind)} · v{resource.version.version}</small></span>
             <Icon name="plus" size={15} />
           </button>
-        )) : <EmptyState icon={section === "flows" ? "flow" : section === "agents" ? "agent" : "action"} title="Nothing matches" description="Change the search or create the resource from its registry." />}
+        )) : <EmptyState icon={section === "control" ? "parallel" : section === "flows" ? "flow" : section === "agents" ? "agent" : "action"} title="Nothing matches" description="Change the search or create the resource from its registry." />}
       </div>
       <footer><Icon name="lock" size={14} /><span>Nodes pin immutable versions when you publish.</span></footer>
     </aside>
@@ -653,18 +732,56 @@ function KynNode({ data, selected }) {
   );
 }
 
+function FanOutNode({ data, selected }) {
+  const portStart = 178;
+  const portGap = 30;
+  const height = portStart + (Math.max(data.inputs.length || 1, data.outcomes.length) - 1) * portGap + 34;
+  return (
+    <article className={`kyn-node fan-out-node ${selected ? "is-selected" : ""} ${data.isStart ? "is-start" : ""}`} style={{ minHeight: height }}>
+      <header>
+        <span className="node-symbol symbol-fan_out"><Icon name="parallel" size={17} /></span>
+        <div><strong>{data.label}</strong><small>Parallel composition · fanout-v1</small></div>
+        {data.isStart ? <Badge tone="success">Start</Badge> : null}
+      </header>
+      <div className="fan-out-members" aria-label={`${data.members.length} parallel members`}>
+        {data.members.slice(0, 5).map((member) => (
+          <span key={member.id} title={member.label}>
+            <Icon name={member.type === "action" ? "action" : member.type === "agent" ? "agent" : "flow"} size={12} />
+            <b>{member.id}</b>
+          </span>
+        ))}
+        {data.members.length > 5 ? <span><b>+{data.members.length - 5}</b></span> : null}
+        {!data.members.length ? <em>Choose 2–8 independent members</em> : null}
+      </div>
+      <div className="fan-out-barrier">
+        <span><Icon name="lock" size={12} />{data.barrier.mode === "all" ? "all members" : `quorum ${data.barrier.quorum}/${data.members.length || "?"}`}</span>
+        <span>{data.barrier.on_member_error === "isolate" ? "errors isolated" : "fail fast"}</span>
+      </div>
+      {(data.inputs.length ? data.inputs : [{ id: "in:default", label: "input" }]).map((input, index) => {
+        const top = portStart + index * portGap;
+        return <React.Fragment key={input.id}><Handle type="target" id={input.id} position={Position.Left} className="kyn-handle target-handle" style={{ top }} /><span className="port-label port-label-in" style={{ top: top - 9 }}>{input.label}</span></React.Fragment>;
+      })}
+      {data.outcomes.map((outcome, index) => {
+        const top = portStart + index * portGap;
+        return <React.Fragment key={outcome.id}><span className={`port-label port-label-out tone-${outcome.tone}`} style={{ top: top - 9 }}>{outcome.label}</span><Handle type="source" id={outcome.id} position={Position.Right} className={`kyn-handle source-handle tone-${outcome.tone}`} style={{ top }} /></React.Fragment>;
+      })}
+    </article>
+  );
+}
+
 function hydrateNodes(snapshot, draft) {
   return draft.nodes.map((node) => {
     const resource = resourceForNode(snapshot, node);
     const version = versionForNode(snapshot, node);
     const incoming = draft.routes.filter((route) => route.to === node.id).map((route) => ({ id: `in:${route.from}:${route.outcome}`, label: route.outcome }));
     const outcomes = nodeOutcomes(snapshot, node);
-    const kind = node.type === "action" ? (version?.kind ?? "action") : node.type === "agent" ? "agent" : "subflow";
-    const inputSchema = node.type === "agent" ? agentInputSchema(snapshot, version) : version?.input_schema;
+    const kind = node.type === "fan_out" ? "fan_out" : node.type === "action" ? (version?.kind ?? "action") : node.type === "agent" ? "agent" : "subflow";
+    const inputSchema = node.type === "fan_out" ? fanOutInputSchema(snapshot, node) : node.type === "agent" ? agentInputSchema(snapshot, version) : version?.input_schema;
     const outputSchema = node.type === "agent" ? { properties: { text: {} } } : version?.output_schema;
+    const memberLookup = new Map(concurrentMemberOptions(snapshot).map((item) => [`${item.type}:${item.version.id}`, item]));
     return {
       id: node.id,
-      type: "kynNode",
+      type: node.type === "fan_out" ? "fanOutNode" : "kynNode",
       position: node.position,
       selected: false,
       data: {
@@ -679,7 +796,12 @@ function hydrateNodes(snapshot, draft) {
         outputCount: Object.keys(outputSchema?.properties ?? {}).length,
         effect: version?.effect_level ?? (node.type === "agent" ? "model" : "linked run"),
         color: colorForKind(kind),
-        isStart: draft.start_node_id === node.id
+        isStart: draft.start_node_id === node.id,
+        members: (node.members ?? []).map((member) => ({
+          ...member,
+          label: memberLookup.get(`${member.type}:${member.version_id}`)?.label ?? member.id
+        })),
+        barrier: node.barrier ?? { mode: "quorum", quorum: 2, on_member_error: "isolate" }
       }
     };
   });
@@ -701,6 +823,7 @@ function hydrateEdges(draft) {
 function edgeId(route) { return `${route.from}:${route.outcome}:${route.to}`; }
 
 function colorForKind(kind) {
+  if (kind === "fan_out") return "tone-ai-solid";
   if (kind === "ai" || kind === "agent") return "tone-ai-solid";
   if (kind === "approval") return "tone-warning-solid";
   if (kind === "router" || kind === "condition" || kind === "assert") return "tone-cyan-solid";
@@ -713,7 +836,11 @@ function Inspector({ draft, node, snapshot, replaceDraft, setSelectedNodeId, onC
   return (
     <aside className="node-inspector" aria-label={node ? `Inspector for ${node.id}` : "Flow inspector"}>
       {node ? (
-        <NodeInspector node={node} draft={draft} snapshot={snapshot} replaceDraft={replaceDraft} onRename={(nextId) => { if (draft.nodes.some((item) => item.id === nextId && item.id !== node.id)) return false; renameNode(node.id, nextId, replaceDraft); setSelectedNodeId(nextId); return true; }} onClose={() => { setSelectedNodeId(null); onCollapse(); }} onRemove={() => removeNode(node.id, replaceDraft, setSelectedNodeId)} />
+        node.type === "fan_out" ? (
+          <FanOutInspector node={node} draft={draft} snapshot={snapshot} replaceDraft={replaceDraft} onRename={(nextId) => { if (draft.nodes.some((item) => item.id === nextId && item.id !== node.id)) return false; renameNode(node.id, nextId, replaceDraft); setSelectedNodeId(nextId); return true; }} onClose={() => { setSelectedNodeId(null); onCollapse(); }} onRemove={() => removeNode(node.id, replaceDraft, setSelectedNodeId)} />
+        ) : (
+          <NodeInspector node={node} draft={draft} snapshot={snapshot} replaceDraft={replaceDraft} onRename={(nextId) => { if (draft.nodes.some((item) => item.id === nextId && item.id !== node.id)) return false; renameNode(node.id, nextId, replaceDraft); setSelectedNodeId(nextId); return true; }} onClose={() => { setSelectedNodeId(null); onCollapse(); }} onRemove={() => removeNode(node.id, replaceDraft, setSelectedNodeId)} />
+        )
       ) : (
         <FlowInspector draft={draft} snapshot={snapshot} replaceDraft={replaceDraft} />
       )}
@@ -888,6 +1015,13 @@ function castAgentVersions(snapshot, nodes) {
   const cast = new Set();
   const visitedFlows = new Set();
   const visit = (node) => {
+    if (node.type === "fan_out") {
+      (node.members ?? []).forEach((member) => visit({
+        type: member.type,
+        version_id: member.version_id
+      }));
+      return;
+    }
     const version = versionForNode(snapshot, node);
     if (!version) return;
     if (node.type === "agent") cast.add(node.version_id);
@@ -904,12 +1038,180 @@ function castAgentVersions(snapshot, nodes) {
 
 function nodeCanMintEvidence(snapshot, node, evidenceKind) {
   if (evidenceKind === "step") return true;
+  if (node.type === "fan_out") {
+    if (evidenceKind !== "receipt") return false;
+    return (node.members ?? []).some((member) => member.type === "action");
+  }
   if (node.type !== "action") return false;
   const version = versionForNode(snapshot, node);
   if (!version) return false;
   if (evidenceKind === "receipt") return true;
   if (evidenceKind === "approval") return version.kind === "approval";
   return ["data_store", "sandbox"].includes(version.kind) && version.config?.write_enabled !== false;
+}
+
+function FanOutInspector({ node, draft, snapshot, replaceDraft, onRename, onClose, onRemove }) {
+  const [nodeIdDraft, setNodeIdDraft] = useState(node.id);
+  useEffect(() => setNodeIdDraft(node.id), [node.id]);
+  const options = useMemo(
+    () => concurrentMemberOptions(snapshot).filter((item) => item.resource.id !== draft.id),
+    [draft.id, snapshot]
+  );
+  const lookup = useMemo(
+    () => new Map(options.map((item) => [`${item.type}:${item.version.id}`, item])),
+    [options]
+  );
+  const inputSchema = fanOutInputSchema(snapshot, node);
+  const schemaFingerprint = schemaKey(inputSchema);
+  const compatible = options.filter((item) => schemaKey(item.inputSchema) === schemaFingerprint);
+  const duplicateIds = new Set(
+    (node.members ?? []).filter((member, index, members) => members.some((candidate, candidateIndex) => candidateIndex !== index && candidate.id === member.id)).map((member) => member.id)
+  );
+  const duplicateTargets = new Set(
+    (node.members ?? []).filter((member, index, members) => members.some((candidate, candidateIndex) => candidateIndex !== index && candidate.type === member.type && candidate.version_id === member.version_id)).map((member) => `${member.type}:${member.version_id}`)
+  );
+  const updateNode = (updater) => replaceDraft((current) => ({
+    ...current,
+    nodes: current.nodes.map((item) => item.id === node.id ? updater(item) : item)
+  }));
+
+  const replaceTarget = (memberIndex, targetKey) => {
+    const selected = options.find((item) => `${item.type}:${item.version.id}` === targetKey);
+    if (!selected) return;
+    updateNode((current) => {
+      let members = current.members.map((member, index) => index === memberIndex
+        ? { ...member, type: selected.type, version_id: selected.version.id }
+        : member);
+      if (memberIndex === 0) {
+        const pool = options.filter((item) => schemaKey(item.inputSchema) === schemaKey(selected.inputSchema));
+        const used = new Set([targetKey]);
+        members = members.map((member, index) => {
+          if (index === 0) return member;
+          const key = `${member.type}:${member.version_id}`;
+          if (pool.some((item) => `${item.type}:${item.version.id}` === key) && !used.has(key)) {
+            used.add(key);
+            return member;
+          }
+          const replacement = pool.find((item) => !used.has(`${item.type}:${item.version.id}`));
+          if (!replacement) return member;
+          const replacementKey = `${replacement.type}:${replacement.version.id}`;
+          used.add(replacementKey);
+          return { ...member, type: replacement.type, version_id: replacement.version.id };
+        });
+      }
+      const nextSchema = selected.inputSchema;
+      return {
+        ...current,
+        members,
+        input_mapping: memberIndex === 0 ? defaultMapping(nextSchema) : current.input_mapping
+      };
+    });
+  };
+
+  const addMember = () => updateNode((current) => {
+    if (current.members.length >= 8) return current;
+    const used = new Set(current.members.map((member) => `${member.type}:${member.version_id}`));
+    const candidate = compatible.find((item) => !used.has(`${item.type}:${item.version.id}`));
+    if (!candidate) return current;
+    const memberId = uniqueMemberId(current.members);
+    const members = [...current.members, { id: memberId, type: candidate.type, version_id: candidate.version.id }];
+    return {
+      ...current,
+      members,
+      barrier: {
+        ...current.barrier,
+        quorum: current.barrier.mode === "all" ? members.length : Math.min(current.barrier.quorum, members.length)
+      }
+    };
+  });
+
+  const removeMember = (memberIndex) => updateNode((current) => {
+    if (current.members.length <= 2) return current;
+    const members = current.members.filter((_, index) => index !== memberIndex);
+    return {
+      ...current,
+      members,
+      barrier: {
+        ...current.barrier,
+        quorum: current.barrier.mode === "all" ? members.length : Math.min(current.barrier.quorum, members.length)
+      }
+    };
+  });
+
+  return (
+    <>
+      <header className="inspector-header"><div><p className="panel-kicker">Parallel control</p><h2>Fan-out + barrier</h2></div><IconButton icon="close" label="Close fan-out inspector" onClick={onClose} /></header>
+      <div className="inspector-scroll fan-out-inspector">
+        <section className="inspector-section node-identity">
+          <div className="resource-lock"><span className="node-symbol symbol-fan_out"><Icon name="parallel" size={17} /></span><div><strong>Code-owned concurrency primitive</strong><small>fanout-v1 · pinned members</small></div></div>
+          <Field label="Node ID" hint="Stable evidence site for the parent Step."><input value={nodeIdDraft} onChange={(event) => setNodeIdDraft(event.target.value)} onBlur={() => { const next = slugify(nodeIdDraft); if (next && next !== node.id) { if (!onRename(next)) setNodeIdDraft(node.id); } else setNodeIdDraft(node.id); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} /></Field>
+          <label className="check-row"><input type="radio" name="start-node" checked={draft.start_node_id === node.id} onChange={() => replaceDraft((current) => ({ ...current, start_node_id: node.id }))} /><span><strong>Start node</strong><small>Dispatch every member from the same validated input.</small></span></label>
+        </section>
+
+        <section className="inspector-section fan-out-composition">
+          <div className="section-heading"><div><h3>Independent members</h3><p>Two to eight distinct immutable targets with one identical input contract.</p></div><Badge tone="ai">{node.members.length}/8</Badge></div>
+          <div className="fanout-member-list">
+            {node.members.map((member, index) => {
+              const targetKey = `${member.type}:${member.version_id}`;
+              const entry = lookup.get(targetKey);
+              const memberOptions = index === 0
+                ? options.filter((candidate) => options.filter((peer) => schemaKey(peer.inputSchema) === schemaKey(candidate.inputSchema)).length >= node.members.length)
+                : compatible;
+              return <article className={`fanout-member-editor ${duplicateIds.has(member.id) || duplicateTargets.has(targetKey) || !entry ? "is-invalid" : ""}`} key={`member-${index}`}>
+                <header><span>{String(index + 1).padStart(2, "0")}</span><strong>{entry?.label ?? "Unavailable pinned target"}</strong><IconButton icon="trash" label={`Remove member ${member.id}`} disabled={node.members.length <= 2} onClick={() => removeMember(index)} /></header>
+                <Field label="Member ID" required><input value={member.id} aria-invalid={duplicateIds.has(member.id)} onChange={(event) => updateNode((current) => ({ ...current, members: current.members.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, id: slugDraft(event.target.value) } : candidate) }))} onBlur={(event) => updateNode((current) => ({ ...current, members: current.members.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, id: slugify(event.target.value) } : candidate) }))} /></Field>
+                <Field label="Pinned target" required hint={entry ? `${titleCase(entry.type)} · immutable v${entry.version.version}` : "This version is no longer eligible for parallel execution."}>
+                  <select value={targetKey} aria-invalid={!entry || duplicateTargets.has(targetKey)} onChange={(event) => replaceTarget(index, event.target.value)}>
+                    {!entry ? <option value={targetKey}>Unavailable · {member.version_id}</option> : null}
+                    {memberOptions.map((candidate) => <option key={`${candidate.type}:${candidate.version.id}`} value={`${candidate.type}:${candidate.version.id}`}>{candidate.label}</option>)}
+                  </select>
+                </Field>
+              </article>;
+            })}
+          </div>
+          {duplicateIds.size ? <p className="field-error">Member IDs must be unique lowercase slugs.</p> : null}
+          {duplicateTargets.size ? <p className="field-error">Every member must pin a distinct target version.</p> : null}
+          <Button tone="quiet" icon="plus" onClick={addMember} disabled={node.members.length >= 8 || !compatible.some((item) => !node.members.some((member) => member.type === item.type && member.version_id === item.version.id))}>Add compatible member</Button>
+        </section>
+
+        <section className="inspector-section">
+          <h3>Deterministic barrier</h3>
+          <p className="section-help">Models contribute records. Code counts votes, preserves dissent, and owns the route.</p>
+          <div className="field-grid two">
+            <Field label="Barrier mode"><select value={node.barrier.mode} onChange={(event) => updateNode((current) => ({ ...current, barrier: { ...current.barrier, mode: event.target.value, quorum: event.target.value === "all" ? current.members.length : Math.min(current.barrier.quorum, current.members.length) } }))}><option value="quorum">Quorum</option><option value="all">All members</option></select></Field>
+            <Field label="Affirmative votes"><input type="number" min="1" max={node.members.length} disabled={node.barrier.mode === "all"} value={node.barrier.quorum} onChange={(event) => updateNode((current) => ({ ...current, barrier: { ...current.barrier, quorum: Math.max(1, Math.min(current.members.length, Number(event.target.value) || 1)) } }))} /></Field>
+          </div>
+          <Field label="Verdict path" hint="Dot path declared by every member output schema."><input value={node.barrier.verdict_path} onChange={(event) => updateNode((current) => ({ ...current, barrier: { ...current.barrier, verdict_path: event.target.value } }))} placeholder="verdict" /></Field>
+          <Field label="Affirmative values" hint="Comma-separated exact string values; for example commit, approve."><input value={node.barrier.affirmative_values.join(", ")} onChange={(event) => updateNode((current) => ({ ...current, barrier: { ...current.barrier, affirmative_values: event.target.value.split(",").map((value) => value.trim()).filter(Boolean).slice(0, 8) } }))} /></Field>
+          <Field label="Member failure"><select value={node.barrier.on_member_error} onChange={(event) => updateNode((current) => ({ ...current, barrier: { ...current.barrier, on_member_error: event.target.value } }))}><option value="isolate">Isolate and expose failure</option><option value="fail_fast">Fail parent after evidence</option></select></Field>
+        </section>
+
+        <section className="inspector-section">
+          <h3>Shared input mapping <Badge tone="neutral">{Object.keys(inputSchema.properties ?? {}).length}</Badge></h3>
+          <p className="section-help">The same mapped object is copied to every independent member.</p>
+          {Object.entries(inputSchema.properties ?? {}).map(([name, schema]) => <MappingRow key={name} name={name} schema={schema} mapping={node.input_mapping[name]} node={node} draft={draft} onChange={(mapping) => updateNode((current) => ({ ...current, input_mapping: { ...current.input_mapping, [name]: mapping } }))} />)}
+          {!Object.keys(inputSchema.properties ?? {}).length ? <p className="muted">Choose compatible members to establish the shared input contract.</p> : null}
+        </section>
+
+        <section className="inspector-section">
+          <h3>Barrier routes <Badge tone="neutral">{FAN_OUT_OUTCOMES.length}</Badge></h3>
+          <div className="outcome-route-list">
+            {FAN_OUT_OUTCOMES.map((outcome) => {
+              const route = draft.routes.find((item) => item.from === node.id && item.outcome === outcome.id);
+              return <label key={outcome.id} className={`outcome-route tone-${outcome.tone}`}><span><i /><strong>{outcome.label}</strong><small>{outcome.id}</small></span><select value={route?.to ?? ""} onChange={(event) => setOutcomeRoute(node.id, outcome.id, event.target.value, replaceDraft)}><option value="">End Flow</option>{draft.nodes.filter((candidate) => candidate.id !== node.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{graphNodeLabel(snapshot, candidate)} · {candidate.id}</option>)}</select></label>;
+            })}
+          </div>
+        </section>
+
+        <section className="inspector-section contract-preview">
+          <h3>Concurrency guarantees</h3>
+          <div className="fanout-guarantees"><p><Icon name="parallel" size={15} /><span><strong>Real parallel dispatch</strong>Each member receives its own operation session and child Step.</span></p><p><Icon name="lock" size={15} /><span><strong>One parent attempt</strong>The barrier is never silently retried as a group.</span></p><p><Icon name="activity" size={15} /><span><strong>Inspectable dissent</strong>Success, failure, abstention, and vote evidence survive the join.</span></p></div>
+          <details><summary>Shared input schema</summary><pre>{JSON.stringify(inputSchema, null, 2)}</pre></details>
+        </section>
+        <div className="danger-zone"><Button tone="danger" icon="trash" onClick={onRemove}>Remove fan-out</Button><p>This changes only the draft. Published versions remain immutable.</p></div>
+      </div>
+    </>
+  );
 }
 
 function NodeInspector({ node, draft, snapshot, replaceDraft, onRename, onClose, onRemove }) {
@@ -1050,6 +1352,119 @@ function StartFlowModal({ flow, mutate, onClose, onStarted }) {
 function agentInputSchema(snapshot, version) {
   const prompt = snapshot.prompts.flatMap((resource) => resource.versions).find((item) => item.id === version?.prompt_version_id);
   return { type: "object", properties: Object.fromEntries((prompt?.variables ?? []).map((name) => [name, { type: "string" }])), required: prompt?.variables ?? [], additionalProperties: false };
+}
+
+function schemaKey(schema) {
+  const canonicalize = (value) => {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.keys(value).sort().map((key) => [key, canonicalize(value[key])])
+      );
+    }
+    return value;
+  };
+  return JSON.stringify(canonicalize(schema ?? EMPTY_SCHEMA));
+}
+
+function uniqueMemberId(members) {
+  const used = new Set(members.map((member) => member.id));
+  let index = members.length + 1;
+  while (used.has(`perspective-${index}`)) index += 1;
+  return `perspective-${index}`;
+}
+
+function actionVersionById(snapshot, versionId) {
+  return snapshot.studio.actions.flatMap((resource) => resource.versions).find((version) => version.id === versionId) ?? null;
+}
+
+function agentVersionById(snapshot, versionId) {
+  return snapshot.agents.flatMap((resource) => resource.versions).find((version) => version.id === versionId) ?? null;
+}
+
+function flowVersionById(snapshot, versionId) {
+  return snapshot.studio.flows.flatMap((resource) => resource.versions).find((version) => version.id === versionId) ?? null;
+}
+
+function agentActionGrants(snapshot, version) {
+  if (Array.isArray(version?.effective_action_version_ids)) return version.effective_action_version_ids;
+  const skillIds = new Set(version?.skill_version_ids ?? []);
+  return snapshot.skills
+    .flatMap((resource) => resource.versions)
+    .filter((skill) => skillIds.has(skill.id))
+    .flatMap((skill) => skill.allowed_action_version_ids ?? []);
+}
+
+function actionCanPauseOrWrite(version) {
+  if (!version) return true;
+  if (version.kind === "approval") return true;
+  return ["data_store", "sandbox"].includes(version.kind) && version.config?.write_enabled !== false;
+}
+
+function concurrentTargetIsSafe(snapshot, type, versionId, seenFlows = new Set()) {
+  if (type === "action") {
+    const version = actionVersionById(snapshot, versionId);
+    if (!version || actionCanPauseOrWrite(version)) return false;
+    if (version.kind !== "ai" || !version.agent_version_id) return true;
+    return concurrentTargetIsSafe(snapshot, "agent", version.agent_version_id, seenFlows);
+  }
+  if (type === "agent") {
+    const version = agentVersionById(snapshot, versionId);
+    if (!version) return false;
+    return agentActionGrants(snapshot, version).every((actionId) => {
+      const granted = actionVersionById(snapshot, actionId);
+      return Boolean(granted) && !actionCanPauseOrWrite(granted);
+    });
+  }
+  if (type !== "flow" || seenFlows.has(versionId)) return false;
+  const version = flowVersionById(snapshot, versionId);
+  if (!version || !version.output_schema) return false;
+  const nextSeen = new Set(seenFlows).add(versionId);
+  return (version.nodes ?? []).every((node) => node.type !== "fan_out" && concurrentTargetIsSafe(snapshot, node.type, node.version_id, nextSeen));
+}
+
+function concurrentMemberOptions(snapshot) {
+  const actions = snapshot.studio.actions.flatMap((resource) => resource.versions.map((version) => ({
+    resource,
+    version,
+    type: "action",
+    inputSchema: version.input_schema,
+    label: `${resource.name} · Action v${version.version}`
+  })));
+  const agents = snapshot.agents.flatMap((resource) => resource.versions.map((version) => ({
+    resource,
+    version,
+    type: "agent",
+    inputSchema: agentInputSchema(snapshot, version),
+    label: `${resource.name} · Agent v${version.version}`
+  })));
+  const flows = snapshot.studio.flows.flatMap((resource) => resource.versions.map((version) => ({
+    resource,
+    version,
+    type: "flow",
+    inputSchema: version.input_schema,
+    label: `${resource.name} · Flow v${version.version}`
+  })));
+  return [...actions, ...agents, ...flows]
+    .filter((item) => concurrentTargetIsSafe(snapshot, item.type, item.version.id))
+    .sort((left, right) => left.type.localeCompare(right.type) || left.resource.name.localeCompare(right.resource.name) || right.version.version - left.version.version);
+}
+
+function firstCompatiblePair(options) {
+  const groups = new Map();
+  for (const option of options) {
+    const key = schemaKey(option.inputSchema);
+    groups.set(key, [...(groups.get(key) ?? []), option]);
+  }
+  return [...groups.values()].find((group) => group.length >= 2)?.slice(0, 2) ?? [];
+}
+
+function fanOutInputSchema(snapshot, node) {
+  const first = node?.members?.[0];
+  if (!first) return EMPTY_SCHEMA;
+  if (first.type === "agent") return agentInputSchema(snapshot, agentVersionById(snapshot, first.version_id));
+  if (first.type === "action") return actionVersionById(snapshot, first.version_id)?.input_schema ?? EMPTY_SCHEMA;
+  return flowVersionById(snapshot, first.version_id)?.input_schema ?? EMPTY_SCHEMA;
 }
 
 function createsCycle(routes, source, target) {

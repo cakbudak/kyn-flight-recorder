@@ -24,6 +24,12 @@ export const SUCCESS_ERROR = [
   { id: "error", label: "Error", description: "Execution failed closed.", tone: "danger" }
 ];
 
+export const FAN_OUT_OUTCOMES = [
+  { id: "converged", label: "Converged", description: "The deterministic barrier reached quorum.", tone: "success" },
+  { id: "review", label: "Review", description: "The barrier completed without affirmative quorum.", tone: "warning" },
+  { id: "error", label: "Error", description: "The fan-out contract failed closed.", tone: "danger" }
+];
+
 export const APPROVAL_DEMO_BRIEF = [
   "Target audience: OpenAI Build Week judges assessing a public agent-workflow product.",
   "Typed input contract: one object with a required brief string and no additional properties.",
@@ -34,6 +40,52 @@ export const APPROVAL_DEMO_BRIEF = [
   "Inspectable evidence: every pinned definition, model attempt, Step, outcome, tool receipt, approval, effect, and hash-linked event remains queryable; failed Runs and prior versions remain immutable.",
   "Measurable success condition: schema-valid output, score at or above 0.75, a recorded operator approval, exactly one successful effect receipt, and a valid event chain; otherwise the Run cannot be called successful."
 ].join(" ");
+
+const CONTEXT_STRING = { type: "string", maxLength: 20000 };
+const CONTEXT_CITATION_SCHEMA = {
+  type: "object",
+  properties: {
+    source_id: CONTEXT_STRING,
+    source_version_id: CONTEXT_STRING,
+    source_version: { type: "integer" },
+    source_name: CONTEXT_STRING,
+    filename: CONTEXT_STRING,
+    fingerprint: CONTEXT_STRING,
+    line_start: { type: "integer" },
+    line_end: { type: "integer" },
+    label: CONTEXT_STRING
+  },
+  required: ["source_id", "source_version_id", "source_version", "source_name", "filename", "fingerprint", "line_start", "line_end", "label"],
+  additionalProperties: false
+};
+const CONTEXT_PASSAGE_SCHEMA = {
+  type: "object",
+  properties: { text: CONTEXT_STRING, citation: CONTEXT_CITATION_SCHEMA },
+  required: ["text", "citation"],
+  additionalProperties: false
+};
+const SMART_READ_SOURCE_SCHEMA = {
+  type: "object",
+  properties: {
+    id: CONTEXT_STRING,
+    version_id: CONTEXT_STRING,
+    version: { type: "integer" },
+    name: CONTEXT_STRING,
+    filename: CONTEXT_STRING,
+    media_type: CONTEXT_STRING,
+    fingerprint: CONTEXT_STRING,
+    line_count: { type: "integer" },
+    byte_count: { type: "integer" }
+  },
+  required: ["id", "version_id", "version", "name", "filename", "media_type", "fingerprint", "line_count", "byte_count"],
+  additionalProperties: false
+};
+const SEARCH_INPUT_SCHEMA = {
+  type: "object",
+  properties: { query: { type: "string" }, max_results: { type: "integer", minimum: 1, maximum: 30 } },
+  required: ["query", "max_results"],
+  additionalProperties: false
+};
 
 export const ACTION_PRESETS = {
   template: {
@@ -131,6 +183,61 @@ export const ACTION_PRESETS = {
     output_schema: { type: "object", properties: { effect_id: { type: "string" }, collection: { type: "string" } }, required: ["effect_id", "collection"], additionalProperties: false },
     outcomes: SUCCESS_ERROR,
     config: { operation: "append_record", collection: "records", write_enabled: true }
+  },
+  smart_read: {
+    label: "SmartRead · glance",
+    description: "Read a bounded source opening and headings with immutable line citations.",
+    input_schema: { type: "object", properties: { source_version_id: { type: "string" } }, required: ["source_version_id"], additionalProperties: false },
+    output_schema: {
+      type: "object",
+      properties: {
+        mode: { type: "string" },
+        source: SMART_READ_SOURCE_SCHEMA,
+        passages: { type: "array", items: CONTEXT_PASSAGE_SCHEMA, maxItems: 100 },
+        headings: { type: "array", items: CONTEXT_PASSAGE_SCHEMA, maxItems: 100 },
+        result_fingerprint: { type: "string" }
+      },
+      required: ["mode", "source", "passages", "headings", "result_fingerprint"],
+      additionalProperties: false
+    },
+    outcomes: SUCCESS_ERROR,
+    config: { mode: "glance" }
+  },
+  knowledge_search: {
+    label: "Knowledge search",
+    description: "Rank cited passages across current source versions without model inference.",
+    input_schema: SEARCH_INPUT_SCHEMA,
+    output_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        terms: { type: "array", items: { type: "string" } },
+        results: { type: "array", items: { type: "object", properties: { passage_id: { type: "string" }, text: CONTEXT_STRING, score: { type: "integer" }, matched_terms: { type: "array", items: { type: "string" } }, citation: CONTEXT_CITATION_SCHEMA, passage_fingerprint: { type: "string" } }, required: ["passage_id", "text", "score", "matched_terms", "citation", "passage_fingerprint"], additionalProperties: false } },
+        result_fingerprint: { type: "string" }
+      },
+      required: ["query", "terms", "results", "result_fingerprint"],
+      additionalProperties: false
+    },
+    outcomes: SUCCESS_ERROR,
+    config: {}
+  },
+  memory_recall: {
+    label: "Memory recall",
+    description: "Recall only active human-promoted Memory with exact Run provenance.",
+    input_schema: SEARCH_INPUT_SCHEMA,
+    output_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        terms: { type: "array", items: { type: "string" } },
+        results: { type: "array", items: { type: "object", properties: { memory_id: { type: "string" }, memory_version_id: { type: "string" }, title: CONTEXT_STRING, content: CONTEXT_STRING, tags: { type: "array", items: { type: "string" } }, score: { type: "integer" }, matched_terms: { type: "array", items: { type: "string" } }, fingerprint: { type: "string" }, provenance: { type: "object", properties: { source_candidate_id: { type: "string" }, source_run_id: { type: "string" }, evidence_event_ids: { type: "array", items: { type: "string" } } }, required: ["source_candidate_id", "source_run_id", "evidence_event_ids"], additionalProperties: false } }, required: ["memory_id", "memory_version_id", "title", "content", "tags", "score", "matched_terms", "fingerprint", "provenance"], additionalProperties: false } },
+        result_fingerprint: { type: "string" }
+      },
+      required: ["query", "terms", "results", "result_fingerprint"],
+      additionalProperties: false
+    },
+    outcomes: SUCCESS_ERROR,
+    config: {}
   }
 };
 
@@ -248,6 +355,13 @@ export function exampleForSchema(schema, name = "value") {
 
 export function resourceForNode(snapshot, node) {
   if (!node) return null;
+  if (node.type === "fan_out") {
+    return {
+      id: "fanout",
+      name: "Parallel fan-out",
+      description: "Dispatch independent pinned members, then join them at a code-owned barrier."
+    };
+  }
   if (node.type === "action") {
     return snapshot.studio.actions.find((item) => item.versions.some((version) => version.id === node.version_id));
   }
@@ -258,17 +372,39 @@ export function resourceForNode(snapshot, node) {
 }
 
 export function versionForNode(snapshot, node) {
+  if (node?.type === "fan_out") {
+    const firstMember = node.members?.[0];
+    const memberVersion = firstMember
+      ? versionForNode(snapshot, { type: firstMember.type, version_id: firstMember.version_id })
+      : null;
+    return {
+      id: "fanout-v1",
+      version: 1,
+      kind: "fan_out",
+      input_schema: memberVersion?.input_schema ?? EMPTY_SCHEMA,
+      output_schema: {
+        type: "object",
+        properties: { members: { type: "object" }, barrier: { type: "object" } },
+        required: ["members", "barrier"],
+        additionalProperties: false
+      },
+      outcomes: FAN_OUT_OUTCOMES,
+      effect_level: "parallel barrier"
+    };
+  }
   const resource = resourceForNode(snapshot, node);
   return resource?.versions.find((version) => version.id === node.version_id) ?? null;
 }
 
 export function nodeOutcomes(snapshot, node) {
+  if (node?.type === "fan_out") return FAN_OUT_OUTCOMES;
   const version = versionForNode(snapshot, node);
   if (node?.type === "agent") return SUCCESS_ERROR;
   return version?.outcomes ?? SUCCESS_ERROR;
 }
 
 export function graphNodeLabel(snapshot, node) {
+  if (node?.type === "fan_out") return "Parallel fan-out";
   return resourceForNode(snapshot, node)?.name ?? node.id;
 }
 

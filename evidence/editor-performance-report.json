@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-20T20:38:41.676Z",
+  "generated_at": "2026-07-21T14:53:56.398Z",
   "surface": "Kyn.ist Agent Studio maximum-graph Chromium load gate",
   "runtime": {
     "chromium": "/usr/bin/chromium",
@@ -12,8 +12,8 @@
     "source_handles": 128
   },
   "measurements": {
-    "graph_render_ms": 225.362,
-    "fit_view_control_ms": 116.53,
+    "graph_render_ms": 207.247,
+    "fit_view_control_ms": 111.048,
     "document_overflow_px": 0
   },
   "thresholds": {
@@ -24,14 +24,14 @@
     "page_errors": [],
     "failed_requests": [],
     "server_tail": [
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /app/assets/studio-B7M9LC7v.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /app/assets/studio-BPJKOQG6.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:38:40 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -"
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /app/assets/studio-DTa896TM.css HTTP/1.1\" 200 -",
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /app/assets/studio-B3rWKrPu.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 16:53:55 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -"
     ]
   },
   "checks": {

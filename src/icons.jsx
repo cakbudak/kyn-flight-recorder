@@ -31,7 +31,13 @@ export function Icon({ name, size = 18 }) {
     lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
     sun: <><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></>,
     moon: <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2Z"/>,
-    compare: <><path d="M12 3v18M5 7h14"/><path d="m5 7-3 7h6L5 7ZM19 7l-3 7h6l-3-7Z"/><path d="M9 21h6"/></>
+    compare: <><path d="M12 3v18M5 7h14"/><path d="m5 7-3 7h6L5 7ZM19 7l-3 7h6l-3-7Z"/><path d="M9 21h6"/></>,
+    boardroom: <><circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="m7 7.2 2.5 2.6M17 7.2l-2.5 2.6M7 16.8l2.5-2.6M17 16.8l-2.5-2.6"/></>,
+    context: <><path d="M4 4h10a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3V4Z"/><path d="M7 8h6M7 12h6M17 9h3v11h-3"/></>,
+    memory: <><path d="M8 4a3 3 0 0 0-3 3c0 .8.3 1.5.8 2A3.5 3.5 0 0 0 7 15.8V18a2 2 0 0 0 2 2h3V4H8ZM16 4a3 3 0 0 1 3 3c0 .8-.3 1.5-.8 2a3.5 3.5 0 0 1-1.2 6.8V18a2 2 0 0 1-2 2h-3V4h4Z"/><path d="M8 9h4M12 14h4"/></>,
+    read: <><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v18H7.5A3.5 3.5 0 0 0 4 23V5.5ZM20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5A3.5 3.5 0 0 1 20 23V5.5Z"/><path d="M7 7h2M15 7h2M15 11h2"/></>,
+    parallel: <><path d="M4 12h4M16 5h4M16 12h4M16 19h4"/><path d="M8 12c4 0 4-7 8-7M8 12h8M8 12c4 0 4 7 8 7"/><circle cx="4" cy="12" r="1.5"/><circle cx="20" cy="5" r="1.5"/><circle cx="20" cy="12" r="1.5"/><circle cx="20" cy="19" r="1.5"/></>,
+    activity: <><path d="M3 12h4l2.2-6 4.1 12 2.2-6H21"/><rect x="3" y="3" width="18" height="18" rx="2" opacity=".24"/></>
   };
   return (
     <svg className="icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

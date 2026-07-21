@@ -11,10 +11,14 @@ import Comparisons from "./components/Comparisons.jsx";
 import CapabilityForge from "./components/CapabilityForge.jsx";
 import Documentation from "./components/Documentation.jsx";
 import Settings from "./components/Settings.jsx";
+import ContextWorkbench from "./components/ContextWorkbench.jsx";
+import BoardRooms from "./components/BoardRooms.jsx";
 
 const NAVIGATION = [
   { id: "overview", label: "Overview", icon: "home" },
   { id: "studio", label: "Flow Studio", icon: "flow" },
+  { id: "boardrooms", label: "BoardRooms", icon: "boardroom", count: (snapshot) => (snapshot.studio.boardrooms ?? []).length },
+  { id: "context", label: "Context & Memory", icon: "context", count: (snapshot) => (snapshot.studio.knowledge_sources ?? []).length },
   { id: "actions", label: "Actions", icon: "action", count: (snapshot) => snapshot.studio.actions.length },
   { id: "agents", label: "Agents", icon: "agent", count: (snapshot) => snapshot.agents.length },
   { id: "prompts", label: "Prompts", icon: "prompt", count: (snapshot) => snapshot.prompts.length },
@@ -38,7 +42,9 @@ export default function App() {
   });
   const [keyRevision, setKeyRevision] = useState(0);
   const [focusRunId, setFocusRunId] = useState(null);
+  const [focusFlowId, setFocusFlowId] = useState(null);
   const [comparisonFlowId, setComparisonFlowId] = useState(null);
+  const [boardroomContext, setBoardroomContext] = useState("");
 
   const setView = useCallback((next) => {
     setViewState(next);
@@ -114,6 +120,16 @@ export default function App() {
     setView("comparisons");
   }, [setView]);
 
+  const openFlow = useCallback((flowId) => {
+    setFocusFlowId(flowId);
+    setView("studio");
+  }, [setView]);
+
+  const useContextInBoardRoom = useCallback((context) => {
+    setBoardroomContext(context);
+    setView("boardrooms");
+  }, [setView]);
+
   const onKeyChanged = useCallback(() => setKeyRevision((value) => value + 1), []);
   const keyConfigured = useMemo(() => Boolean(browserKey()), [keyRevision]);
 
@@ -132,9 +148,11 @@ export default function App() {
     );
   }
 
-  const shared = { snapshot, refresh, mutate, busy, setView, focusRun, startComparison };
+  const shared = { snapshot, refresh, mutate, busy, setView, focusRun, startComparison, openFlow };
   let content;
-  if (view === "studio") content = <FlowStudio {...shared} />;
+  if (view === "studio") content = <FlowStudio {...shared} focusFlowId={focusFlowId} onFocusFlowHandled={() => setFocusFlowId(null)} />;
+  else if (view === "boardrooms") content = <BoardRooms {...shared} initialContext={boardroomContext} onContextConsumed={() => setBoardroomContext("")} />;
+  else if (view === "context") content = <ContextWorkbench {...shared} onUseInBoardRoom={useContextInBoardRoom} />;
   else if (view === "comparisons") content = (
     <Comparisons
       {...shared}

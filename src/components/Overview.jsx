@@ -19,13 +19,27 @@ export default function Overview({ snapshot, mutate, setView, focusRun }) {
   );
   return (
     <section className="overview-page">
-      <PageHeader eyebrow="Kyn.ist Agent Studio" title="Build the job. Operate its truth." description="A serious public cut of Kyn’s agent stack: configurable capabilities, visual composition, version-pinned execution, explicit authority, authoritative evidence, and forward-only recovery." actions={<><Button tone="quiet" icon="docs" onClick={() => setView("docs")}>Read the contract</Button><Button tone="primary" icon="flow" onClick={() => setView("studio")}>Open Flow Studio</Button></>} />
+      <PageHeader eyebrow="Kyn.ist Agent Studio" title="Build the job. Operate its truth." description="An executable public cut of Kyn’s agent runtime: cited context, configurable agent capabilities, reusable graph composition, independent parallel deliberation, version-pinned execution, explicit authority, governed Memory, and forward-only recovery." actions={<><Button tone="quiet" icon="context" onClick={() => setView("context")}>Bring context</Button><Button tone="primary" icon="boardroom" onClick={() => setView("boardrooms")}>Open BoardRooms</Button></>} />
       <div className="metric-row">
         <Metric icon="action" value={studio.actions.length} label="Actions" detail={`${new Set(studio.actions.map((item) => item.version.kind)).size} executor kinds`} />
         <Metric icon="flow" value={studio.flows.length} label="Flows" detail={`${studio.flows.reduce((total, flow) => total + flow.versions.length, 0)} immutable versions`} />
         <Metric icon="agent" value={snapshot.agents.length} label="Agents" detail={`${snapshot.prompts.length} Prompts · ${snapshot.skills.length} Skills`} />
         <Metric icon="run" value={studio.runs.length} label="Runs" detail={`${activeRuns} live · ${failedRuns} maintainable`} />
       </div>
+      <section className="overview-wow">
+        <header><div><p className="panel-kicker">The complete operating loop</p><h2>Context becomes a decision. A decision becomes evidence. Evidence may become Memory.</h2></div><Badge tone="ai">one inspectable runtime</Badge></header>
+        <div className="wow-loop">
+          {[
+            ["01", "Import", "immutable Knowledge", "context", "context"],
+            ["02", "SmartRead", "bounded citations", "read", "context"],
+            ["03", "Deliberate", "parallel BoardRoom", "boardroom", "boardrooms"],
+            ["04", "Authorize", "explicit human gate", "lock", "runs"],
+            ["05", "Observe", "Steps · receipts · ledger", "activity", "runs"],
+            ["06", "Learn", "qualified Memory", "memory", "context"]
+          ].map(([number, title, detail, icon, target], index) => <React.Fragment key={number}><button type="button" onClick={() => setView(target)}><span>{number}</span><i><Icon name={icon} size={19} /></i><strong>{title}</strong><small>{detail}</small></button>{index < 5 ? <em aria-hidden="true">→</em> : null}</React.Fragment>)}
+        </div>
+        <footer><p><Icon name="parallel" size={16} /><span><strong>BoardRooms are not group chat.</strong> Agents execute in independent provider calls; a deterministic barrier counts votes and exposes dissent before one pinned editor synthesizes.</span></p><Button tone="default" icon="flow" onClick={() => setView("studio")}>Inspect the graph primitive</Button></footer>
+      </section>
       <div className="overview-primary-grid">
         <section className="overview-card control-plane-card">
           <header><div><p className="panel-kicker">One control plane</p><h2>From definition to reusable capability</h2></div><Badge tone="success">real runtime</Badge></header>
@@ -57,6 +71,8 @@ export default function Overview({ snapshot, mutate, setView, focusRun }) {
           <UseCase mark="FLOW → FLOW" title="Reusable orchestration" description="Publish a Flow, use its immutable version as a typed node, and retain linked child Run evidence." onClick={() => setView("studio")} />
           <UseCase mark="FAIL → FIX → PROOF" title="Forward recovery" description="Diagnose from owned events, approve an allowlisted successor, and prove it in linked work." onClick={() => setView("runs")} />
           <UseCase mark="RUN → SKILL" title="Evidence-bound learning" description="Distil a completed model Step, qualify its provenance and zero authority delta, then human-promote an immutable Skill." onClick={() => setView("forge")} />
+          <UseCase mark="READ → CITE → USE" title="SmartRead context" description="Inspect only the needed source window and carry its exact version, fingerprint, and line citations into agent work." onClick={() => setView("context")} />
+          <UseCase mark="3×AI ⇉ JOIN → H" title="Independent BoardRoom" description="Run distinct perspectives concurrently, compute quorum in code, preserve dissent, then place authority after the join." onClick={() => setView("boardrooms")} />
         </div>
       </section>
       <Principles principles={studio.principles ?? []} markers={studio.policy_markers ?? []} focusRun={focusRun} />

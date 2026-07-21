@@ -10,20 +10,26 @@ automation runtime. A visitor can:
 
 1. define typed, versioned Actions;
 2. define versioned Prompts, Skills, and Agents;
-3. compose pinned Action, Agent, and reusable Flow nodes on a visual acyclic
-   canvas with arbitrary named outcomes;
-4. attach manual, secret-webhook, and interval triggers;
-5. execute deterministic and OpenAI-backed Runs through a bounded worker;
-6. inspect authoritative Steps, events, model calls, receipts, approvals, and
-   effects;
-7. pause and resume at an immutable Human approval;
-8. rerun terminal work as a linked child;
-9. declare evidence-bound completion criteria with an independent Goal-Judge;
-10. ratify repeated structural dead ends and distil cross-Flow advisories;
-11. compare one pinned scaffold across models from a pre-I/O sibling manifest;
-12. distil a completed model Step into a quarantined, provenance-qualified,
-    human-promoted authority-free Skill; and
-13. maintain any supported blocked Run through evidence → diagnosis → bounded
+3. import immutable Knowledge and retrieve exact cited passages through
+   SmartRead or deterministic search;
+4. compose pinned Action, Agent, reusable Flow, and generic parallel fan-out
+   nodes on a visual acyclic canvas with arbitrary named outcomes;
+5. generate an editable multi-agent BoardRoom with code-owned quorum and
+   downstream Human authority;
+6. attach manual, secret-webhook, and interval triggers;
+7. execute deterministic and OpenAI-backed Runs through a bounded worker;
+8. inspect authoritative parent/member Steps, events, model calls, receipts,
+   approvals, effects, barrier results, and dissent;
+9. pause and resume at an immutable Human approval;
+10. rerun terminal work as a linked child;
+11. declare evidence-bound completion criteria with an independent Goal-Judge;
+12. ratify repeated structural dead ends and distil cross-Flow advisories;
+13. compare one pinned scaffold across models from a pre-I/O sibling manifest;
+14. distil a completed model Step into a quarantined, provenance-qualified,
+    human-promoted authority-free Skill;
+15. promote exact cited Run evidence into governed, provenance-bearing Memory;
+    and
+16. maintain any supported blocked Run through evidence → diagnosis → bounded
     repair → approval → successor → linked proof.
 
 The seeded launch Flow is one editable use case. It is not a prescribed journey.
@@ -72,6 +78,21 @@ independent Goal-Judge Agent version, and all transitive resource fingerprints.
 Graphs are bounded, reachable, and acyclic. A Flow node creates a linked child
 Run instead of flattening its evidence into the parent.
 
+A `fan_out` node pins two to eight distinct Action, Agent, or Flow members with
+one identical mapped input contract plus an all/quorum barrier, affirmative
+value set, and isolate/fail-fast member error policy. Its code-derived output
+contains every member record, completed/failed counts, convergence, and
+dissenting-member IDs.
+
+### Knowledge and Memory
+
+Knowledge source versions and their passages are immutable and fingerprinted.
+SmartRead accepts only a source-version ID and one bounded mode; it never accepts
+a path or URL. Memory candidates are append-only quarantined proposals over
+exact events from one completed, ledger-verified Run. Qualification is
+deterministic; promotion/rejection requires a Human acknowledgement of the exact
+candidate fingerprint. Only active promoted Memory versions enter recall.
+
 ## Run contract
 
 - Input is validated before a Run advances.
@@ -79,6 +100,8 @@ Run instead of flattening its evidence into the parent.
 - Webhook and schedule bindings pin the Flow version active at trigger creation.
 - Trigger enable/disable is guarded by an optimistic configuration revision.
 - Each node attempt creates a durable Step.
+- Each fan-out member creates a durable child Step linked to its parent fan-out
+  Step; each worker uses its own operation session.
 - Each Action attempt creates a durable receipt.
 - OpenAI calls record safe metadata and hashes, never raw credentials.
 - Approval is a real non-terminal pause with one immutable attributable decision.
@@ -117,6 +140,9 @@ Run instead of flattening its evidence into the parent.
 | `assert` | block on one failed declared comparison | none |
 | `approval` | pause and await immutable Human decision | human |
 | `data_store` | append one idempotent workspace-local effect | local SQLite |
+| `smart_read` | return bounded exact text plus immutable source citations | admitted Knowledge only |
+| `knowledge_search` | rank literal terms across current admitted passages | admitted Knowledge only |
+| `memory_recall` | return active promoted Memory with source-Run provenance | active Memory only |
 
 ## Invariants
 
@@ -143,6 +169,11 @@ Run instead of flattening its evidence into the parent.
   append-only and candidates carry zero authority.
 - Candidate qualification proves provenance only. Promotion creates a Skill v1
   but changes no Agent, Action, Flow, or Run pin.
+- Fan-out members have identical mapped input contracts, distinct immutable
+  targets, and may neither pause nor mint effects. Code owns join counts and
+  routes; an editor cannot manufacture quorum or delete member evidence.
+- SmartRead/search cannot escape admitted Knowledge. A Memory candidate cannot
+  enter recall before qualification and exact-fingerprint Human promotion.
 
 ## Capability Forge contract
 
@@ -191,6 +222,9 @@ The model cannot invent evidence, apply its proposal, or rewrite the failed Run.
 | ratify | Three independent structural failures refuse the unchanged Flow version before Run creation |
 | compare | Pre-I/O manifest, identical Flow/input, returned-model and ledger checks hold |
 | forge | Independent distillation, 8/8 provenance gates, zero authority, and human Skill promotion hold |
+| context | SmartRead/search resolve only immutable admitted versions and return exact citations |
+| deliberate | Concurrent member Steps, code-owned quorum/failure state, and surviving dissent hold |
+| memory | Quarantine, qualification, fingerprint decision, active-only recall, and retirement hold |
 | safety | BYOK, same-origin, isolation, bounds, no arbitrary tools or secret persistence |
 | database | Flat tables, immutability triggers, legal transitions, no private ontology |
 | browser | Desktop/mobile/reduced-motion/accessibility/error/network assertions pass |
