@@ -634,11 +634,9 @@ history. No reset, history rewrite, or hidden source import was used.
 app/          compiled self-hosted browser assets (no CDN/runtime Node dependency)
 src/          React workbench source and Flow canvas
 backend/      flat stores, typed contracts, graph runtimes, tools, HTTP API
-deploy/       hardened same-origin reverse proxy and service contracts
 docs/         runtime, trust-boundary, product, and quality contracts
 evidence/     sanitized browser and model proof
 scripts/      verification and browser journey runners
-submission/   Build Week submission material
 tests/        runtime, HTTP, database, isolation, security, and UI contracts
 serve.py      single composition root
 ```

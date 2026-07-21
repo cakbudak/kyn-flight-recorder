@@ -51,15 +51,6 @@ class StaticContractTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in sorted((APP / "assets").glob("*.js"))
         )
-        cls.nginx = (ROOT / "deploy" / "nginx-buildweek.conf").read_text(
-            encoding="utf-8"
-        )
-        cls.service = (ROOT / "deploy" / "kyn-agent-studio.service").read_text(
-            encoding="utf-8"
-        )
-        cls.user_service = (
-            ROOT / "deploy" / "kyn-agent-studio-user.service"
-        ).read_text(encoding="utf-8")
 
     def test_active_product_is_agent_studio_with_professional_workbenches(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -246,25 +237,9 @@ class StaticContractTests(unittest.TestCase):
         self.assertRegex(transport, r"(?m)^from openai import ")
         self.assertRegex(requirements, r"(?m)^openai==[0-9]+\.[0-9]+\.[0-9]+$")
 
-    def test_deployment_matches_256k_api_and_hardened_same_origin_service(self) -> None:
-        self.assertIn("proxy_pass http://host.docker.internal:4173", self.nginx)
-        self.assertIn("proxy_set_header X-Forwarded-Proto", self.nginx)
-        self.assertIn("client_max_body_size 256k", self.nginx)
-        for directive in (
-            "--host 172.17.0.1 --port 4173",
-            ".venv/bin/python",
-            "NoNewPrivileges=true",
-            "ProtectSystem=strict",
-            "UMask=0077",
-        ):
-            with self.subTest(directive=directive):
-                self.assertIn(directive, self.service)
-                self.assertIn(directive, self.user_service)
-        self.assertIn("StateDirectory=kyn-agent-studio", self.service)
-        self.assertIn(
-            "ReadWritePaths=/opt/server/projects/buildweek.kyn.ist/var",
-            self.user_service,
-        )
+    def test_public_repository_excludes_private_release_material(self) -> None:
+        self.assertFalse((ROOT / "deploy").exists())
+        self.assertFalse((ROOT / "submission").exists())
 
     def test_deployed_model_budgets_form_a_spendable_ladder(self) -> None:
         """A narrower budget nested inside a wider one makes the wider unspendable.
@@ -272,12 +247,9 @@ class StaticContractTests(unittest.TestCase):
         Three budgets bound model calls: per workspace, per address per hour, and
         globally per hour. They are only coherent when each is at least as large
         as the one it contains, because the tightest binds first no matter which
-        one an operator believes they are configuring. Raising the workspace
-        budget to 36 against an address ceiling of 24 is what produced a deployed
-        surface that refused its own advertised budget, and the refusal reached
-        the browser as a stalled view rather than as a stated limit. This asserts
-        the relation on the units that actually ship, so the next operator who
-        moves one number has to move the others or fail here.
+        ceiling an operator believes they are configuring. The public repository
+        owns the safe runtime defaults; private host overrides are verified in the
+        private release archive.
         """
 
         defaults = {
@@ -287,18 +259,11 @@ class StaticContractTests(unittest.TestCase):
                 (ROOT / "serve.py").read_text(encoding="utf-8"),
             )
         }
-        for unit_name, unit in (("system", self.service), ("user", self.user_service)):
-            overrides = {
-                key: int(value)
-                for key, value in re.findall(r"(?m)^Environment=(KYN_[A-Z_]+)=(\d+)$", unit)
-            }
-            effective = {**defaults, **overrides}
-            workspace = effective["KYN_WORKSPACE_MODEL_CALL_LIMIT"]
-            address = effective["KYN_ADDRESS_MODEL_CALLS_PER_HOUR"]
-            public = effective["KYN_PUBLIC_MODEL_CALLS_PER_HOUR"]
-            with self.subTest(unit=unit_name):
-                self.assertLessEqual(workspace, address, "a workspace budget one address may not spend")
-                self.assertLessEqual(address, public, "an address budget the host may not serve")
+        workspace = defaults["KYN_WORKSPACE_MODEL_CALL_LIMIT"]
+        address = defaults["KYN_ADDRESS_MODEL_CALLS_PER_HOUR"]
+        public = defaults["KYN_PUBLIC_MODEL_CALLS_PER_HOUR"]
+        self.assertLessEqual(workspace, address, "a workspace budget one address may not spend")
+        self.assertLessEqual(address, public, "an address budget the host may not serve")
 
     def test_every_model_budget_is_reachable_from_configuration(self) -> None:
         """An unconfigurable budget is a ceiling nobody can see until it binds."""
