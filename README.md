@@ -56,6 +56,13 @@ simulation.
   *different* Flows fail the same declared way. A principle only ever advises:
   it appears while you are authoring, publishing still succeeds, and the brake
   remains the only thing that refuses anything. Warn early, refuse late.
+- Close the learning loop in the **Capability Forge**. Select one completed,
+  ledger-verified model Step; a pinned Agent from a different logical Agent
+  resource proposes a strict,
+  cited behavioral Skill candidate. Code replays eight provenance, integrity,
+  independence, fingerprint, and zero-authority gates. Only an acknowledged
+  human decision may publish the exact instructions as an immutable,
+  authority-free Skill v1. No Agent or Flow changes silently.
 - Run a **controlled cross-model sweep**. One immutable pinned Flow version, one
   input, several models. Before provider I/O, the complete expected model ×
   repetition × Run set is committed as a hash-linked manifest; every sibling
@@ -92,18 +99,22 @@ own mixed graph from scratch.
    Agent/Prompt/Skill and the Run pauses at Human approval.
 7. Inspect Steps, model calls, receipts, and events. Approve the pending request;
    the graph resumes and writes exactly one idempotent SQLite sandbox effect.
-8. Edit the Flow on canvas and publish v2. Existing Runs still render and retain
+8. Open **Capability Forge**, select that completed model Step, choose an
+   independent distiller Agent, and create a quarantined candidate. Run the 8/8
+   provenance gate, then human-promote it to Skill v1. The source Run and every
+   Agent remain unchanged.
+9. Edit the Flow on canvas and publish v2. Existing Runs still render and retain
    their exact v1 graph.
-9. Create a Data Store Action with `write_enabled:false`, put it in a Flow, and
+10. Create a Data Store Action with `write_enabled:false`, put it in a Flow, and
    run it. From that blocked Run, execute Diagnose → Propose → Approve → Proof.
    The parent stays blocked with zero effects; its linked child runs Flow v2 and
    commits exactly one effect.
-10. Open `Contracted evidence publication` in **Flow Studio**. Add an acceptance
+11. Open `Contracted evidence publication` in **Flow Studio**. Add an acceptance
     promise, choose its evidence kind and eligible graph site, and publish the
     successor. Run the same pinned version once through the branch that skips
     the declared write and once through the branch that reaches it: the first is
     refused at the stop seam, the second is admitted with resolved anchors.
-11. Open **Comparisons**. The control panel shows the pre-I/O sibling manifest,
+12. Open **Comparisons**. The control panel shows the pre-I/O sibling manifest,
     immutable Flow/input fingerprints, the model actually returned by the
     provider, and every variable this surface does not claim to control.
 
@@ -257,6 +268,29 @@ vocabulary rather than asserted: the mechanism groups any declared predicate ove
 any executor kind, but `POLICY_MARKERS` currently recognises exactly one
 predicate, so that is the whole of what this system can say. A failure carrying
 no recognised predicate produces no signature and never distils, by construction.
+
+#### Capability Forge
+
+Principles generalize deterministic executor failures; they are not converted
+into Skills. Doing so would attach model-facing prose to a configuration-level
+predicate and pretend it changed behavior. The Forge starts somewhere stricter:
+one completed model-backed Step in a Run whose full event ledger verifies.
+
+Before provider I/O, code freezes the source Flow/Step/model-call pins, source
+Agent and Skill fingerprints, validated input/output, terminal state, and a
+bounded ledger excerpt. A different pinned Agent receives that envelope through
+one tool-free, strict-schema Responses call and must cite only event IDs inside
+it. The proposal is stored in quarantine with its own fingerprint and zero
+tool/Action authority.
+
+Qualification is deterministic and makes no model call. It replays the terminal
+source, full ledger chain, model-Step ownership, pre-I/O source snapshot,
+citation subset, candidate fingerprint, independent-Agent fence, and zero
+authority delta. Passing proves provenance—not improved performance. A human may
+then acknowledge the exact fingerprint and publish one immutable Skill v1. The
+Skill is not attached anywhere automatically: an operator must create a successor
+Agent and prove its outcome in a new Run. Rejection is append-only too; nothing
+is erased to make the learning history look cleaner.
 
 Publishing a repaired successor Flow version produces a new `flow_version_id`
 and therefore a new fingerprint. Fixing the problem always clears the brake; only
@@ -422,6 +456,10 @@ POST /api/v1/studio/runs/:id/diagnoses
 POST /api/v1/studio/diagnoses/:id/repairs
 POST /api/v1/studio/repairs/:id/apply
 POST /api/v1/studio/repairs/:id/proof
+POST /api/v1/studio/skill-candidates
+POST /api/v1/studio/skill-candidates/:id/qualifications
+POST /api/v1/studio/skill-candidates/:id/promotion
+POST /api/v1/studio/skill-candidates/:id/rejection
 POST /api/v1/studio/flows/:id/comparisons
 GET  /api/v1/studio/comparisons
 GET  /api/v1/studio/comparisons/:id
@@ -477,10 +515,13 @@ subflow execution; webhook activation; asynchronous AI execution;
 approval/resume; live graph evidence; dead-end ratification and brake refusal;
 authorable completion contracts with refuse/admit evidence; pre-I/O comparison
 manifests; and integrated maintenance.
+The same journey also distils a completed model Step through a different logical
+Agent, proves all eight Capability Forge gates, and human-promotes an
+authority-free Skill without changing any Agent or Flow.
 Provider-shaped deterministic responses are used locally; the same journey can be
 run against the deployed OpenAI-backed service. The current local journey passes
-**42/42** checks, including keyboard focus containment, 3,048 rendered contrast
-samples across every workbench in both themes, and a legible pannable 390 px
+**45/45** checks, including keyboard focus containment, 3,430 rendered contrast
+samples across all eleven workbenches in both themes, and a legible pannable 390 px
 graph; see
 [`evidence/browser/agent-studio-report.json`](evidence/browser/agent-studio-report.json).
 

@@ -1,7 +1,7 @@
 # Runtime design: Kyn.ist Agent Studio public cut
 
 Status: binding implementation design  
-Date: 2026-07-19
+Date: 2026-07-21
 
 ## 1. Design boundary
 
@@ -20,7 +20,8 @@ browser ──same origin──> HTTP API ──> ControlPlane ──> StudioSto
                                             │                         ├── local executors
                                             │                         └── OpenAI Responses SDK
                                             ├──> trigger scheduler
-                                            └──> diagnosis / repair policy
+                                            ├──> diagnosis / repair policy
+                                            └──> evidence-bound Capability Forge
 ```
 
 ## 2. Flat SQLite projection
@@ -45,6 +46,8 @@ object, part, entity, brick, frame, or edge table.
 | `automation_effects` | idempotent workspace-local data effects |
 | `automation_diagnoses` | grounded fault analysis with owned event citations |
 | `automation_repair_proposals` / `automation_repair_decisions` | fenced successor command and evidence |
+| `skill_distillation_model_calls` / `skill_candidates` | safe distillation receipts and immutable zero-authority candidates |
+| `skill_candidate_qualifications` / `skill_candidate_decisions` | deterministic provenance verdict and one human promotion/rejection |
 
 Bounded JSON columns contain schemas, graph manifests, mappings, or event
 payloads where a scalar projection would add no query value. They do not encode

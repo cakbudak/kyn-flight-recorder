@@ -18,8 +18,13 @@ fetch, MCP connector, production deployer, or generic code registry.
 | Model prose claims an effect | terminal outcome derives from committed tool receipts/effect rows, never prose | misleading prose may exist only as hashed output, not product truth |
 | Prompt injection widens authority | code validates every call against pinned Skill grants, strict schemas, and static callable Action kinds | untrusted content can still degrade model output or make a Run fail |
 | Diagnosis invents evidence | deterministic candidate plus exact owned evidence-id validation | supported fault vocabulary is intentionally narrow |
-| Repair changes unrelated fields | one operation, allowed operation/path/value checks, proposal hash, exact Action and Flow revision fences | only the public Data Store authority-policy mismatch is automatically repairable |
+| Repair changes unrelated fields | one operation, allowed operation/path/value checks, proposal hash, exact Action and Flow revision fences | only two public policies exist: Data Store write enablement and bounded provider-failure retry settings |
 | Agent applies its own repair | no apply tool; separate human HTTP command requires acknowledgement, actor, reason, hash, and revision | anonymous actor label is not strong identity |
+| Failed or foreign Run teaches a Skill | Forge accepts only a completed model call on a completed, ledger-verified same-workspace Run and snapshots the exact source before model I/O | one completed observation is still not evidence of broad performance |
+| Source Agent confirms its own output | the distiller must belong to a different logical Agent resource; service, SQLite, and qualification all reject a successor version of the same Agent | independent configuration does not imply independent model-family training data |
+| Distiller invents evidence | strict output requires citations; code accepts only IDs in the bounded source envelope and replays the full source hash chain | cited evidence can support a narrow instruction without proving it generalizes |
+| Model-written Skill widens authority | candidates have no authority columns; qualification proves zero tools/Actions; promotion creates an authority-free Skill v1 | a human can later grant authority only through the normal explicit Skill/Agent successor editors |
+| Candidate silently modifies live Agents | promotion inserts a new Skill and append-only decision only; no Agent, Action, Flow, or Run pin changes | operator must deliberately build and prove a successor before the Skill affects work |
 | Stale/concurrent approval | `BEGIN IMMEDIATE` compare-and-swap on flow revision; idempotent identical replay | SQLite limits horizontal scaling |
 | Cross-workspace read | random opaque cookie token, only hash stored, every lookup scoped by workspace | anonymous bearer cookie can be used by anyone who steals it |
 | CSRF/cross-origin mutation | exact same-origin validation, SameSite=Strict cookie, no CORS | same-origin script compromise remains in scope of CSP/code integrity |
@@ -54,6 +59,7 @@ fetch, MCP connector, production deployer, or generic code registry.
 ## Explicitly not proved
 
 This cut does not prove strong user identity, production connector safety,
-multi-host SQLite coordination, arbitrary automatic workflow repair,
-prompt-injection resistance for untrusted user prompts, or host-level tamper
-resistance. Those are not claimed by the submission.
+multi-host SQLite coordination, arbitrary automatic workflow repair, autonomous
+self-improvement, universal Skill-performance improvement, prompt-injection
+resistance for untrusted user prompts, or host-level tamper resistance. Those
+are not claimed by the submission.

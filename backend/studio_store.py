@@ -37,6 +37,7 @@ from .contracts import (
     verify_event_chain,
 )
 from .repair_policy import ResolvedRepair, resolve_repair
+from .skill_forge import candidate_fingerprint, source_material
 from .stop_seam import EVIDENCE_KINDS
 from .store import Store
 
@@ -1636,12 +1637,14 @@ class StudioStore:
             ]
             dead_ends = self._dead_end_records(connection, workspace_id)
             principles = self._principle_records(connection, workspace_id)
+            skill_candidates = self._skill_candidate_records(connection, workspace_id)
         return {
             "actions": actions,
             "flows": flows,
             "triggers": triggers,
             "dead_ends": dead_ends,
             "principles": principles,
+            "skill_candidates": skill_candidates,
             # The surface states how narrow the distilled vocabulary is. Derive
             # that number here so the claim cannot go stale if the table grows.
             "policy_markers": [
@@ -3527,6 +3530,601 @@ class StudioStore:
         with self.store.read() as connection:
             self.store._require_workspace(connection, workspace_id)
             return self._principle_records(connection, workspace_id)
+
+    # -- Capability Forge -------------------------------------------------
+
+    def skill_candidate_source(
+        self, workspace_id: str, run_id: str, model_call_id: str
+    ) -> dict[str, Any]:
+        """Resolve one completed model Step into a bounded source envelope."""
+
+        run = self.get_run(workspace_id, run_id)
+        if run["status"] != "completed":
+            raise ContractViolation("Skill candidates require a completed source Run")
+        if not run["ledger_verified"]:
+            raise ContractViolation("Skill candidate source Run ledger is invalid")
+        model_call = next(
+            (item for item in run["model_calls"] if item["id"] == model_call_id),
+            None,
+        )
+        if model_call is None:
+            raise ContractViolation(
+                "Skill candidate source model call does not belong to the Run"
+            )
+        if model_call["status"] != "completed":
+            raise ContractViolation("Skill candidates require a completed model call")
+        step = next(
+            (item for item in run["steps"] if item["id"] == model_call["step_id"]),
+            None,
+        )
+        if step is None or step["status"] != "completed":
+            raise ContractViolation("Skill candidates require a completed source Step")
+        source_agent = self.get_agent_runtime(
+            workspace_id, model_call["agent_version_id"]
+        )
+        material = source_material(run, model_call, source_agent)
+        return {
+            "run": run,
+            "model_call": model_call,
+            "source_agent": source_agent,
+            "material": material,
+            "snapshot_hash": fingerprint(material),
+        }
+
+    def record_skill_distillation_call(
+        self,
+        workspace_id: str,
+        *,
+        source_run_id: str,
+        source_step_id: str,
+        source_model_call_id: str,
+        distiller_agent_version_id: str,
+        provider_response_id: str,
+        status: str,
+        model: str,
+        input_hash: str,
+        output_hash: str,
+        usage: Mapping[str, Any],
+        request_id: str | None,
+    ) -> dict[str, Any]:
+        """Append the external call receipt even when candidate parsing fails."""
+
+        if status not in {"completed", "failed"}:
+            raise ContractViolation("Skill distillation call status is invalid")
+        call_id = new_id("sdc")
+        created_at = utc_now()
+        with self.store.write() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            source = connection.execute(
+                "SELECT mc.id FROM automation_model_calls mc "
+                "JOIN automation_runs r ON r.id = mc.run_id "
+                "WHERE mc.id = ? AND mc.run_id = ? AND mc.step_id = ? "
+                "AND mc.workspace_id = ? AND r.status = 'completed'",
+                (
+                    source_model_call_id,
+                    source_run_id,
+                    source_step_id,
+                    workspace_id,
+                ),
+            ).fetchone()
+            if source is None:
+                raise ContractViolation("Skill distillation source changed or is invalid")
+            distiller = connection.execute(
+                "SELECT id FROM agent_versions WHERE id = ? AND workspace_id = ?",
+                (distiller_agent_version_id, workspace_id),
+            ).fetchone()
+            if distiller is None:
+                raise ContractViolation(
+                    "Skill distiller Agent version does not belong to the workspace"
+                )
+            connection.execute(
+                """
+                INSERT INTO skill_distillation_model_calls
+                    (id, workspace_id, source_run_id, source_step_id,
+                     source_model_call_id, distiller_agent_version_id,
+                     provider_response_id, status, model, input_hash, output_hash,
+                     usage_json, request_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    call_id,
+                    workspace_id,
+                    source_run_id,
+                    source_step_id,
+                    source_model_call_id,
+                    distiller_agent_version_id,
+                    provider_response_id,
+                    status,
+                    model,
+                    input_hash,
+                    output_hash,
+                    canonical_json(dict(usage)),
+                    request_id,
+                    created_at,
+                ),
+            )
+            connection.execute(
+                "UPDATE workspaces SET model_calls_used = model_calls_used + 1 "
+                "WHERE id = ?",
+                (workspace_id,),
+            )
+        return {
+            "id": call_id,
+            "source_run_id": source_run_id,
+            "source_step_id": source_step_id,
+            "source_model_call_id": source_model_call_id,
+            "distiller_agent_version_id": distiller_agent_version_id,
+            "provider_response_id": provider_response_id,
+            "status": status,
+            "model": model,
+            "input_hash": input_hash,
+            "output_hash": output_hash,
+            "usage": dict(usage),
+            "request_id": request_id,
+            "created_at": created_at,
+        }
+
+    def create_skill_candidate(
+        self,
+        workspace_id: str,
+        *,
+        source_run_id: str,
+        source_step_id: str,
+        source_model_call_id: str,
+        source_agent_version_id: str,
+        distiller_agent_version_id: str,
+        distillation_model_call_id: str,
+        name: str,
+        instructions: str,
+        rationale: str,
+        evidence_event_ids: Sequence[str],
+        source_snapshot_hash: str,
+    ) -> dict[str, Any]:
+        """Persist one immutable, authority-free candidate in quarantine."""
+
+        current = self.skill_candidate_source(
+            workspace_id, source_run_id, source_model_call_id
+        )
+        if current["model_call"]["step_id"] != source_step_id:
+            raise ContractViolation("Skill candidate source Step changed")
+        if current["source_agent"]["id"] != source_agent_version_id:
+            raise ContractViolation("Skill candidate source Agent changed")
+        distiller = self.get_agent_runtime(workspace_id, distiller_agent_version_id)
+        if current["source_agent"]["agent_id"] == distiller["agent_id"]:
+            raise ContractViolation(
+                "Skill candidate distiller must be independent from the source Agent"
+            )
+        if current["snapshot_hash"] != source_snapshot_hash:
+            raise Conflict("Skill candidate source snapshot changed")
+        supplied = {
+            event["id"] for event in current["material"]["evidence_ledger"]
+        }
+        if not evidence_event_ids or not set(evidence_event_ids).issubset(supplied):
+            raise ContractViolation(
+                "Skill candidate evidence is outside its source envelope"
+            )
+
+        candidate_id = new_id("skc")
+        material = {
+            "source_run_id": source_run_id,
+            "source_step_id": source_step_id,
+            "source_model_call_id": source_model_call_id,
+            "distiller_agent_version_id": distiller_agent_version_id,
+            "distillation_model_call_id": distillation_model_call_id,
+            "name": name,
+            "instructions": instructions,
+            "rationale": rationale,
+            "evidence_event_ids": list(evidence_event_ids),
+            "source_snapshot_hash": source_snapshot_hash,
+        }
+        candidate_hash = candidate_fingerprint(material)
+        with self.store.write() as connection:
+            call = connection.execute(
+                "SELECT * FROM skill_distillation_model_calls "
+                "WHERE id = ? AND workspace_id = ?",
+                (distillation_model_call_id, workspace_id),
+            ).fetchone()
+            if (
+                call is None
+                or call["status"] != "completed"
+                or call["source_run_id"] != source_run_id
+                or call["source_step_id"] != source_step_id
+                or call["source_model_call_id"] != source_model_call_id
+                or call["distiller_agent_version_id"] != distiller_agent_version_id
+            ):
+                raise ContractViolation(
+                    "Skill candidate distillation receipt does not match its source"
+                )
+            connection.execute(
+                """
+                INSERT INTO skill_candidates
+                    (id, workspace_id, source_run_id, source_step_id,
+                     source_model_call_id, source_agent_version_id,
+                     distiller_agent_version_id, distillation_model_call_id,
+                     name, instructions, rationale, evidence_event_ids_json,
+                     source_snapshot_hash, fingerprint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    candidate_id,
+                    workspace_id,
+                    source_run_id,
+                    source_step_id,
+                    source_model_call_id,
+                    source_agent_version_id,
+                    distiller_agent_version_id,
+                    distillation_model_call_id,
+                    name,
+                    instructions,
+                    rationale,
+                    canonical_json(list(evidence_event_ids)),
+                    source_snapshot_hash,
+                    candidate_hash,
+                    utc_now(),
+                ),
+            )
+        return self.get_skill_candidate(workspace_id, candidate_id)
+
+    @staticmethod
+    def _skill_candidate_records(
+        connection: sqlite3.Connection, workspace_id: str
+    ) -> list[dict[str, Any]]:
+        candidates = connection.execute(
+            "SELECT c.*, r.flow_id, r.flow_version_id, r.finished_at, "
+            "f.name AS flow_name, s.node_id, dmc.provider_response_id, "
+            "dmc.status AS distillation_status, dmc.model AS distillation_model, "
+            "dmc.input_hash AS distillation_input_hash, "
+            "dmc.output_hash AS distillation_output_hash, "
+            "dmc.usage_json AS distillation_usage_json, "
+            "dmc.request_id AS distillation_request_id, "
+            "dmc.created_at AS distillation_created_at, "
+            "sav.agent_id AS source_agent_id, dav.agent_id AS distiller_agent_id "
+            "FROM skill_candidates c "
+            "JOIN automation_runs r ON r.id = c.source_run_id "
+            "JOIN automation_flows f ON f.id = r.flow_id "
+            "JOIN automation_run_steps s ON s.id = c.source_step_id "
+            "JOIN agent_versions sav ON sav.id = c.source_agent_version_id "
+            "JOIN agent_versions dav ON dav.id = c.distiller_agent_version_id "
+            "JOIN skill_distillation_model_calls dmc "
+            "ON dmc.id = c.distillation_model_call_id "
+            "WHERE c.workspace_id = ? ORDER BY c.created_at DESC, c.rowid DESC",
+            (workspace_id,),
+        ).fetchall()
+        records: list[dict[str, Any]] = []
+        for row in candidates:
+            qualification = connection.execute(
+                "SELECT * FROM skill_candidate_qualifications WHERE candidate_id = ?",
+                (row["id"],),
+            ).fetchone()
+            decision = connection.execute(
+                "SELECT * FROM skill_candidate_decisions WHERE candidate_id = ?",
+                (row["id"],),
+            ).fetchone()
+            status = "quarantined"
+            if qualification is not None:
+                status = "qualified" if qualification["passed"] else "blocked"
+            if decision is not None:
+                status = decision["decision"]
+            promoted_skill = None
+            if decision is not None and decision["skill_version_id"]:
+                promoted = connection.execute(
+                    "SELECT sv.id, sv.version, sv.fingerprint, s.id AS skill_id, "
+                    "s.name, s.slug FROM skill_versions sv "
+                    "JOIN skills s ON s.id = sv.skill_id WHERE sv.id = ?",
+                    (decision["skill_version_id"],),
+                ).fetchone()
+                if promoted is not None:
+                    promoted_skill = dict(promoted)
+            records.append(
+                {
+                    "id": row["id"],
+                    "status": status,
+                    "name": row["name"],
+                    "instructions": row["instructions"],
+                    "rationale": row["rationale"],
+                    "evidence_event_ids": _decode(row["evidence_event_ids_json"]),
+                    "source_snapshot_hash": row["source_snapshot_hash"],
+                    "fingerprint": row["fingerprint"],
+                    "source": {
+                        "run_id": row["source_run_id"],
+                        "step_id": row["source_step_id"],
+                        "node_id": row["node_id"],
+                        "model_call_id": row["source_model_call_id"],
+                        "agent_version_id": row["source_agent_version_id"],
+                        "agent_id": row["source_agent_id"],
+                        "flow_id": row["flow_id"],
+                        "flow_version_id": row["flow_version_id"],
+                        "flow_name": row["flow_name"],
+                        "finished_at": row["finished_at"],
+                    },
+                    "distillation": {
+                        "model_call_id": row["distillation_model_call_id"],
+                        "agent_version_id": row["distiller_agent_version_id"],
+                        "agent_id": row["distiller_agent_id"],
+                        "provider_response_id": row["provider_response_id"],
+                        "status": row["distillation_status"],
+                        "model": row["distillation_model"],
+                        "input_hash": row["distillation_input_hash"],
+                        "output_hash": row["distillation_output_hash"],
+                        "usage": _decode(row["distillation_usage_json"]),
+                        "request_id": row["distillation_request_id"],
+                        "created_at": row["distillation_created_at"],
+                    },
+                    "authority": {
+                        "allowed_tools": [],
+                        "allowed_action_version_ids": [],
+                    },
+                    "qualification": (
+                        {
+                            "id": qualification["id"],
+                            "passed": bool(qualification["passed"]),
+                            "checks": _decode(qualification["checks_json"]),
+                            "observed_source_snapshot_hash": qualification[
+                                "observed_source_snapshot_hash"
+                            ],
+                            "created_at": qualification["created_at"],
+                        }
+                        if qualification is not None
+                        else None
+                    ),
+                    "decision": (
+                        {
+                            "id": decision["id"],
+                            "decision": decision["decision"],
+                            "actor": decision["actor"],
+                            "reason": decision["reason"],
+                            "acknowledged": bool(decision["acknowledged"]),
+                            "candidate_fingerprint": decision[
+                                "candidate_fingerprint"
+                            ],
+                            "created_at": decision["created_at"],
+                        }
+                        if decision is not None
+                        else None
+                    ),
+                    "promoted_skill": promoted_skill,
+                    "created_at": row["created_at"],
+                }
+            )
+        return records
+
+    def get_skill_candidate(
+        self, workspace_id: str, candidate_id: str
+    ) -> dict[str, Any]:
+        with self.store.read() as connection:
+            self.store._require_workspace(connection, workspace_id)
+            record = next(
+                (
+                    item
+                    for item in self._skill_candidate_records(connection, workspace_id)
+                    if item["id"] == candidate_id
+                ),
+                None,
+            )
+            if record is None:
+                raise NotFound("Skill candidate was not found")
+            return record
+
+    def qualify_skill_candidate(
+        self, workspace_id: str, candidate_id: str
+    ) -> dict[str, Any]:
+        """Append one deterministic provenance verdict; never score quality."""
+
+        candidate = self.get_skill_candidate(workspace_id, candidate_id)
+        if candidate["qualification"] is not None:
+            return candidate
+        current = self.skill_candidate_source(
+            workspace_id,
+            candidate["source"]["run_id"],
+            candidate["source"]["model_call_id"],
+        )
+        fingerprint_material = {
+            "source_run_id": candidate["source"]["run_id"],
+            "source_step_id": candidate["source"]["step_id"],
+            "source_model_call_id": candidate["source"]["model_call_id"],
+            "distiller_agent_version_id": candidate["distillation"][
+                "agent_version_id"
+            ],
+            "distillation_model_call_id": candidate["distillation"]["model_call_id"],
+            "name": candidate["name"],
+            "instructions": candidate["instructions"],
+            "rationale": candidate["rationale"],
+            "evidence_event_ids": candidate["evidence_event_ids"],
+            "source_snapshot_hash": candidate["source_snapshot_hash"],
+        }
+        supplied = {
+            event["id"] for event in current["material"]["evidence_ledger"]
+        }
+        checks = [
+            {
+                "id": "terminal-source",
+                "passed": current["run"]["status"] == "completed",
+                "detail": "Source Run is terminal and completed.",
+            },
+            {
+                "id": "ledger-chain",
+                "passed": bool(current["run"]["ledger_verified"]),
+                "detail": "Every source event hash and previous-hash link verifies.",
+            },
+            {
+                "id": "model-step",
+                "passed": current["model_call"]["status"] == "completed",
+                "detail": "The cited model call belongs to one completed source Step.",
+            },
+            {
+                "id": "source-snapshot",
+                "passed": current["snapshot_hash"]
+                == candidate["source_snapshot_hash"],
+                "detail": "The observed source envelope matches the pre-I/O snapshot.",
+            },
+            {
+                "id": "bounded-citations",
+                "passed": bool(candidate["evidence_event_ids"])
+                and set(candidate["evidence_event_ids"]).issubset(supplied),
+                "detail": "Every model-cited event belongs to the supplied source ledger.",
+            },
+            {
+                "id": "candidate-fingerprint",
+                "passed": candidate_fingerprint(fingerprint_material)
+                == candidate["fingerprint"],
+                "detail": "Candidate content and provenance match its immutable fingerprint.",
+            },
+            {
+                "id": "independent-distiller",
+                "passed": candidate["source"]["agent_id"]
+                != candidate["distillation"]["agent_id"],
+                "detail": (
+                    "The proposing Agent belongs to a different logical Agent "
+                    "resource, not merely a different version."
+                ),
+            },
+            {
+                "id": "zero-authority-delta",
+                "passed": not candidate["authority"]["allowed_tools"]
+                and not candidate["authority"]["allowed_action_version_ids"],
+                "detail": "Quarantine grants zero tools and zero callable Actions.",
+            },
+        ]
+        passed = all(check["passed"] for check in checks)
+        qualification_id = new_id("skq")
+        with self.store.write() as connection:
+            existing = connection.execute(
+                "SELECT id FROM skill_candidate_qualifications WHERE candidate_id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    """
+                    INSERT INTO skill_candidate_qualifications
+                        (id, workspace_id, candidate_id, passed, checks_json,
+                         observed_source_snapshot_hash, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        qualification_id,
+                        workspace_id,
+                        candidate_id,
+                        int(passed),
+                        canonical_json(checks),
+                        current["snapshot_hash"],
+                        utc_now(),
+                    ),
+                )
+        return self.get_skill_candidate(workspace_id, candidate_id)
+
+    def promote_skill_candidate(
+        self,
+        workspace_id: str,
+        candidate_id: str,
+        *,
+        name: str,
+        slug: str,
+        actor: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Human-gate one qualified candidate into an authority-free Skill v1."""
+
+        with self.store.write() as connection:
+            candidate = connection.execute(
+                "SELECT * FROM skill_candidates WHERE id = ? AND workspace_id = ?",
+                (candidate_id, workspace_id),
+            ).fetchone()
+            if candidate is None:
+                raise NotFound("Skill candidate was not found")
+            qualification = connection.execute(
+                "SELECT * FROM skill_candidate_qualifications "
+                "WHERE candidate_id = ? AND passed = 1",
+                (candidate_id,),
+            ).fetchone()
+            if qualification is None:
+                raise ContractViolation(
+                    "Skill candidate must pass provenance qualification before promotion"
+                )
+            decision = connection.execute(
+                "SELECT id FROM skill_candidate_decisions WHERE candidate_id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if decision is not None:
+                raise Conflict("Skill candidate already has a human decision")
+            skill_id = self.store._insert_skill(
+                connection,
+                workspace_id,
+                name=name,
+                slug=slug,
+                instructions=candidate["instructions"],
+                allowed_tools=[],
+                allowed_action_version_ids=[],
+            )
+            skill_version = connection.execute(
+                "SELECT id FROM skill_versions WHERE skill_id = ? AND version = 1",
+                (skill_id,),
+            ).fetchone()
+            if skill_version is None:
+                raise RuntimeError("Promoted Skill version is missing")
+            connection.execute(
+                """
+                INSERT INTO skill_candidate_decisions
+                    (id, workspace_id, candidate_id, qualification_id, decision,
+                     actor, reason, acknowledged, skill_version_id,
+                     candidate_fingerprint, created_at)
+                VALUES (?, ?, ?, ?, 'promoted', ?, ?, 1, ?, ?, ?)
+                """,
+                (
+                    new_id("skd"),
+                    workspace_id,
+                    candidate_id,
+                    qualification["id"],
+                    actor,
+                    reason,
+                    skill_version["id"],
+                    candidate["fingerprint"],
+                    utc_now(),
+                ),
+            )
+        return self.get_skill_candidate(workspace_id, candidate_id)
+
+    def reject_skill_candidate(
+        self,
+        workspace_id: str,
+        candidate_id: str,
+        *,
+        actor: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Close a candidate without deleting its model output or evidence."""
+
+        with self.store.write() as connection:
+            candidate = connection.execute(
+                "SELECT * FROM skill_candidates WHERE id = ? AND workspace_id = ?",
+                (candidate_id, workspace_id),
+            ).fetchone()
+            if candidate is None:
+                raise NotFound("Skill candidate was not found")
+            decision = connection.execute(
+                "SELECT id FROM skill_candidate_decisions WHERE candidate_id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if decision is not None:
+                raise Conflict("Skill candidate already has a human decision")
+            connection.execute(
+                """
+                INSERT INTO skill_candidate_decisions
+                    (id, workspace_id, candidate_id, qualification_id, decision,
+                     actor, reason, acknowledged, skill_version_id,
+                     candidate_fingerprint, created_at)
+                VALUES (?, ?, ?, NULL, 'rejected', ?, ?, 1, NULL, ?, ?)
+                """,
+                (
+                    new_id("skd"),
+                    workspace_id,
+                    candidate_id,
+                    actor,
+                    reason,
+                    candidate["fingerprint"],
+                    utc_now(),
+                ),
+            )
+        return self.get_skill_candidate(workspace_id, candidate_id)
 
     def record_dead_end(
         self,

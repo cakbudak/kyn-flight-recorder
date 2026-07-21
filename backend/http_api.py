@@ -545,6 +545,63 @@ class ApiApplication:
                 status=HTTPStatus.CREATED,
                 operation=operation,
             )
+        if request.path == "/api/v1/studio/skill-candidates":
+            self._require_exact_keys(
+                body,
+                {
+                    "source_run_id",
+                    "source_model_call_id",
+                    "distiller_agent_version_id",
+                },
+            )
+            return self._model_action(
+                request,
+                workspace_id,
+                forecast_calls=1,
+                status=HTTPStatus.CREATED,
+                operation=lambda client: self.control_plane.draft_skill_candidate(
+                    workspace_id, client=client, **body
+                ),
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/skill-candidates/{RESOURCE_ID}/qualifications",
+            request.path,
+        )
+        if match:
+            self._require_exact_keys(body, set())
+            return self._ok(
+                self.control_plane.qualify_skill_candidate(
+                    workspace_id, match.group(1)
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/skill-candidates/{RESOURCE_ID}/promotion",
+            request.path,
+        )
+        if match:
+            self._require_exact_keys(
+                body,
+                {"name", "slug", "actor", "reason", "acknowledged"},
+            )
+            return self._ok(
+                self.control_plane.promote_skill_candidate(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/skill-candidates/{RESOURCE_ID}/rejection",
+            request.path,
+        )
+        if match:
+            self._require_exact_keys(body, {"actor", "reason", "acknowledged"})
+            return self._ok(
+                self.control_plane.reject_skill_candidate(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
         match = re.fullmatch(rf"/api/v1/flows/{RESOURCE_ID}/runs", request.path)
         if match:
             self._require_exact_keys(body, set())

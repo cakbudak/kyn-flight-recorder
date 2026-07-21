@@ -4,3 +4,4 @@ __pycache__/
 *.py[cod]
 node_modules/
 firebase-debug.log
+evidence/local/

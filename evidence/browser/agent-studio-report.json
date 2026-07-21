@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-07-20T20:33:24.251Z",
+  "generated_at": "2026-07-21T10:12:39.093Z",
   "surface": "Kyn.ist Agent Studio full Playwright product journey",
   "runtime": {
     "chromium": "/usr/bin/chromium",
     "provider": "deterministic provider-shaped seam",
-    "base_url": "http://127.0.0.1:34763",
+    "base_url": "http://127.0.0.1:46099",
     "viewport_matrix": [
       "1440x1000",
       "390x844"
     ]
   },
   "summary": {
-    "checks": 42,
-    "passed": 42,
+    "checks": 45,
+    "passed": 45,
     "failed": 0
   },
   "checks": [
@@ -128,12 +128,12 @@
       "name": "Agent pins the exact Prompt and Skill versions and inherits only their explicit authority",
       "status": "pass",
       "detail": {
-        "prompt": "prmv_6f77e22e389b49898bc9d974f6094051",
+        "prompt": "prmv_9f064ed3c4744acfb890bc6bb5fefe01",
         "skills": [
-          "sklv_7a971791121d4c078fb74048d4168aa5"
+          "sklv_cfce7945be354f739165c3544aad9fc1"
         ],
         "actions": [
-          "actv_8bdf95bf257a4275b45f739007b3c646"
+          "actv_80dfb6635176458993cb80ea440901bf"
         ]
       }
     },
@@ -181,7 +181,7 @@
             ]
           },
           "type": "action",
-          "version_id": "actv_8bdf95bf257a4275b45f739007b3c646"
+          "version_id": "actv_80dfb6635176458993cb80ea440901bf"
         }
       }
     },
@@ -199,7 +199,7 @@
       "name": "deterministic Flow executes without a key and exposes the selected named outcome with evidence",
       "status": "pass",
       "detail": {
-        "id": "arun_cc2def3b747d47d9b3f270b01e26e46b",
+        "id": "arun_bc218bb0d3d046b29aa4ecc555d54aec",
         "status": "completed",
         "outcome": "priority",
         "events": 8
@@ -237,15 +237,15 @@
           ]
         },
         "type": "flow",
-        "version_id": "aflowv_f3577d43614e40b19b0b5faeeb87b032"
+        "version_id": "aflowv_d1c8f2b4f02d4c80aebf8e29511056f4"
       }
     },
     {
       "name": "subflow execution retains linked parent/child truth and independent hash chains",
       "status": "pass",
       "detail": {
-        "parent": "arun_d2226c6799ea408c83a09cf9cd1e783e",
-        "child": "arun_93152094e0cb48839750fa8e98db3cea",
+        "parent": "arun_1d4dfe169bca4f30b2fb97dfeb36ffa5",
+        "child": "arun_70dcea45bb774a8a873c34d234a62055",
         "outcome": "standard"
       }
     },
@@ -253,8 +253,8 @@
       "name": "signed webhook enters the same pinned Run seam and executes the reusable Flow",
       "status": "pass",
       "detail": {
-        "trigger": "atrg_7f8295bd9a70474fbbecc0f26762bbee",
-        "run": "arun_4cda9b2f12854e7fb4f78b2a27442acf",
+        "trigger": "atrg_c5a02728759f4adc8ec6b37924ffc016",
+        "run": "arun_a884b42802234d8f8e4122b7687ad63e",
         "outcome": "priority"
       }
     },
@@ -269,7 +269,7 @@
       "name": "AI Flow invokes a pinned Agent stack, records model evidence, and pauses before effects",
       "status": "pass",
       "detail": {
-        "run": "arun_919455bab33546bcb41395fbcd5b52d2",
+        "run": "arun_51b872e936d74badab3576ce6a464639",
         "calls": 1,
         "steps": [
           "completed",
@@ -297,21 +297,62 @@
       }
     },
     {
+      "name": "Capability Forge distils one completed model Step through a different logical Agent into an authority-free quarantine",
+      "status": "pass",
+      "detail": {
+        "candidate": "skc_74720b70d7954a65bca2271bb42ed6a6",
+        "source_run": "arun_51b872e936d74badab3576ce6a464639",
+        "source_agent": "agt_6ed693c026794abaaa4d1a72358acfe5",
+        "source_agent_version": "agtv_596f8f3dd2f34464b37f0cd6da4ae449",
+        "distiller_agent": "agt_036c577167bf48b3b9d89ecb2fc8f63b",
+        "distiller_agent_version": "agtv_eec5178c3e25412288decc1a0f38a938",
+        "cited_events": 1,
+        "authority_delta": 0
+      }
+    },
+    {
+      "name": "the provenance gate replays source truth, citations, independence, fingerprints, and zero authority without another model call",
+      "status": "pass",
+      "detail": {
+        "checks": [
+          "terminal-source",
+          "ledger-chain",
+          "model-step",
+          "source-snapshot",
+          "bounded-citations",
+          "candidate-fingerprint",
+          "independent-distiller",
+          "zero-authority-delta"
+        ],
+        "passed": true
+      }
+    },
+    {
+      "name": "human promotion publishes one immutable Skill v1 while every Agent and Flow remains pinned until a later successor",
+      "status": "pass",
+      "detail": {
+        "skill": "skl_be699d390a234706add1972679065559",
+        "version": 1,
+        "agents_changed": false,
+        "authority_delta": 0
+      }
+    },
+    {
       "name": "a cross-model sweep renders its proof of control before any measurement, and a sweep whose provider silently renamed a model is marked unusable rather than presentable",
       "status": "pass",
       "detail": {
         "controlled": {
-          "id": "cmp_60ee5f87534f41d889c8f6a432bf6fb7",
+          "id": "cmp_13e94a95b6a3453788e18d6c95bac1f2",
           "usable": true,
           "pinned_versions": [
-            "aflowv_8735e0924f6a4d13b3784d1bbea2e17c"
+            "aflowv_5bcb6633b6804668ab3e4b1e7f3aa7de"
           ],
           "enforced": 4,
           "uncontrolled": 5,
           "rows": 2
         },
         "aliased": {
-          "id": "cmp_be6dff4f68c14b7cadb663162667f27c",
+          "id": "cmp_7ed6a07bad9444149d35a16ac7680d0a",
           "usable": false,
           "problems": [
             "response_model_mismatch"
@@ -353,7 +394,7 @@
         "advised_run_steps": 1,
         "distinct_flows": 3,
         "citations": 5,
-        "citation_opened": "arun_c9cf332e056a9",
+        "citation_opened": "arun_a441cace746ae",
         "run_still_offered": true,
         "refusal_surfaces": 0,
         "principle_entries": 1
@@ -377,7 +418,7 @@
       "name": "completion contracts are authorable: a successor pins the Judge and a new promise, evidence kind, and site",
       "status": "pass",
       "detail": {
-        "judge": "agtv_164f5c5c43084f458cef580f4caa6f46",
+        "judge": "agtv_8a48bd85489749959fc8a21730130400",
         "criteria": [
           {
             "evidence_kind": "effect",
@@ -410,7 +451,7 @@
       "name": "a seeded Flow declares what finishing means, and a Run whose input never reached the declared work is refused instead of reported finished",
       "status": "pass",
       "detail": {
-        "run": "arun_c346716ed9904707a6a8ee5db9604775",
+        "run": "arun_9ce0830f19a84662b0a3aa1a20ba7b7f",
         "status": "failed",
         "error_code": "completion_unevidenced",
         "status_history": [
@@ -429,7 +470,7 @@
       "name": "the Runs console renders the stop-seam refusal and names every declared promise that carried no accepted evidence",
       "status": "pass",
       "detail": {
-        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_ef580f4caa6f46\n\nEach declared acceptance criterion was read against this Run's own evidence at the sites the criterion pinned.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\n1 run-owned step record(s) were minted at a declared site.\n\nSURVIVING ANCHORS · 1\n\nastep_94fd7114001a70",
+        "text": "STOP SEAM · 3 DECLARED ACCEPTANCE CRITERIA\n\nCompletion refused · 2 declared promises went unevidenced\n\nNothing crashed. The pinned Flow version declares what finishing means here, and record-in-ledger, ledger-write-succeeded carried no anchor this runtime would accept — so the work was stopped rather than called finished, and every Step, receipt and effect it did produce is still below, untouched. The Run records completion_unevidenced.\n\nRefused\nModel claim · non-authoritative\nagtv_c8a21730130400\n\nEach declared acceptance criterion was read against this Run's own evidence at the sites the criterion pinned.\n\nThe model may explain and nominate anchors. Only deterministic resolution against runtime-minted records admits completion.\nUnevidenced\nThe submitted record was written to the workspace evidence ledger.\nrecord-in-ledger\nADMISSIBLE EVIDENCE\nEffect\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nUnevidenced\nThe ledger write reported success rather than a mere attempt.\nledger-write-succeeded\nADMISSIBLE EVIDENCE\nReceipt\nDECLARED SITES\npublish-to-ledger\nANCHORS THAT SURVIVED\n0\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\nNo run-owned record of the declared kind was minted at any declared site, so nothing here shows the declared work was performed.\n\nNo anchor survived resolution, so this criterion carries nothing.\n\nEvidenced\nThe deterministic readiness gate completed and recorded its routing decision.\nreadiness-evaluated\nADMISSIBLE EVIDENCE\nStep\nDECLARED SITES\nreadiness-gate\nANCHORS THAT SURVIVED\n1\nANCHORS DISCARDED\n0\nJUDGE REASONING · CLAIM ONLY\n\n1 run-owned step record(s) were minted at a declared site.\n\nSURVIVING ANCHORS · 1\n\nastep_b596581df38421",
         "tone": 1,
         "criteria": 3,
         "unevidenced": 2,
@@ -440,9 +481,9 @@
       "name": "the identical pinned Flow version admits when the Run actually reached the declared work, so the refusal was about this Run's data and not the definition",
       "status": "pass",
       "detail": {
-        "refused": "arun_c346716ed9904707a6a8ee5db9604775",
-        "admitted": "arun_0a55c347250a4f379d021faae89ad13f",
-        "shared_flow_version": "aflowv_d182d2ec9a18452f86ca06f5c11cfb60",
+        "refused": "arun_9ce0830f19a84662b0a3aa1a20ba7b7f",
+        "admitted": "arun_248a9230d88b4aee87a0bf2783f02950",
+        "shared_flow_version": "aflowv_da78f6759fdc4024b15ba931a36a725f",
         "effects": 1,
         "model_calls": 1,
         "adjudications_added_by_this_beat": 2
@@ -452,7 +493,7 @@
       "name": "live documentation explains authoring, authority, stop truth, ratification, comparison controls, maintenance, BYOK, and public limits",
       "status": "pass",
       "detail": {
-        "characters": 13177,
+        "characters": 14803,
         "missing": []
       }
     },
@@ -460,7 +501,7 @@
       "name": "every rendered button has an accessible name",
       "status": "pass",
       "detail": {
-        "total": 13,
+        "total": 14,
         "unnamed": 0
       }
     },
@@ -468,7 +509,7 @@
       "name": "visible text clears WCAG AA contrast across every workbench in both themes",
       "status": "pass",
       "detail": {
-        "samples": 3048,
+        "samples": 3430,
         "minimum": 4.7,
         "failures": []
       }
@@ -520,26 +561,26 @@
   ],
   "diagnostics": {
     "server_output": [
-      "20/Jul/2026 22:33:21 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:21 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:21 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:21 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:22 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:22 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:22 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:22 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:22 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:22 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/assets/studio-BPJKOQG6.css HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/assets/studio-B7M9LC7v.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
-      "20/Jul/2026 22:33:23 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
+      "21/Jul/2026 12:12:36 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:36 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:37 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/assets/studio-alVLgbOs.css HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/assets/chunk-Dn2TzOnG.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/assets/studio-BZV40eAE.css HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/assets/studio-DqgZAGGD.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/assets/chunk-CHVgub6X.js HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/assets/studio-C8OXUtNE.svg HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /healthz HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /api/v1/workspace HTTP/1.1\" 200 -",
+      "21/Jul/2026 12:12:38 127.0.0.1 \"GET /app/ HTTP/1.1\" 200 -"
     ],
     "page_errors": [],
     "failed_requests": [],

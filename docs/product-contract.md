@@ -1,6 +1,6 @@
 # Kyn.ist Agent Studio — product contract
 
-Date frozen: 2026-07-19  
+Date frozen: 2026-07-21
 Maturity: `implemented; deterministic full-stack journey verified`
 
 ## Promise
@@ -21,8 +21,9 @@ automation runtime. A visitor can:
 9. declare evidence-bound completion criteria with an independent Goal-Judge;
 10. ratify repeated structural dead ends and distil cross-Flow advisories;
 11. compare one pinned scaffold across models from a pre-I/O sibling manifest;
-    and
-12. maintain any supported blocked Run through evidence → diagnosis → bounded
+12. distil a completed model Step into a quarantined, provenance-qualified,
+    human-promoted authority-free Skill; and
+13. maintain any supported blocked Run through evidence → diagnosis → bounded
     repair → approval → successor → linked proof.
 
 The seeded launch Flow is one editable use case. It is not a prescribed journey.
@@ -136,6 +137,28 @@ Run instead of flattening its evidence into the parent.
 - A model comparison pins its complete expected sibling set before provider I/O;
   missing manifests, missing siblings, model aliases, or unverified ledgers make
   it unusable.
+- A Skill candidate requires a completed, ledger-verified source Run and a
+  distiller belonging to a different logical Agent resource—not merely another
+  version of the source Agent. Candidates, qualifications, and decisions are
+  append-only and candidates carry zero authority.
+- Candidate qualification proves provenance only. Promotion creates a Skill v1
+  but changes no Agent, Action, Flow, or Run pin.
+
+## Capability Forge contract
+
+```text
+completed model Step + verified Run ledger
+  → pre-I/O source snapshot
+  → different logical Agent resource, no tools, strict cited output
+  → immutable quarantined candidate, zero authority
+  → 8 deterministic provenance/authority gates
+  → acknowledged human decision
+  → immutable Skill v1 or append-only rejection
+```
+
+The source may teach one narrow behavioral instruction; it cannot prove broad
+performance. A promoted Skill affects no work until an operator explicitly pins
+it into a successor Agent and proves that successor in a new Run.
 
 ## Integrated maintenance contract
 
@@ -167,6 +190,7 @@ The model cannot invent evidence, apply its proposal, or rewrite the failed Run.
 | stop seam | Browser authors promises/Judge; unsupported evidence refuses completion |
 | ratify | Three independent structural failures refuse the unchanged Flow version before Run creation |
 | compare | Pre-I/O manifest, identical Flow/input, returned-model and ledger checks hold |
+| forge | Independent distillation, 8/8 provenance gates, zero authority, and human Skill promotion hold |
 | safety | BYOK, same-origin, isolation, bounds, no arbitrary tools or secret persistence |
 | database | Flat tables, immutability triggers, legal transitions, no private ontology |
 | browser | Desktop/mobile/reduced-motion/accessibility/error/network assertions pass |

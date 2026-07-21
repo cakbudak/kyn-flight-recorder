@@ -412,6 +412,118 @@ class RuntimeHttpTest(unittest.TestCase):
         self.assertEqual(len(run["model_calls"]), 1)
         self.assertEqual(run["model_calls"][0]["status"], "completed")
 
+    def test_capability_forge_http_lifecycle_is_keyed_gated_and_append_only(self) -> None:
+        cookie, bootstrap = self.create_workspace()
+        studio = bootstrap["snapshot"]["studio"]
+        seeded_flow = studio["flows"][0]
+        key = "test-browser-owned-key-for-capability-forge"
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/flows/{seeded_flow['id']}/runs",
+            body={
+                "input": {
+                    "brief": (
+                        "Launch a typed evidence-bound automation with one explicit "
+                        "human authority gate and one bounded sandbox effect."
+                    )
+                },
+                "idempotency_key": "forge-source-http",
+            },
+            cookie=cookie,
+            origin=self.base_url,
+            api_key=key,
+        )
+        self.assertEqual(status, 201)
+        waiting = payload["data"]
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/approvals/{waiting['pending_approval']['id']}/decisions",
+            body={
+                "approved": True,
+                "actor": "http-capability-owner",
+                "reason": "The bounded effect and source evidence are acceptable.",
+            },
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 200)
+        source_run = payload["data"]
+        source_call = source_run["model_calls"][0]
+        distiller_id = next(
+            version["id"]
+            for agent in bootstrap["snapshot"]["agents"]
+            for version in agent["versions"]
+            if version["id"] != source_call["agent_version_id"]
+        )
+
+        candidate_body = {
+            "source_run_id": source_run["id"],
+            "source_model_call_id": source_call["id"],
+            "distiller_agent_version_id": distiller_id,
+        }
+        status, _headers, payload = self.request(
+            "POST",
+            "/api/v1/studio/skill-candidates",
+            body=candidate_body,
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"]["code"], "openai_key_required")
+
+        status, _headers, payload = self.request(
+            "POST",
+            "/api/v1/studio/skill-candidates",
+            body=candidate_body,
+            cookie=cookie,
+            origin=self.base_url,
+            api_key=key,
+        )
+        self.assertEqual(status, 201)
+        candidate = payload["data"]
+        self.assertEqual(candidate["status"], "quarantined")
+        self.assertEqual(candidate["authority"]["allowed_tools"], [])
+
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/skill-candidates/{candidate['id']}/qualifications",
+            body={},
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(payload["data"]["status"], "qualified")
+
+        promotion = {
+            "name": "HTTP evidence-bound reasoning",
+            "slug": "http-evidence-bound-reasoning",
+            "actor": "http-capability-owner",
+            "reason": "Every provenance gate passed and the instruction is narrow.",
+            "acknowledged": False,
+        }
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/skill-candidates/{candidate['id']}/promotion",
+            body=promotion,
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("acknowledgement", payload["error"]["message"])
+
+        promotion["acknowledged"] = True
+        status, _headers, payload = self.request(
+            "POST",
+            f"/api/v1/studio/skill-candidates/{candidate['id']}/promotion",
+            body=promotion,
+            cookie=cookie,
+            origin=self.base_url,
+        )
+        self.assertEqual(status, 201)
+        promoted = payload["data"]
+        self.assertEqual(promoted["status"], "promoted")
+        self.assertIsNotNone(promoted["promoted_skill"])
+
     def test_mutations_reject_cross_origin_missing_cookie_and_oversize_body(self) -> None:
         status, _headers, payload = self.request(
             "POST", "/api/v1/workspaces", body={}, origin="https://attacker.invalid"

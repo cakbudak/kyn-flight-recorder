@@ -28,14 +28,14 @@ export default function Overview({ snapshot, mutate, setView, focusRun }) {
       </div>
       <div className="overview-primary-grid">
         <section className="overview-card control-plane-card">
-          <header><div><p className="panel-kicker">One control plane</p><h2>From definition to proven recovery</h2></div><Badge tone="success">real runtime</Badge></header>
+          <header><div><p className="panel-kicker">One control plane</p><h2>From definition to reusable capability</h2></div><Badge tone="success">real runtime</Badge></header>
           <div className="control-plane-sequence">
             {[
               ["01", "Define", "Actions · Agents · Prompts · Skills", "action"],
               ["02", "Compose", "Named ports · mapping · Subflows", "flow"],
               ["03", "Operate", "Runs · approvals · receipts · effects", "run"],
-              ["04", "Maintain", "Diagnose · successor · linked proof", "timeline"]
-            ].map(([number, title, detail, icon], index) => <React.Fragment key={number}><button type="button" onClick={() => setView(index === 0 ? "actions" : index === 1 ? "studio" : "runs")}><span>{number}</span><i><Icon name={icon} size={20} /></i><strong>{title}</strong><small>{detail}</small></button>{index < 3 ? <em aria-hidden="true">→</em> : null}</React.Fragment>)}
+              ["04", "Improve", "Repair · proof · Capability Forge", "skill"]
+            ].map(([number, title, detail, icon], index) => <React.Fragment key={number}><button type="button" onClick={() => setView(index === 0 ? "actions" : index === 1 ? "studio" : index === 2 ? "runs" : "forge")}><span>{number}</span><i><Icon name={icon} size={20} /></i><strong>{title}</strong><small>{detail}</small></button>{index < 3 ? <em aria-hidden="true">→</em> : null}</React.Fragment>)}
           </div>
           <p className="control-plane-note"><Icon name="lock" size={15} />Every Run pins its complete transitive definition before work starts. A repair creates successors; it cannot rewrite the past.</p>
         </section>
@@ -56,6 +56,7 @@ export default function Overview({ snapshot, mutate, setView, focusRun }) {
           <UseCase mark="HOOK → MAP → ASSERT" title="Typed intake" description="Accept a secret webhook, normalize the payload, enforce a contract, and inspect exact receipts." onClick={() => setView("studio")} />
           <UseCase mark="FLOW → FLOW" title="Reusable orchestration" description="Publish a Flow, use its immutable version as a typed node, and retain linked child Run evidence." onClick={() => setView("studio")} />
           <UseCase mark="FAIL → FIX → PROOF" title="Forward recovery" description="Diagnose from owned events, approve an allowlisted successor, and prove it in linked work." onClick={() => setView("runs")} />
+          <UseCase mark="RUN → SKILL" title="Evidence-bound learning" description="Distil a completed model Step, qualify its provenance and zero authority delta, then human-promote an immutable Skill." onClick={() => setView("forge")} />
         </div>
       </section>
       <Principles principles={studio.principles ?? []} markers={studio.policy_markers ?? []} focusRun={focusRun} />

@@ -48,6 +48,29 @@ class ScriptedResponsesClient:
         if not isinstance(metadata, dict):
             raise AssertionError("runtime did not identify the pinned agent role")
         if metadata.get("kyn_surface") == "agent-studio":
+            if metadata.get("operation") == "skill_distillation":
+                input_items = payload.get("input")
+                if not isinstance(input_items, list) or not input_items:
+                    raise AssertionError("Skill distillation source is missing")
+                envelope = json.loads(str(input_items[0]["content"]))
+                evidence_id = envelope["source"]["evidence_ledger"][0]["id"]
+                result = {
+                    "name": "Evidence-bounded readiness reasoning",
+                    "instructions": (
+                        "Evaluate readiness only against explicit typed criteria. "
+                        "Separate observed evidence from assumptions, name unresolved "
+                        "risk, and leave authorization to the human gate."
+                    ),
+                    "rationale": (
+                        "The completed source Step used an explicit readiness contract "
+                        "and kept the bounded effect behind human approval."
+                    ),
+                    "evidence_event_ids": [evidence_id],
+                }
+                return self._message(
+                    json.dumps(result, separators=(",", ":")),
+                    "studio-skill-distillation",
+                )
             if metadata.get("operation") == "adjudication":
                 input_items = payload.get("input")
                 if not isinstance(input_items, list) or not input_items:

@@ -8,6 +8,7 @@ import ResourceWorkbench from "./components/ResourceWorkbench.jsx";
 import RunsWorkbench, { BrakeRefusal } from "./components/RunsWorkbench.jsx";
 import Overview from "./components/Overview.jsx";
 import Comparisons from "./components/Comparisons.jsx";
+import CapabilityForge from "./components/CapabilityForge.jsx";
 import Documentation from "./components/Documentation.jsx";
 import Settings from "./components/Settings.jsx";
 
@@ -19,6 +20,7 @@ const NAVIGATION = [
   { id: "prompts", label: "Prompts", icon: "prompt", count: (snapshot) => snapshot.prompts.length },
   { id: "skills", label: "Skills", icon: "skill", count: (snapshot) => snapshot.skills.length },
   { id: "runs", label: "Runs", icon: "run", count: (snapshot) => snapshot.studio.runs.length },
+  { id: "forge", label: "Capability Forge", icon: "skill", count: (snapshot) => (snapshot.studio.skill_candidates ?? []).length },
   { id: "comparisons", label: "Comparisons", icon: "compare", count: (snapshot) => (snapshot.studio.comparisons ?? []).length },
   { id: "docs", label: "Documentation", icon: "docs" }
 ];
@@ -140,6 +142,7 @@ export default function App() {
       onComparisonRequestHandled={() => setComparisonFlowId(null)}
     />
   );
+  else if (view === "forge") content = <CapabilityForge {...shared} />;
   else if (view === "actions") content = <ResourceWorkbench {...shared} kind="actions" />;
   else if (view === "agents") content = <ResourceWorkbench {...shared} kind="agents" />;
   else if (view === "prompts") content = <ResourceWorkbench {...shared} kind="prompts" />;

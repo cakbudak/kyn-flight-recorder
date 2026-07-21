@@ -26,7 +26,9 @@ A visitor can create and operate a real automation system:
    independent failure evidence rather than mutable counters or model prose.
 10. **Comparisons** pin the complete sibling manifest before provider I/O and
     derive controlled invariance from the manifested Runs.
-11. **Maintenance** turns a supported failure into owned evidence, a bounded
+11. **Capability Forge** turns one completed model Step into a quarantined,
+    provenance-qualified, human-promoted authority-free Skill version.
+12. **Maintenance** turns a supported failure into owned evidence, a bounded
    successor proposal, a human decision, and a linked proof Run.
 
 The seeded `Agent-reviewed launch` graph is an editable use case, not a tour.
@@ -139,6 +141,24 @@ manifest, each ledger, identical Flow and input fingerprints, and the model name
 actually returned by the provider. Missing or rewritten evidence makes the
 record unusable. The result states scaffold invariance and measured noise; it is
 never promoted to a model ranking or baseline.
+
+## Capability Forge
+
+The Forge accepts one completed model call on one completed, ledger-verified
+Run. Before a second model call, code freezes the selected Step, source Agent and
+Skill fingerprints, validated input/output, model-call hashes, terminal state,
+and a bounded event excerpt. The distiller must belong to a different logical
+Agent resource—not merely another immutable version—and receives no tools. Its strict result contains behavioral
+instructions, a narrow rationale, and event IDs drawn only from that envelope.
+
+The candidate is append-only and has no authority fields. A separate
+deterministic qualification replays eight properties: terminal source, complete
+hash chain, source model-Step ownership, pre-I/O snapshot, citation subset,
+candidate fingerprint, independent distiller, and zero tool/Action authority.
+This proves lineage, not performance. Human promotion then creates one normal
+immutable Skill v1 with the exact candidate instructions and zero authority.
+No Agent, Action, Flow, or Run is changed; use requires an explicit later
+successor and a new Run. Rejection is append-only too.
 
 ## OpenAI boundary
 

@@ -516,6 +516,76 @@ CREATE TABLE IF NOT EXISTS automation_dead_end_evidence (
     UNIQUE (fingerprint, run_id)
 );
 
+-- Capability Forge. All four tables are append-only. A model call may produce
+-- a quarantined candidate, code may qualify its provenance once, and a human
+-- may decide it once. Only a promoted decision points at a normal immutable
+-- Skill version; candidates themselves carry no authority columns at all.
+CREATE TABLE IF NOT EXISTS skill_distillation_model_calls (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    source_run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    source_step_id TEXT NOT NULL REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    source_model_call_id TEXT NOT NULL REFERENCES automation_model_calls(id) ON DELETE RESTRICT,
+    distiller_agent_version_id TEXT NOT NULL REFERENCES agent_versions(id) ON DELETE RESTRICT,
+    provider_response_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+    model TEXT NOT NULL,
+    input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+    output_hash TEXT NOT NULL CHECK (length(output_hash) = 64),
+    usage_json TEXT NOT NULL,
+    request_id TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS skill_candidates (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    source_run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    source_step_id TEXT NOT NULL REFERENCES automation_run_steps(id) ON DELETE RESTRICT,
+    source_model_call_id TEXT NOT NULL REFERENCES automation_model_calls(id) ON DELETE RESTRICT,
+    source_agent_version_id TEXT NOT NULL REFERENCES agent_versions(id) ON DELETE RESTRICT,
+    distiller_agent_version_id TEXT NOT NULL REFERENCES agent_versions(id) ON DELETE RESTRICT,
+    distillation_model_call_id TEXT NOT NULL UNIQUE
+        REFERENCES skill_distillation_model_calls(id) ON DELETE RESTRICT,
+    name TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    evidence_event_ids_json TEXT NOT NULL,
+    source_snapshot_hash TEXT NOT NULL CHECK (length(source_snapshot_hash) = 64),
+    fingerprint TEXT NOT NULL UNIQUE CHECK (length(fingerprint) = 64),
+    created_at TEXT NOT NULL,
+    CHECK (source_agent_version_id <> distiller_agent_version_id)
+);
+
+CREATE TABLE IF NOT EXISTS skill_candidate_qualifications (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    candidate_id TEXT NOT NULL UNIQUE REFERENCES skill_candidates(id) ON DELETE RESTRICT,
+    passed INTEGER NOT NULL CHECK (passed IN (0, 1)),
+    checks_json TEXT NOT NULL,
+    observed_source_snapshot_hash TEXT NOT NULL
+        CHECK (length(observed_source_snapshot_hash) = 64),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS skill_candidate_decisions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    candidate_id TEXT NOT NULL UNIQUE REFERENCES skill_candidates(id) ON DELETE RESTRICT,
+    qualification_id TEXT REFERENCES skill_candidate_qualifications(id) ON DELETE RESTRICT,
+    decision TEXT NOT NULL CHECK (decision IN ('promoted', 'rejected')),
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    acknowledged INTEGER NOT NULL CHECK (acknowledged = 1),
+    skill_version_id TEXT REFERENCES skill_versions(id) ON DELETE RESTRICT,
+    candidate_fingerprint TEXT NOT NULL CHECK (length(candidate_fingerprint) = 64),
+    created_at TEXT NOT NULL,
+    CHECK (
+        (decision = 'promoted' AND qualification_id IS NOT NULL AND skill_version_id IS NOT NULL)
+        OR (decision = 'rejected' AND skill_version_id IS NULL)
+    )
+);
+
 CREATE INDEX IF NOT EXISTS ix_events_run_sequence ON events(run_id, sequence);
 CREATE INDEX IF NOT EXISTS ix_runs_workspace_created ON runs(workspace_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_one_child
@@ -535,6 +605,8 @@ CREATE INDEX IF NOT EXISTS ix_automation_triggers_due
 ON automation_trigger_bindings(enabled, trigger_type, next_fire_at);
 CREATE INDEX IF NOT EXISTS ix_automation_dead_ends_path
 ON automation_dead_end_evidence(workspace_id, flow_version_id, node_id, fingerprint);
+CREATE INDEX IF NOT EXISTS ix_skill_candidates_workspace_created
+ON skill_candidates(workspace_id, created_at DESC);
 
 CREATE TRIGGER IF NOT EXISTS trg_prompt_versions_no_update
 BEFORE UPDATE ON prompt_versions BEGIN SELECT RAISE(ABORT, 'prompt version is immutable'); END;
@@ -620,6 +692,30 @@ CREATE TRIGGER IF NOT EXISTS trg_automation_dead_end_evidence_no_update
 BEFORE UPDATE ON automation_dead_end_evidence BEGIN SELECT RAISE(ABORT, 'dead end evidence is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_automation_dead_end_evidence_no_delete
 BEFORE DELETE ON automation_dead_end_evidence BEGIN SELECT RAISE(ABORT, 'dead end evidence is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_distillation_calls_no_update
+BEFORE UPDATE ON skill_distillation_model_calls BEGIN SELECT RAISE(ABORT, 'skill distillation calls are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_distillation_calls_no_delete
+BEFORE DELETE ON skill_distillation_model_calls BEGIN SELECT RAISE(ABORT, 'skill distillation calls are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_candidates_no_update
+BEFORE UPDATE ON skill_candidates BEGIN SELECT RAISE(ABORT, 'skill candidates are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_candidates_no_delete
+BEFORE DELETE ON skill_candidates BEGIN SELECT RAISE(ABORT, 'skill candidates are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_candidates_independent_agent
+BEFORE INSERT ON skill_candidates
+WHEN (
+    SELECT agent_id FROM agent_versions WHERE id = NEW.source_agent_version_id
+) = (
+    SELECT agent_id FROM agent_versions WHERE id = NEW.distiller_agent_version_id
+)
+BEGIN SELECT RAISE(ABORT, 'skill candidate distiller must be an independent agent'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_candidate_qualifications_no_update
+BEFORE UPDATE ON skill_candidate_qualifications BEGIN SELECT RAISE(ABORT, 'skill candidate qualifications are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_candidate_qualifications_no_delete
+BEFORE DELETE ON skill_candidate_qualifications BEGIN SELECT RAISE(ABORT, 'skill candidate qualifications are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_candidate_decisions_no_update
+BEFORE UPDATE ON skill_candidate_decisions BEGIN SELECT RAISE(ABORT, 'skill candidate decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_skill_candidate_decisions_no_delete
+BEFORE DELETE ON skill_candidate_decisions BEGIN SELECT RAISE(ABORT, 'skill candidate decisions are append-only'); END;
 
 CREATE TRIGGER IF NOT EXISTS trg_runs_terminal_absorbing
 BEFORE UPDATE OF status ON runs
@@ -788,5 +884,9 @@ IMMUTABLE_TABLES = frozenset(
         "automation_diagnoses",
         "automation_repair_decisions",
         "automation_dead_end_evidence",
+        "skill_distillation_model_calls",
+        "skill_candidates",
+        "skill_candidate_qualifications",
+        "skill_candidate_decisions",
     }
 )

@@ -648,6 +648,103 @@ async function main() {
     );
     if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "06-run-evidence.png"));
 
+    progress("distilling, qualifying, and human-promoting an evidence-bound capability");
+    const agentVersionsBeforeForge = snapshot.agents.map((agent) => `${agent.id}:${agent.current_version}`).sort();
+    const skillsBeforeForge = snapshot.skills.length;
+    const sourceModelCall = aiRun.model_calls[0];
+    await navigate(page, "Capability Forge");
+    await clickAndWait(page, page.getByRole("button", { name: "Distil candidate" }));
+    const forgeDialog = page.locator(".modal");
+    await fieldControl(forgeDialog, "Completed source model Step", "select").selectOption(`${aiRun.id}:${sourceModelCall.id}`);
+    const distillerSelect = fieldControl(forgeDialog, "Independent distiller Agent", "select");
+    const distillerAgentVersionId = await distillerSelect.inputValue();
+    await clickAndWait(page, forgeDialog.getByRole("button", { name: "Distil into quarantine" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => (value.studio.skill_candidates ?? []).some((candidate) => candidate.source.run_id === aiRun.id),
+      "quarantined Skill candidate"
+    );
+    let forged = snapshot.studio.skill_candidates.find((candidate) => candidate.source.run_id === aiRun.id);
+    await page.locator(".candidate-detail").waitFor({ state: "visible" });
+    const quarantineText = await page.locator(".forge-page").innerText();
+    record(
+      "Capability Forge distils one completed model Step through a different logical Agent into an authority-free quarantine",
+      forged.status === "quarantined" &&
+        forged.source.model_call_id === sourceModelCall.id &&
+        forged.source.agent_id !== forged.distillation.agent_id &&
+        forged.source.agent_version_id !== forged.distillation.agent_version_id &&
+        forged.distillation.agent_version_id === distillerAgentVersionId &&
+        forged.distillation.status === "completed" &&
+        forged.evidence_event_ids.length >= 1 &&
+        forged.authority.allowed_tools.length === 0 &&
+        forged.authority.allowed_action_version_ids.length === 0 &&
+        quarantineText.includes("Authority delta = 0") &&
+        quarantineText.includes("Qualification is not a performance claim"),
+      {
+        candidate: forged.id,
+        source_run: forged.source.run_id,
+        source_agent: forged.source.agent_id,
+        source_agent_version: forged.source.agent_version_id,
+        distiller_agent: forged.distillation.agent_id,
+        distiller_agent_version: forged.distillation.agent_version_id,
+        cited_events: forged.evidence_event_ids.length,
+        authority_delta: 0
+      }
+    );
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "17-forge-quarantine.png"));
+
+    await clickAndWait(page, page.getByRole("button", { name: "Qualify candidate" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => (value.studio.skill_candidates ?? []).some((candidate) => candidate.id === forged.id && candidate.status === "qualified"),
+      "qualified Skill candidate"
+    );
+    forged = snapshot.studio.skill_candidates.find((candidate) => candidate.id === forged.id);
+    const qualificationText = await page.locator(".qualification-panel").innerText();
+    record(
+      "the provenance gate replays source truth, citations, independence, fingerprints, and zero authority without another model call",
+      forged.qualification?.passed === true &&
+        forged.qualification.checks.length === 8 &&
+        forged.qualification.checks.every((check) => check.passed) &&
+        qualificationText.includes("8/8 gates") &&
+        qualificationText.includes("Ledger Chain") &&
+        qualificationText.includes("Independent Distiller") &&
+        qualificationText.includes("Zero Authority Delta"),
+      { checks: forged.qualification?.checks.map((check) => check.id), passed: forged.qualification?.passed }
+    );
+
+    await clickAndWait(page, page.getByRole("button", { name: "Review promotion" }));
+    const promotionDialog = page.locator(".modal");
+    await promotionDialog.getByRole("checkbox").check();
+    await clickAndWait(page, promotionDialog.getByRole("button", { name: "Publish Skill v1" }));
+    snapshot = await waitForSnapshot(
+      page,
+      (value) => (value.studio.skill_candidates ?? []).some((candidate) => candidate.id === forged.id && candidate.status === "promoted"),
+      "promoted Skill candidate"
+    );
+    forged = snapshot.studio.skill_candidates.find((candidate) => candidate.id === forged.id);
+    const promotedSkill = snapshot.skills.find((skill) => skill.id === forged.promoted_skill?.skill_id);
+    const agentVersionsAfterForge = snapshot.agents.map((agent) => `${agent.id}:${agent.current_version}`).sort();
+    record(
+      "human promotion publishes one immutable Skill v1 while every Agent and Flow remains pinned until a later successor",
+      forged.status === "promoted" &&
+        forged.decision?.acknowledged === true &&
+        promotedSkill?.current_version === 1 &&
+        promotedSkill.version.instructions === forged.instructions &&
+        promotedSkill.version.allowed_tools.length === 0 &&
+        promotedSkill.version.allowed_action_version_ids.length === 0 &&
+        snapshot.skills.length === skillsBeforeForge + 1 &&
+        JSON.stringify(agentVersionsAfterForge) === JSON.stringify(agentVersionsBeforeForge) &&
+        (await page.locator(".candidate-decision.is-promoted").innerText()).includes("Published as immutable Skill v1"),
+      {
+        skill: promotedSkill?.id,
+        version: promotedSkill?.current_version,
+        agents_changed: false,
+        authority_delta: 0
+      }
+    );
+    if (options.artifacts) await capture(page, resolve(ROOT, options.artifacts, "18-forge-promoted.png"));
+
     progress("sweeping one pinned Flow version across brains, then across a brain the provider silently renames");
     // Two sweeps on the same pinned version. The first is what a controlled
     // comparison looks like; the second asks for a model the seam answers under
@@ -1165,7 +1262,7 @@ async function main() {
       "twelve outputs", "ai is visible", "first-class node",
       "observe and control work as runs", "evidence decides whether it becomes true",
       "non-authoritative", "canonical", "before provider i/o", "forward recovery",
-      "browser tab", "public boundary"
+      "capability forge", "provenance is not performance", "browser tab", "public boundary"
     ];
     const normalizedDocumentation = documentationText.toLowerCase();
     const missingDocumentation = requiredDocumentation.filter((phrase) => !normalizedDocumentation.includes(phrase));
@@ -1184,7 +1281,7 @@ async function main() {
     const contrastResults = [];
     for (const theme of ["light", "dark"]) {
       await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
-      for (const view of ["Overview", "Flow Studio", "Actions", "Agents", "Prompts", "Skills", "Runs", "Comparisons", "Documentation", "Settings"]) {
+      for (const view of ["Overview", "Flow Studio", "Actions", "Agents", "Prompts", "Skills", "Runs", "Capability Forge", "Comparisons", "Documentation", "Settings"]) {
         await navigate(page, view);
         contrastResults.push({ theme, view, ...await auditTextContrast(page) });
       }

@@ -3,13 +3,14 @@
 The active evidence set proves **Kyn.ist Agent Studio**: user-defined Actions and
 Flows, version-pinned Agent resources, webhook activation, executable Runs,
 Human approval, linked reruns, evidence-bound completion, dead-end ratification,
-controlled model comparison, and integrated bounded maintenance. Superseded
+controlled model comparison, integrated bounded maintenance, and evidence-bound
+Skill distillation. Superseded
 Recorder artifacts are removed from the active tree and remain recoverable in
 Git history.
 
 ## Deterministic full-stack browser proof
 
-`browser/agent-studio-report.json` records the 42-check Chromium journey against
+`browser/agent-studio-report.json` records the 45-check Chromium journey against
 the real Python server, same-origin HTTP API, control plane, flat SQLite stores,
 Action dispatcher, visual canvas, trigger path, approvals, integrated
 maintenance, and browser UI. Only provider responses come from a deterministic
@@ -34,6 +35,8 @@ Expected screenshots:
 - `browser/14-completion-contract-authoring.png`
 - `browser/15-completion-refused.png`
 - `browser/16-completion-admitted.png`
+- `browser/17-forge-quarantine.png`
+- `browser/18-forge-promoted.png`
 
 ## Public HTTPS + real-model proof
 
@@ -59,6 +62,9 @@ The committed proof shows:
   admitted when its declared work exists;
 - each comparison carries a pre-I/O expected sibling manifest and refuses a
   provider model alias rather than presenting it as a controlled result.
+- one completed model Step is distilled by a different logical Agent into an
+  authority-free quarantine, passes eight deterministic provenance gates, and
+  is Human-promoted into immutable Skill v1 without changing an Agent or Flow.
 
 Screenshots:
 
@@ -79,6 +85,8 @@ Screenshots:
 - [`live/14-completion-contract-authoring.png`](live/14-completion-contract-authoring.png)
 - [`live/15-completion-refused.png`](live/15-completion-refused.png)
 - [`live/16-completion-admitted.png`](live/16-completion-admitted.png)
+- [`live/17-forge-quarantine.png`](live/17-forge-quarantine.png)
+- [`live/18-forge-promoted.png`](live/18-forge-promoted.png)
 
 ## Maximum-graph release-host proof
 

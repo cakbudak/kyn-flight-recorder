@@ -11,6 +11,7 @@ from .contracts import (
     ContractViolation,
     NotFound,
     PLACEHOLDER_RE,
+    ProviderFailure,
     fingerprint,
     new_id,
     normalize_acceptance_criteria,
@@ -22,9 +23,11 @@ from .contracts import (
     require_string,
     require_string_list,
     render_prompt,
+    safe_response_summary,
 )
 from .model_comparison import build_comparison
 from .runtime import AgentRuntime, ResponseTransport
+from .skill_forge import build_distillation_payload, parse_candidate
 from .store import Store
 from .studio_runtime import (
     JUDGE_PROMPT_VARIABLES,
@@ -1921,6 +1924,158 @@ class ControlPlane:
         """Return every distilled rule. A principle advises; it never refuses."""
 
         return self.studio.list_principles(workspace_id)
+
+    # -- Capability Forge -------------------------------------------------
+
+    def draft_skill_candidate(
+        self,
+        workspace_id: str,
+        *,
+        source_run_id: Any,
+        source_model_call_id: Any,
+        distiller_agent_version_id: Any,
+        client: ResponseTransport,
+    ) -> dict[str, Any]:
+        """Distil one completed model Step into a quarantined candidate."""
+
+        run_id = require_string(source_run_id, "source Run id", maximum=80)
+        model_call_id = require_string(
+            source_model_call_id, "source model call id", maximum=80
+        )
+        distiller_id = require_string(
+            distiller_agent_version_id,
+            "distiller Agent version id",
+            maximum=80,
+        )
+        source = self.studio.skill_candidate_source(
+            workspace_id, run_id, model_call_id
+        )
+        distiller = self.studio.get_agent_runtime(workspace_id, distiller_id)
+        if distiller["agent_id"] == source["source_agent"]["agent_id"]:
+            raise ContractViolation(
+                "Skill candidate distiller must be independent from the source Agent"
+            )
+        payload = build_distillation_payload(
+            distiller_agent=distiller, source=source["material"]
+        )
+        input_hash = fingerprint(payload)
+        try:
+            response = client.create(payload)
+        except ProviderFailure as error:
+            request_id = error.detail.get("request_id")
+            safe_request_id = (
+                request_id
+                if isinstance(request_id, str) and 0 < len(request_id) <= 128
+                else None
+            )
+            self.studio.record_skill_distillation_call(
+                workspace_id,
+                source_run_id=run_id,
+                source_step_id=source["model_call"]["step_id"],
+                source_model_call_id=model_call_id,
+                distiller_agent_version_id=distiller_id,
+                provider_response_id=safe_request_id or "unavailable",
+                status="failed",
+                model=distiller["model"],
+                input_hash=input_hash,
+                output_hash=fingerprint(
+                    {
+                        "error_code": error.code,
+                        "provider_code": error.detail.get("provider_code"),
+                    }
+                ),
+                usage={},
+                request_id=safe_request_id,
+            )
+            raise
+        summary = safe_response_summary(response)
+        request_id = response.get("_request_id")
+        safe_request_id = (
+            str(request_id)[:128] if isinstance(request_id, str) and request_id else None
+        )
+        distillation_call = self.studio.record_skill_distillation_call(
+            workspace_id,
+            source_run_id=run_id,
+            source_step_id=source["model_call"]["step_id"],
+            source_model_call_id=model_call_id,
+            distiller_agent_version_id=distiller_id,
+            provider_response_id=summary["provider_response_id"],
+            status=("completed" if summary["status"] == "completed" else "failed"),
+            model=summary["model"],
+            input_hash=input_hash,
+            output_hash=fingerprint(response),
+            usage=summary["usage"],
+            request_id=safe_request_id,
+        )
+        if summary["status"] != "completed":
+            raise ProviderFailure("OpenAI Skill distillation response did not complete")
+        candidate = parse_candidate(response, source["material"])
+        return self.studio.create_skill_candidate(
+            workspace_id,
+            source_run_id=run_id,
+            source_step_id=source["model_call"]["step_id"],
+            source_model_call_id=model_call_id,
+            source_agent_version_id=source["source_agent"]["id"],
+            distiller_agent_version_id=distiller_id,
+            distillation_model_call_id=distillation_call["id"],
+            name=candidate["name"],
+            instructions=candidate["instructions"],
+            rationale=candidate["rationale"],
+            evidence_event_ids=candidate["evidence_event_ids"],
+            source_snapshot_hash=source["snapshot_hash"],
+        )
+
+    def qualify_skill_candidate(
+        self, workspace_id: str, candidate_id: Any
+    ) -> dict[str, Any]:
+        return self.studio.qualify_skill_candidate(
+            workspace_id,
+            require_string(candidate_id, "Skill candidate id", maximum=80),
+        )
+
+    def promote_skill_candidate(
+        self,
+        workspace_id: str,
+        candidate_id: Any,
+        *,
+        name: Any,
+        slug: Any,
+        actor: Any,
+        reason: Any,
+        acknowledged: Any,
+    ) -> dict[str, Any]:
+        if acknowledged is not True:
+            raise ContractViolation("Skill promotion requires explicit acknowledgement")
+        return self.studio.promote_skill_candidate(
+            workspace_id,
+            require_string(candidate_id, "Skill candidate id", maximum=80),
+            name=require_string(name, "Skill name", maximum=100),
+            slug=require_slug(slug, "Skill slug"),
+            actor=require_string(actor, "promotion actor", maximum=100),
+            reason=require_string(
+                reason, "promotion reason", minimum=12, maximum=600
+            ),
+        )
+
+    def reject_skill_candidate(
+        self,
+        workspace_id: str,
+        candidate_id: Any,
+        *,
+        actor: Any,
+        reason: Any,
+        acknowledged: Any,
+    ) -> dict[str, Any]:
+        if acknowledged is not True:
+            raise ContractViolation("Skill rejection requires explicit acknowledgement")
+        return self.studio.reject_skill_candidate(
+            workspace_id,
+            require_string(candidate_id, "Skill candidate id", maximum=80),
+            actor=require_string(actor, "rejection actor", maximum=100),
+            reason=require_string(
+                reason, "rejection reason", minimum=12, maximum=600
+            ),
+        )
 
     def create_studio_trigger(
         self,
