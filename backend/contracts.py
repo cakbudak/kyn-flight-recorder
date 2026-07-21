@@ -23,6 +23,9 @@ PROVIDER_DIAGNOSTIC_RE = re.compile(r"^[A-Za-z0-9_.\[\]-]+$")
 MIN_STUDIO_OUTPUT_TOKENS = 256
 MAX_STUDIO_OUTPUT_TOKENS = 8_000
 DEFAULT_STUDIO_OUTPUT_TOKENS = 4_000
+MIN_APPROVAL_MESSAGE_CHARS = 512
+MAX_APPROVAL_MESSAGE_CHARS = 64_000
+DEFAULT_APPROVAL_MESSAGE_CHARS = MAX_APPROVAL_MESSAGE_CHARS
 
 
 class RuntimeErrorBase(Exception):
@@ -1013,6 +1016,7 @@ def render_prompt(
     declared_variables: Sequence[str],
     values: Mapping[str, Any],
     maximum_output: int = 24_000,
+    output_label: str = "prompt",
 ) -> str:
     template = require_string(template, "prompt template", maximum=12_000)
     declared = list(declared_variables)
@@ -1063,7 +1067,9 @@ def render_prompt(
         lambda match: render_value(match.group(1)), template
     )
     if len(rendered) > maximum_output:
-        raise ContractViolation("rendered prompt is too long")
+        raise ContractViolation(
+            f"rendered {output_label} exceeds the {maximum_output:,}-character limit"
+        )
     return rendered
 
 

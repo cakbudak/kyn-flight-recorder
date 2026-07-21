@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 
 from .contracts import (
     ActionBlocked,
+    DEFAULT_APPROVAL_MESSAGE_CHARS,
     DEFAULT_STUDIO_OUTPUT_TOKENS,
     MAX_ACCEPTANCE_CRITERIA,
     MAX_FLOW_NODES,
@@ -2396,7 +2397,10 @@ class StudioRuntime:
                     template,
                     declared_variables=variables,
                     values={variable: validated_input[variable] for variable in variables},
-                    maximum_output=2_000,
+                    maximum_output=action["config"].get(
+                        "max_message_chars", DEFAULT_APPROVAL_MESSAGE_CHARS
+                    ),
+                    output_label="approval message",
                 )
                 result = ActionResult(
                     output={"pending": True},

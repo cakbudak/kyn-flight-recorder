@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { browserKey, saveBrowserKey } from "../api.js";
 import { Icon } from "../icons.jsx";
-import { shortId } from "../lib.js";
+import { shortId, topLevelRuns } from "../lib.js";
 import { Badge, Button, Field, PageHeader, ThemeChoice } from "./ui.jsx";
 
 export default function Settings({ snapshot, keyConfigured, onKeyChanged, onNewWorkspace, busy }) {
@@ -57,7 +57,7 @@ export default function Settings({ snapshot, keyConfigured, onKeyChanged, onNewW
         </section>
         <section className="settings-card workspace-card">
           <header><span className="settings-icon"><Icon name="flow" size={22} /></span><div><p className="panel-kicker">Isolated SQLite projection</p><h2>Workspace</h2></div><Badge tone="success">active</Badge></header>
-          <dl><div><dt>Workspace</dt><dd><code>{shortId(workspaceId, 16)}</code></dd></div><div><dt>Actions</dt><dd>{snapshot.studio.actions.length}</dd></div><div><dt>Flows</dt><dd>{snapshot.studio.flows.length}</dd></div><div><dt>Runs</dt><dd>{snapshot.studio.runs.length}</dd></div><div><dt>Agents</dt><dd>{snapshot.agents.length}</dd></div></dl>
+          <dl><div><dt>Workspace</dt><dd><code>{shortId(workspaceId, 16)}</code></dd></div><div><dt>Actions</dt><dd>{snapshot.studio.actions.length}</dd></div><div><dt>Flows</dt><dd>{snapshot.studio.flows.length}</dd></div><div><dt>Orchestrations</dt><dd>{topLevelRuns(snapshot.studio.runs).length}</dd></div><div><dt>Execution records</dt><dd>{snapshot.studio.runs.length}</dd></div><div><dt>Agents</dt><dd>{snapshot.agents.length}</dd></div></dl>
           <div className="workspace-warning"><Icon name="warning" size={18} /><p><strong>Starting fresh is forward-only.</strong>Your current workspace is not deleted; this browser receives a new isolated cookie and can no longer address the old workspace.</p></div>
           <Button tone="danger" onClick={onNewWorkspace} disabled={busy}>Create a new workspace</Button>
         </section>

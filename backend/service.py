@@ -8,8 +8,11 @@ import threading
 from typing import Any, Callable, Mapping, Sequence
 
 from .contracts import (
+    DEFAULT_APPROVAL_MESSAGE_CHARS,
     DEFAULT_STUDIO_OUTPUT_TOKENS,
+    MAX_APPROVAL_MESSAGE_CHARS,
     MAX_STUDIO_OUTPUT_TOKENS,
+    MIN_APPROVAL_MESSAGE_CHARS,
     MIN_STUDIO_OUTPUT_TOKENS,
     canonical_json,
     Conflict,
@@ -75,6 +78,21 @@ def _normalize_studio_output_tokens(
         raise ContractViolation(
             f"{field} must be between {MIN_STUDIO_OUTPUT_TOKENS} and "
             f"{MAX_STUDIO_OUTPUT_TOKENS}"
+        )
+    return value
+
+
+def _normalize_approval_message_chars(value: Any) -> int:
+    if value is None:
+        return DEFAULT_APPROVAL_MESSAGE_CHARS
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not MIN_APPROVAL_MESSAGE_CHARS <= value <= MAX_APPROVAL_MESSAGE_CHARS
+    ):
+        raise ContractViolation(
+            "approval max_message_chars must be between "
+            f"{MIN_APPROVAL_MESSAGE_CHARS} and {MAX_APPROVAL_MESSAGE_CHARS}"
         )
     return value
 
@@ -1242,7 +1260,10 @@ class ControlPlane:
             if set(normalized_output["properties"]) != {"passed", "actual"}:
                 raise ContractViolation("assert Action output must contain passed and actual")
         elif normalized_kind == "approval":
-            if normalized_agent is not None or set(normalized_config) != {"message_template"}:
+            if normalized_agent is not None or frozenset(normalized_config) not in {
+                frozenset({"message_template"}),
+                frozenset({"message_template", "max_message_chars"}),
+            }:
                 raise ContractViolation("approval Action config is invalid")
             template = require_string(
                 normalized_config["message_template"],
@@ -1253,6 +1274,9 @@ class ControlPlane:
             if not variables or not variables.issubset(properties):
                 raise ContractViolation("approval message variables must exist in its input schema")
             normalized_config["message_template"] = template
+            normalized_config["max_message_chars"] = _normalize_approval_message_chars(
+                normalized_config.get("max_message_chars")
+            )
             if outcome_ids != {"approved", "rejected", "error"}:
                 raise ContractViolation(
                     "approval Action outcomes must be approved, rejected, and error"
@@ -3509,7 +3533,8 @@ class ControlPlane:
                     "message_template": (
                         "Approve this BoardRoom decision: {{decision}}\n\n"
                         "Dissent retained: {{dissent}}"
-                    )
+                    ),
+                    "max_message_chars": DEFAULT_APPROVAL_MESSAGE_CHARS,
                 },
                 agent_version_id=None,
             )

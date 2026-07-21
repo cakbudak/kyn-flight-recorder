@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from .contracts import (
+    DEFAULT_APPROVAL_MESSAGE_CHARS,
     GENESIS_HASH,
     Conflict,
     ContractViolation,
@@ -1387,7 +1388,10 @@ class StudioStore:
                     "required": ["approved", "reason"],
                     "additionalProperties": False,
                 },
-                config={"message_template": "Approve this launch analysis? {{summary}}"},
+                config={
+                    "message_template": "Approve this launch analysis? {{summary}}",
+                    "max_message_chars": DEFAULT_APPROVAL_MESSAGE_CHARS,
+                },
                 agent_version_id=None,
                 effect_level="approval",
                 created_by="bootstrap",

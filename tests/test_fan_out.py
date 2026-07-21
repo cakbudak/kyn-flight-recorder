@@ -136,6 +136,7 @@ class BoardRoomClient:
         self.requests: list[dict[str, object]] = []
         self.editor_requests: list[dict[str, object]] = []
         self.minimum_editor_output_tokens = 0
+        self.editor_output_override: dict[str, object] | None = None
         self._lock = threading.Lock()
         self._barrier = threading.Barrier(2)
 
@@ -195,7 +196,7 @@ class BoardRoomClient:
                     },
                     "output": [],
                 }
-            output = {
+            output = self.editor_output_override or {
                 "decision": "Proceed with a governed context-to-decision demonstration.",
                 "consensus": ["The runtime evidence must remain inspectable."],
                 "dissent": ["A material challenge remains."],
@@ -835,6 +836,189 @@ class BoardRoomProductContractTest(unittest.TestCase):
         self.assertEqual(len(approved["effects"]), 1)
         self.assertEqual(approved["effects"][0]["collection"], "approved-decisions")
         self.assertTrue(verify_event_chain(approved["events"]))
+
+    def test_human_gate_accepts_a_full_valid_boardroom_decision(self) -> None:
+        room = self._room(
+            slug="full-decision-council",
+            approval_mode="human",
+        )
+        self._configure(room)
+        # Mirrors the live 2026-07-21 failure shape: the editor contract accepts
+        # this decision and four bounded dissent records, but their rendered
+        # Human-gate message is materially larger than 2,000 characters.
+        self.client.editor_output_override = {
+            "decision": "D" * 546,
+            "consensus": ["C" * 500, "C" * 500, "C" * 257],
+            "dissent": ["R" * 499, "O" * 484, "S" * 452, "P" * 233],
+            "open_questions": ["Q" * 500, "Q" * 500, "Q" * 67],
+            "citations": ["launch-brief@v1:L1-L3"],
+        }
+
+        waiting = self.plane.start_studio_run(
+            self.workspace_id,
+            room["flow"]["id"],
+            input_data={
+                "brief": "Render the complete bounded decision for its human owner.",
+                "context": "launch-brief@v1:L1-L3",
+            },
+        )
+
+        self.assertEqual(waiting["status"], "waiting_approval")
+        self.assertGreater(len(waiting["pending_approval"]["message"]), 2_000)
+        self.assertEqual(
+            room["approval_action"]["version"]["config"]["max_message_chars"],
+            64_000,
+        )
+
+    def test_approval_message_budget_is_defaulted_and_hard_bounded(self) -> None:
+        def create(slug: str, budget: object = None) -> dict[str, object]:
+            config: dict[str, object] = {"message_template": "Approve {{decision}}"}
+            if budget is not None:
+                config["max_message_chars"] = budget
+            return self.plane.create_action(
+                self.workspace_id,
+                name=slug.replace("-", " ").title(),
+                slug=slug,
+                description="A bounded human decision surface.",
+                kind="approval",
+                input_schema={
+                    "type": "object",
+                    "properties": {"decision": {"type": "string"}},
+                    "required": ["decision"],
+                    "additionalProperties": False,
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "approved": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["approved", "reason"],
+                    "additionalProperties": False,
+                },
+                outcomes=None,
+                config=config,
+                agent_version_id=None,
+            )
+
+        self.assertEqual(
+            create("default-approval-budget")["version"]["config"]["max_message_chars"],
+            64_000,
+        )
+        self.assertEqual(
+            create("minimum-approval-budget", 512)["version"]["config"]["max_message_chars"],
+            512,
+        )
+        self.assertEqual(
+            create("maximum-approval-budget", 64_000)["version"]["config"]["max_message_chars"],
+            64_000,
+        )
+        for index, invalid in enumerate((511, 64_001, True)):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ContractViolation, "approval max_message_chars"
+            ):
+                create(f"invalid-approval-budget-{index}", invalid)
+
+        narrow = create("narrow-approval-budget", 512)
+        flow = self.plane.create_studio_flow(
+            self.workspace_id,
+            name="Narrow approval message",
+            slug="narrow-approval-message",
+            description="Proves the configured human-message ceiling is enforced.",
+            input_schema=narrow["version"]["input_schema"],
+            output_schema=narrow["version"]["output_schema"],
+            outcomes=narrow["version"]["outcomes"],
+            start_node_id="approval",
+            nodes=[
+                {
+                    "id": "approval",
+                    "type": "action",
+                    "version_id": narrow["version"]["id"],
+                    "input_mapping": {
+                        "decision": {"source": "input", "path": "decision"}
+                    },
+                }
+            ],
+            routes=[],
+        )
+        failed = self.plane.start_studio_run(
+            self.workspace_id,
+            flow["id"],
+            input_data={"decision": "x" * 600},
+        )
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["error_code"], "contract_violation")
+        self.assertIn(
+            "rendered approval message exceeds the 512-character limit",
+            failed["error_message"],
+        )
+
+    def test_legacy_approval_version_without_budget_uses_compatibility_default(self) -> None:
+        input_schema = {
+            "type": "object",
+            "properties": {"decision": {"type": "string", "maxLength": 3_000}},
+            "required": ["decision"],
+            "additionalProperties": False,
+        }
+        output_schema = {
+            "type": "object",
+            "properties": {
+                "approved": {"type": "boolean"},
+                "reason": {"type": "string"},
+            },
+            "required": ["approved", "reason"],
+            "additionalProperties": False,
+        }
+        # This is the persisted shape deployed before max_message_chars became
+        # explicit. Insert it through the bootstrap seam to prove an immutable
+        # old version keeps running without rewriting its fingerprint.
+        with self.store.write() as connection:
+            action_id = self.plane.studio._insert_action(
+                connection,
+                self.workspace_id,
+                name="Legacy approval",
+                slug="legacy-approval",
+                description="An immutable pre-budget approval version.",
+                kind="approval",
+                input_schema=input_schema,
+                output_schema=output_schema,
+                config={"message_template": "Approve {{decision}}"},
+                agent_version_id=None,
+                effect_level="approval",
+                created_by="legacy-fixture",
+            )
+        legacy = self.plane.studio.get_action(self.workspace_id, action_id)
+        self.assertNotIn("max_message_chars", legacy["version"]["config"])
+        flow = self.plane.create_studio_flow(
+            self.workspace_id,
+            name="Legacy approval flow",
+            slug="legacy-approval-flow",
+            description="Executes a pre-budget immutable Action version.",
+            input_schema=input_schema,
+            output_schema=output_schema,
+            outcomes=legacy["version"]["outcomes"],
+            start_node_id="approval",
+            nodes=[
+                {
+                    "id": "approval",
+                    "type": "action",
+                    "version_id": legacy["version"]["id"],
+                    "input_mapping": {
+                        "decision": {"source": "input", "path": "decision"}
+                    },
+                }
+            ],
+            routes=[],
+        )
+
+        waiting = self.plane.start_studio_run(
+            self.workspace_id,
+            flow["id"],
+            input_data={"decision": "L" * 2_280},
+        )
+
+        self.assertEqual(waiting["status"], "waiting_approval")
+        self.assertGreater(len(waiting["pending_approval"]["message"]), 2_000)
 
     def test_factory_refuses_write_authority_before_publishing_resources(self) -> None:
         before = self.plane.snapshot(self.workspace_id)

@@ -40,6 +40,15 @@ class ResourceContractTest(unittest.TestCase):
                 declared_variables=["artifact"],
                 values={"artifact": "kyn@1", "secret": "must-not-enter"},
             )
+        with self.assertRaisesRegex(
+            ContractViolation, "exceeds the 4-character limit"
+        ):
+            render_prompt(
+                "{{artifact}}",
+                declared_variables=["artifact"],
+                values={"artifact": "kynist"},
+                maximum_output=4,
+            )
 
     def test_prompt_renderer_serializes_structured_values_as_canonical_json(self) -> None:
         rendered = render_prompt(

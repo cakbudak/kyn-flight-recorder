@@ -1,15 +1,16 @@
 import React, { useState } from "react";
 import { api } from "../api.js";
 import { Icon } from "../icons.jsx";
-import { exampleForSchema, formatTime, parseJson, shortId, titleCase } from "../lib.js";
+import { exampleForSchema, formatTime, parseJson, shortId, titleCase, topLevelRuns } from "../lib.js";
 import { Badge, Button, CitedRuns, Field, JsonField, Modal, PageHeader, StatusBadge } from "./ui.jsx";
 
 export default function Overview({ snapshot, mutate, setView, focusRun }) {
   const studio = snapshot.studio;
+  const orchestrations = topLevelRuns(studio.runs);
   const [showTrigger, setShowTrigger] = useState(false);
   const [revealedWebhook, setRevealedWebhook] = useState(null);
-  const activeRuns = studio.runs.filter((run) => ["created", "running", "waiting_approval"].includes(run.status)).length;
-  const failedRuns = studio.runs.filter((run) => ["blocked", "failed"].includes(run.status)).length;
+  const activeRuns = orchestrations.filter((run) => ["created", "running", "waiting_approval"].includes(run.status)).length;
+  const failedRuns = orchestrations.filter((run) => ["blocked", "failed"].includes(run.status)).length;
   const toggleTrigger = (trigger) => mutate(
     () => api(`/api/v1/studio/triggers/${trigger.id}/state`, {
       method: "POST",
@@ -24,7 +25,7 @@ export default function Overview({ snapshot, mutate, setView, focusRun }) {
         <Metric icon="action" value={studio.actions.length} label="Actions" detail={`${new Set(studio.actions.map((item) => item.version.kind)).size} executor kinds`} />
         <Metric icon="flow" value={studio.flows.length} label="Flows" detail={`${studio.flows.reduce((total, flow) => total + flow.versions.length, 0)} immutable versions`} />
         <Metric icon="agent" value={snapshot.agents.length} label="Agents" detail={`${snapshot.prompts.length} Prompts · ${snapshot.skills.length} Skills`} />
-        <Metric icon="run" value={studio.runs.length} label="Runs" detail={`${activeRuns} live · ${failedRuns} maintainable`} />
+        <Metric icon="run" value={orchestrations.length} label="Orchestrations" detail={`${studio.runs.length} execution records · ${activeRuns} live · ${failedRuns} maintainable`} />
       </div>
       <section className="overview-wow">
         <header><div><p className="panel-kicker">The complete operating loop</p><h2>Context becomes a decision. A decision becomes evidence. Evidence may become Memory.</h2></div><Badge tone="ai">one inspectable runtime</Badge></header>
@@ -80,8 +81,8 @@ export default function Overview({ snapshot, mutate, setView, focusRun }) {
         <section className="overview-card recent-card">
           <header><div><p className="panel-kicker">Operations</p><h2>Recent Runs</h2></div><Button tone="quiet" onClick={() => setView("runs")}>Open console</Button></header>
           <div className="recent-run-table">
-            {studio.runs.slice(0, 6).map((run) => { const flow = studio.flows.find((item) => item.id === run.flow_id); return <button type="button" key={run.id} onClick={() => setView("runs")}><span><strong>{flow?.name ?? "Unknown Flow"}</strong><small>{shortId(run.id)} · {formatTime(run.created_at)}</small></span><em>{titleCase(run.relation_kind)} · v{run.flow_version}</em><StatusBadge status={run.status} /></button>; })}
-            {!studio.runs.length ? <div className="compact-empty"><Icon name="run" size={20} /><span><strong>No Runs yet</strong><small>Start any published Flow from the Studio.</small></span></div> : null}
+            {orchestrations.slice(0, 6).map((run) => { const flow = studio.flows.find((item) => item.id === run.flow_id); return <button type="button" key={run.id} onClick={() => setView("runs")}><span><strong>{flow?.name ?? "Unknown Flow"}</strong><small>{shortId(run.id)} · {formatTime(run.created_at)}</small></span><em>Orchestration · {run.children?.length ?? 0} linked</em><StatusBadge status={run.status} /></button>; })}
+            {!orchestrations.length ? <div className="compact-empty"><Icon name="run" size={20} /><span><strong>No Runs yet</strong><small>Start any published Flow from the Studio.</small></span></div> : null}
           </div>
         </section>
         <section className="overview-card trigger-card">

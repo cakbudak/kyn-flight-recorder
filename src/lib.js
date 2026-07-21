@@ -225,7 +225,7 @@ export const ACTION_PRESETS = {
       { id: "rejected", label: "Rejected", description: "Human rejected continuation.", tone: "warning" },
       { id: "error", label: "Error", description: "Decision could not be recorded.", tone: "danger" }
     ],
-    config: { message_template: "Approve {{value}}?" }
+    config: { message_template: "Approve {{value}}?", max_message_chars: 64000 }
   },
   data_store: {
     label: "Data store",
@@ -299,6 +299,34 @@ export function latestStepForNode(run, nodeId) {
 export function selectedStudioRun(snapshot, explicitId = null) {
   const runs = snapshot?.studio?.runs ?? [];
   return runs.find((run) => run.id === explicitId) ?? runs[0] ?? null;
+}
+
+export function topLevelRuns(runs = []) {
+  const ids = new Set(runs.map((run) => run.id));
+  return runs.filter((run) => !run.parent_run_id || !ids.has(run.parent_run_id));
+}
+
+export function runListRows(runs = []) {
+  const children = new Map();
+  for (const run of runs) {
+    if (!run.parent_run_id) continue;
+    const siblings = children.get(run.parent_run_id) ?? [];
+    siblings.push(run);
+    children.set(run.parent_run_id, siblings);
+  }
+  const rows = [];
+  const visited = new Set();
+  const append = (run, depth) => {
+    if (visited.has(run.id)) return;
+    visited.add(run.id);
+    rows.push({ run, depth });
+    for (const child of children.get(run.id) ?? []) append(child, depth + 1);
+  };
+  for (const root of topLevelRuns(runs)) append(root, 0);
+  // A corrupt lineage must remain inspectable instead of disappearing from the
+  // operator surface. The backend rejects cycles; this is a defensive viewer.
+  for (const run of runs) append(run, 0);
+  return rows;
 }
 
 export function maintenancePhase(run, runs = []) {

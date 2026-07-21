@@ -23,9 +23,11 @@ import {
   nodeOutcomes,
   parseJson,
   resourceForNode,
+  runListRows,
   runNodeState,
   shortId,
   titleCase,
+  topLevelRuns,
   versionForNode
 } from "../lib.js";
 import {
@@ -99,7 +101,9 @@ const ANCHOR_REFUSAL_ACT = {
 
 export default function RunsWorkbench({ snapshot, refresh, mutate, busy, focusRunId = null }) {
   const runs = snapshot.studio.runs;
-  const [selectedId, setSelectedId] = useState(runs[0]?.id ?? null);
+  const orchestrations = useMemo(() => topLevelRuns(runs), [runs]);
+  const listRows = useMemo(() => runListRows(runs), [runs]);
+  const [selectedId, setSelectedId] = useState(orchestrations[0]?.id ?? runs[0]?.id ?? null);
   const [tab, setTab] = useState("summary");
   const [showStart, setShowStart] = useState(false);
   const [approval, setApproval] = useState(null);
@@ -109,8 +113,8 @@ export default function RunsWorkbench({ snapshot, refresh, mutate, busy, focusRu
 
   useEffect(() => {
     if (runs.some((run) => run.id === selectedId)) return;
-    setSelectedId(runs[0]?.id ?? null);
-  }, [runs, selectedId]);
+    setSelectedId(orchestrations[0]?.id ?? runs[0]?.id ?? null);
+  }, [orchestrations, runs, selectedId]);
 
   // A citation elsewhere in the product asked for one exact Run. Honour it once
   // per request: the polling refresh re-runs this effect every 900 ms, and a
@@ -148,14 +152,16 @@ export default function RunsWorkbench({ snapshot, refresh, mutate, busy, focusRu
 
   return (
     <section className="runs-page">
-      <PageHeader eyebrow="Authoritative operations console" title="Runs" description="The Run—not a trace—is the source of truth: pinned graph, Steps, receipts, model summaries, approvals, effects, diagnoses, successor repairs, and linked proof work." actions={<><Button tone="quiet" icon="redo" onClick={refresh}>Refresh</Button><Button tone="primary" icon="play" onClick={() => setShowStart(true)}>Start Run</Button></>} />
+      <PageHeader eyebrow="Authoritative operations console" title="Runs" description="One start creates one top-level orchestration. Reusable Subflows retain their own linked execution evidence inside it: pinned graph, Steps, receipts, model summaries, approvals, effects, diagnoses, repairs, and proofs." actions={<><Button tone="quiet" icon="redo" onClick={refresh}>Refresh</Button><Button tone="primary" icon="play" onClick={() => setShowStart(true)}>Start Run</Button></>} />
       <div className="runs-workbench">
         <aside className="run-list" aria-label="Runs">
-          <header><span>{runs.length} Runs</span><Badge tone="neutral">SQLite truth</Badge></header>
+          <header><span><strong>{orchestrations.length} {orchestrations.length === 1 ? "Orchestration" : "Orchestrations"}</strong><small>{runs.length} durable execution {runs.length === 1 ? "record" : "records"}</small></span><Badge tone="neutral">SQLite truth</Badge></header>
           <div className="run-list-scroll">
-            {runs.map((run) => {
+            {listRows.map(({ run, depth }) => {
               const flow = snapshot.studio.flows.find((item) => item.id === run.flow_id);
-              return <button key={run.id} type="button" className={`run-list-item ${selected?.id === run.id ? "is-active" : ""}`} onClick={() => selectRun(run.id)}><span className={`run-state-dot tone-${STATUS_TONE[run.status] ?? "neutral"}`} /><span><strong>{flow?.name ?? "Unknown Flow"}</strong><small>{shortId(run.id)} · {formatTime(run.created_at)}</small><em>{run.relation_kind !== "root" ? `${titleCase(run.relation_kind)} · ` : ""}Flow v{run.flow_version}</em></span><StatusBadge status={run.status} /></button>;
+              const linked = depth > 0;
+              const childCount = run.children?.length ?? 0;
+              return <button key={run.id} type="button" style={{ "--run-depth": Math.min(depth, 4) }} className={`run-list-item ${linked ? "is-linked" : "is-orchestration"} ${selected?.id === run.id ? "is-active" : ""}`} aria-label={`${linked ? `${titleCase(run.relation_kind)} execution` : "Orchestration"}: ${flow?.name ?? "Unknown Flow"}`} onClick={() => selectRun(run.id)}><span className={`run-state-dot tone-${STATUS_TONE[run.status] ?? "neutral"}`} /><span><strong>{flow?.name ?? "Unknown Flow"}</strong><small>{shortId(run.id)} · {formatTime(run.created_at)}</small><em>{linked ? `↳ ${titleCase(run.relation_kind)} execution` : `Orchestration · ${childCount} linked`} · Flow v{run.flow_version}</em></span><StatusBadge status={run.status} /></button>;
             })}
             {!runs.length ? <EmptyState icon="run" title="No Runs yet" description="Start a Flow to pin its definition and create authoritative execution evidence." action={<Button tone="primary" icon="play" onClick={() => setShowStart(true)}>Start first Run</Button>} /> : null}
           </div>

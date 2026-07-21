@@ -9,9 +9,11 @@ import {
   isActiveRun,
   latestStepForNode,
   maintenancePhase,
+  runListRows,
   selectedStudioRun,
   slugDraft,
-  slugify
+  slugify,
+  topLevelRuns
 } from "../src/lib.js";
 
 function run(overrides = {}) {
@@ -87,6 +89,22 @@ test("run selection uses the Studio projection and honors an explicit ID", () =>
   assert.equal(selectedStudioRun(snapshot, root.id), root);
   assert.equal(selectedStudioRun(snapshot, "foreign"), child);
   assert.equal(selectedStudioRun({}, "foreign"), null);
+});
+
+test("run navigation groups durable child executions beneath one orchestration", () => {
+  const root = run({ id: "run_root" });
+  const child = run({ id: "run_child", parent_run_id: root.id, relation_kind: "subflow" });
+  const proof = run({ id: "run_proof", parent_run_id: child.id, relation_kind: "proof" });
+  const other = run({ id: "run_other", status: "completed" });
+  const source = [child, other, proof, root];
+  const before = JSON.stringify(source);
+
+  assert.deepEqual(topLevelRuns(source).map((item) => item.id), [other.id, root.id]);
+  assert.deepEqual(
+    runListRows(source).map(({ run: item, depth }) => [item.id, depth]),
+    [[other.id, 0], [root.id, 0], [child.id, 1], [proof.id, 2]]
+  );
+  assert.equal(JSON.stringify(source), before);
 });
 
 test("healthy runs do not expose a maintenance workflow", () => {

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api, browserKey, health } from "./api.js";
 import { Icon } from "./icons.jsx";
-import { shortId } from "./lib.js";
+import { shortId, topLevelRuns } from "./lib.js";
 import { Badge, Button, IconButton, Spinner, ThemeToggle } from "./components/ui.jsx";
 import FlowStudio from "./components/FlowStudio.jsx";
 import ResourceWorkbench from "./components/ResourceWorkbench.jsx";
@@ -23,7 +23,7 @@ const NAVIGATION = [
   { id: "agents", label: "Agents", icon: "agent", count: (snapshot) => snapshot.agents.length },
   { id: "prompts", label: "Prompts", icon: "prompt", count: (snapshot) => snapshot.prompts.length },
   { id: "skills", label: "Skills", icon: "skill", count: (snapshot) => snapshot.skills.length },
-  { id: "runs", label: "Runs", icon: "run", count: (snapshot) => snapshot.studio.runs.length },
+  { id: "runs", label: "Runs", icon: "run", count: (snapshot) => topLevelRuns(snapshot.studio.runs).length },
   { id: "forge", label: "Capability Forge", icon: "skill", count: (snapshot) => (snapshot.studio.skill_candidates ?? []).length },
   { id: "comparisons", label: "Comparisons", icon: "compare", count: (snapshot) => (snapshot.studio.comparisons ?? []).length },
   { id: "docs", label: "Documentation", icon: "docs" }

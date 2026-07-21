@@ -1068,7 +1068,17 @@ async function main() {
         citedRun.ledger_verified === true,
       { parent: citedRun.id, child: citedChild?.id, read_chars: citedReadStep?.output?.context.length, recalled_chars: citedRecallStep?.output?.context.length }
     );
-    await page.locator(".run-list-item").filter({ hasText: shortId(citedChild.id) }).first().click();
+    const citedParentItem = page.locator(".run-list-item.is-orchestration").filter({ hasText: shortId(citedRun.id) }).first();
+    const citedChildItem = page.locator(".run-list-item.is-linked").filter({ hasText: shortId(citedChild.id) }).first();
+    await citedParentItem.waitFor({ state: "visible", timeout: TIMEOUT_MS });
+    await citedChildItem.waitFor({ state: "visible", timeout: TIMEOUT_MS });
+    const hierarchyHeader = await page.locator(".run-list > header").innerText();
+    record(
+      "one operator start is presented as one orchestration with linked Subflow evidence, not two duplicate Runs",
+      await citedParentItem.count() === 1 && await citedChildItem.count() === 1 && hierarchyHeader.includes("durable execution"),
+      { parent: citedRun.id, child: citedChild.id, header: hierarchyHeader }
+    );
+    await citedChildItem.click();
     await page.getByRole("button", { name: "Approve and resume" }).click();
     await clickAndWait(page, page.getByRole("button", { name: "Record approval" }));
     snapshot = await waitForSnapshot(
