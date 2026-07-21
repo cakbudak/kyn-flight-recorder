@@ -1667,6 +1667,9 @@ class StudioStore:
                 "assert",
                 "approval",
                 "data_store",
+                "smart_read",
+                "knowledge_search",
+                "memory_recall",
             ],
             "route_outcomes": sorted(
                 {

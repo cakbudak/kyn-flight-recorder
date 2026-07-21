@@ -586,6 +586,154 @@ CREATE TABLE IF NOT EXISTS skill_candidate_decisions (
     )
 );
 
+-- Bounded public context projection. Knowledge is user-imported text with
+-- immutable versions and line-addressable passages; it is not the private
+-- Kyn.ist graph. Memory is separately governed so model-written candidates can
+-- never enter recall until code qualifies them and a human promotes the exact
+-- fingerprint.
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    current_version INTEGER NOT NULL DEFAULT 1 CHECK (current_version >= 1),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (workspace_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_source_versions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    source_id TEXT NOT NULL REFERENCES knowledge_sources(id) ON DELETE RESTRICT,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    filename TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    byte_count INTEGER NOT NULL CHECK (byte_count >= 0 AND byte_count <= 262144),
+    line_count INTEGER NOT NULL CHECK (line_count >= 1 AND line_count <= 10000),
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (source_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_passages (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    source_version_id TEXT NOT NULL
+        REFERENCES knowledge_source_versions(id) ON DELETE RESTRICT,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 1),
+    line_start INTEGER NOT NULL CHECK (line_start >= 1),
+    line_end INTEGER NOT NULL CHECK (line_end >= line_start),
+    text TEXT NOT NULL,
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    UNIQUE (source_version_id, ordinal)
+);
+
+CREATE TABLE IF NOT EXISTS memory_distillation_model_calls (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    source_run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    distiller_agent_version_id TEXT NOT NULL
+        REFERENCES agent_versions(id) ON DELETE RESTRICT,
+    provider_response_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+    model TEXT NOT NULL,
+    input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+    output_hash TEXT NOT NULL CHECK (length(output_hash) = 64),
+    usage_json TEXT NOT NULL,
+    request_id TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory_candidates (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    source_run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    distillation_model_call_id TEXT UNIQUE
+        REFERENCES memory_distillation_model_calls(id) ON DELETE RESTRICT,
+    author_kind TEXT NOT NULL CHECK (author_kind IN ('human', 'model')),
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    evidence_event_ids_json TEXT NOT NULL,
+    source_snapshot_hash TEXT NOT NULL CHECK (length(source_snapshot_hash) = 64),
+    fingerprint TEXT NOT NULL UNIQUE CHECK (length(fingerprint) = 64),
+    created_at TEXT NOT NULL,
+    CHECK (
+        (author_kind = 'human' AND distillation_model_call_id IS NULL) OR
+        (author_kind = 'model' AND distillation_model_call_id IS NOT NULL)
+    )
+);
+
+CREATE TABLE IF NOT EXISTS memory_candidate_qualifications (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    candidate_id TEXT NOT NULL UNIQUE REFERENCES memory_candidates(id) ON DELETE RESTRICT,
+    passed INTEGER NOT NULL CHECK (passed IN (0, 1)),
+    checks_json TEXT NOT NULL,
+    observed_source_snapshot_hash TEXT NOT NULL CHECK (length(observed_source_snapshot_hash) = 64),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    current_version INTEGER NOT NULL DEFAULT 1 CHECK (current_version >= 1),
+    created_at TEXT NOT NULL,
+    UNIQUE (workspace_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS memory_versions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE RESTRICT,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    source_candidate_id TEXT NOT NULL UNIQUE
+        REFERENCES memory_candidates(id) ON DELETE RESTRICT,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    source_run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE RESTRICT,
+    evidence_event_ids_json TEXT NOT NULL,
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    created_at TEXT NOT NULL,
+    UNIQUE (memory_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS memory_candidate_decisions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    candidate_id TEXT NOT NULL UNIQUE REFERENCES memory_candidates(id) ON DELETE RESTRICT,
+    qualification_id TEXT REFERENCES memory_candidate_qualifications(id) ON DELETE RESTRICT,
+    decision TEXT NOT NULL CHECK (decision IN ('promoted', 'rejected')),
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    acknowledged INTEGER NOT NULL CHECK (acknowledged = 1),
+    candidate_fingerprint TEXT NOT NULL CHECK (length(candidate_fingerprint) = 64),
+    memory_version_id TEXT REFERENCES memory_versions(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL,
+    CHECK (
+        (decision = 'promoted' AND qualification_id IS NOT NULL AND memory_version_id IS NOT NULL) OR
+        (decision = 'rejected' AND memory_version_id IS NULL)
+    )
+);
+
+CREATE TABLE IF NOT EXISTS memory_state_events (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE RESTRICT,
+    state TEXT NOT NULL CHECK (state IN ('active', 'retired')),
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS ix_events_run_sequence ON events(run_id, sequence);
 CREATE INDEX IF NOT EXISTS ix_runs_workspace_created ON runs(workspace_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_one_child
@@ -607,6 +755,16 @@ CREATE INDEX IF NOT EXISTS ix_automation_dead_ends_path
 ON automation_dead_end_evidence(workspace_id, flow_version_id, node_id, fingerprint);
 CREATE INDEX IF NOT EXISTS ix_skill_candidates_workspace_created
 ON skill_candidates(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_knowledge_sources_workspace_created
+ON knowledge_sources(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_knowledge_passages_version_lines
+ON knowledge_passages(source_version_id, line_start, line_end);
+CREATE INDEX IF NOT EXISTS ix_memory_candidates_workspace_created
+ON memory_candidates(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_memory_versions_workspace_created
+ON memory_versions(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_memory_state_events_memory_created
+ON memory_state_events(memory_id, created_at DESC);
 
 CREATE TRIGGER IF NOT EXISTS trg_prompt_versions_no_update
 BEFORE UPDATE ON prompt_versions BEGIN SELECT RAISE(ABORT, 'prompt version is immutable'); END;
@@ -716,6 +874,42 @@ CREATE TRIGGER IF NOT EXISTS trg_skill_candidate_decisions_no_update
 BEFORE UPDATE ON skill_candidate_decisions BEGIN SELECT RAISE(ABORT, 'skill candidate decisions are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_skill_candidate_decisions_no_delete
 BEFORE DELETE ON skill_candidate_decisions BEGIN SELECT RAISE(ABORT, 'skill candidate decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_source_versions_no_update
+BEFORE UPDATE ON knowledge_source_versions BEGIN SELECT RAISE(ABORT, 'knowledge source versions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_source_versions_no_delete
+BEFORE DELETE ON knowledge_source_versions BEGIN SELECT RAISE(ABORT, 'knowledge source versions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_passages_no_update
+BEFORE UPDATE ON knowledge_passages BEGIN SELECT RAISE(ABORT, 'knowledge passages are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_passages_no_delete
+BEFORE DELETE ON knowledge_passages BEGIN SELECT RAISE(ABORT, 'knowledge passages are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_sources_version_fence
+BEFORE UPDATE OF current_version ON knowledge_sources
+WHEN NEW.current_version <> OLD.current_version + 1
+BEGIN SELECT RAISE(ABORT, 'knowledge source update must advance one version'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_distillation_calls_no_update
+BEFORE UPDATE ON memory_distillation_model_calls BEGIN SELECT RAISE(ABORT, 'memory distillation calls are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_distillation_calls_no_delete
+BEFORE DELETE ON memory_distillation_model_calls BEGIN SELECT RAISE(ABORT, 'memory distillation calls are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_candidates_no_update
+BEFORE UPDATE ON memory_candidates BEGIN SELECT RAISE(ABORT, 'memory candidates are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_candidates_no_delete
+BEFORE DELETE ON memory_candidates BEGIN SELECT RAISE(ABORT, 'memory candidates are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_qualifications_no_update
+BEFORE UPDATE ON memory_candidate_qualifications BEGIN SELECT RAISE(ABORT, 'memory qualifications are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_qualifications_no_delete
+BEFORE DELETE ON memory_candidate_qualifications BEGIN SELECT RAISE(ABORT, 'memory qualifications are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_decisions_no_update
+BEFORE UPDATE ON memory_candidate_decisions BEGIN SELECT RAISE(ABORT, 'memory decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_decisions_no_delete
+BEFORE DELETE ON memory_candidate_decisions BEGIN SELECT RAISE(ABORT, 'memory decisions are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_versions_no_update
+BEFORE UPDATE ON memory_versions BEGIN SELECT RAISE(ABORT, 'memory versions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_versions_no_delete
+BEFORE DELETE ON memory_versions BEGIN SELECT RAISE(ABORT, 'memory versions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_state_events_no_update
+BEFORE UPDATE ON memory_state_events BEGIN SELECT RAISE(ABORT, 'memory state events are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_memory_state_events_no_delete
+BEFORE DELETE ON memory_state_events BEGIN SELECT RAISE(ABORT, 'memory state events are append-only'); END;
 
 CREATE TRIGGER IF NOT EXISTS trg_runs_terminal_absorbing
 BEFORE UPDATE OF status ON runs
@@ -888,5 +1082,13 @@ IMMUTABLE_TABLES = frozenset(
         "skill_candidates",
         "skill_candidate_qualifications",
         "skill_candidate_decisions",
+        "knowledge_source_versions",
+        "knowledge_passages",
+        "memory_distillation_model_calls",
+        "memory_candidates",
+        "memory_candidate_qualifications",
+        "memory_candidate_decisions",
+        "memory_versions",
+        "memory_state_events",
     }
 )

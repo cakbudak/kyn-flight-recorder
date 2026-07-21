@@ -33,6 +33,7 @@ from .contracts import (
     validate_json_schema,
 )
 from .runtime import ResponseTransport
+from .context_store import ContextStore
 from .stop_seam import (
     AcceptanceCriterion,
     EvidenceBundle,
@@ -44,7 +45,17 @@ from .studio_store import StudioStore
 
 NODE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 CALLABLE_ACTION_KINDS = frozenset(
-    {"template", "condition", "router", "sandbox", "transform", "assert"}
+    {
+        "template",
+        "condition",
+        "router",
+        "sandbox",
+        "transform",
+        "assert",
+        "smart_read",
+        "knowledge_search",
+        "memory_recall",
+    }
 )
 # The Action kinds whose executor mints a run effect, and the kind that mints a
 # human approval decision. Named once, beside the executor that mints them, so
@@ -440,10 +451,12 @@ class StudioRuntime:
         client: ResponseTransport,
         *,
         max_output_tokens: int = 1_500,
+        context: ContextStore | None = None,
     ) -> None:
         self.repository = repository
         self.client = client
         self.max_output_tokens = max_output_tokens
+        self.context = context
 
     def execute(
         self,
@@ -1751,6 +1764,45 @@ class StudioRuntime:
                     output={"outcome": selected, "actual": actual},
                     route_outcome=selected,
                 )
+            elif kind == "smart_read":
+                if self.context is None:
+                    raise ContractViolation("SmartRead context repository is unavailable")
+                mode = action["config"]["mode"]
+                options: dict[str, Any] = {"mode": mode}
+                if mode == "focus":
+                    options.update(
+                        line_start=validated_input["line_start"],
+                        line_end=validated_input["line_end"],
+                    )
+                elif mode == "grep":
+                    options.update(
+                        query=validated_input["query"],
+                        max_results=validated_input["max_results"],
+                    )
+                output = self.context.smart_read(
+                    workspace_id,
+                    validated_input["source_version_id"],
+                    **options,
+                )
+                result = ActionResult(output=output, route_outcome="success")
+            elif kind == "knowledge_search":
+                if self.context is None:
+                    raise ContractViolation("Knowledge context repository is unavailable")
+                output = self.context.search_knowledge(
+                    workspace_id,
+                    validated_input["query"],
+                    max_results=validated_input["max_results"],
+                )
+                result = ActionResult(output=output, route_outcome="success")
+            elif kind == "memory_recall":
+                if self.context is None:
+                    raise ContractViolation("Memory context repository is unavailable")
+                output = self.context.search_memories(
+                    workspace_id,
+                    validated_input["query"],
+                    max_results=validated_input["max_results"],
+                )
+                result = ActionResult(output=output, route_outcome="success")
             elif kind == APPROVAL_ACTION_KIND:
                 template = action["config"]["message_template"]
                 variables = sorted(set(PLACEHOLDER_RE.findall(template)))

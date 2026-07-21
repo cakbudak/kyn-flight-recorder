@@ -8,7 +8,9 @@ import threading
 from typing import Any, Callable, Mapping, Sequence
 
 from .contracts import (
+    canonical_json,
     ContractViolation,
+    extract_output_text,
     NotFound,
     PLACEHOLDER_RE,
     ProviderFailure,
@@ -24,7 +26,9 @@ from .contracts import (
     require_string_list,
     render_prompt,
     safe_response_summary,
+    validate_json_schema,
 )
+from .context_store import ContextStore
 from .model_comparison import build_comparison
 from .runtime import AgentRuntime, ResponseTransport
 from .skill_forge import build_distillation_payload, parse_candidate
@@ -63,7 +67,8 @@ class ControlPlane:
         self.tools = ToolRegistry(store)
         self.runtime = AgentRuntime(store, client, self.tools)
         self.studio = StudioStore(store)
-        self.studio_runtime = StudioRuntime(self.studio, client)
+        self.context = ContextStore(store, self.studio)
+        self.studio_runtime = StudioRuntime(self.studio, client, context=self.context)
         self._active_studio_runs: set[str] = set()
         self._active_studio_runs_lock = threading.Lock()
         self._studio_worker_slots = threading.BoundedSemaphore(2)
@@ -82,7 +87,7 @@ class ControlPlane:
     def _studio_runtime(self, client: ResponseTransport | None) -> StudioRuntime:
         if client is None or client is self.client:
             return self.studio_runtime
-        return StudioRuntime(self.studio, client)
+        return StudioRuntime(self.studio, client, context=self.context)
 
     def create_workspace(self, *, seed: bool = True) -> dict[str, Any]:
         workspace = self.store.create_workspace()
@@ -500,6 +505,9 @@ class ControlPlane:
             "approval": "approval",
             "sandbox": "sandbox_write",
             "data_store": "sandbox_write",
+            "smart_read": "none",
+            "knowledge_search": "none",
+            "memory_recall": "none",
         }
         storage_kinds = {
             "ai": "ai",
@@ -512,6 +520,9 @@ class ControlPlane:
             "approval": "approval",
             "sandbox": "sandbox",
             "data_store": "sandbox",
+            "smart_read": "template",
+            "knowledge_search": "template",
+            "memory_recall": "template",
         }
         if normalized_kind not in effect_levels:
             raise ContractViolation("Action kind is not supported")
@@ -560,6 +571,69 @@ class ControlPlane:
                 raise ContractViolation(
                     "AI Action custom outcomes require an outcome_path"
                 )
+        elif normalized_kind in {"smart_read", "knowledge_search", "memory_recall"}:
+            if normalized_agent is not None:
+                raise ContractViolation("context read Actions may not pin an Agent")
+            input_properties = set(normalized_input["properties"])
+            input_required = set(normalized_input["required"])
+            output_properties = set(normalized_output["properties"])
+            if normalized_kind == "smart_read":
+                if set(normalized_config) != {"mode"}:
+                    raise ContractViolation("SmartRead Action config is invalid")
+                mode = normalized_config["mode"]
+                if mode not in {"glance", "outline", "focus", "grep", "full"}:
+                    raise ContractViolation("SmartRead Action mode is invalid")
+                expected_input = {
+                    "focus": {"source_version_id", "line_start", "line_end"},
+                    "grep": {"source_version_id", "query", "max_results"},
+                }.get(mode, {"source_version_id"})
+                expected_output = {
+                    "mode",
+                    "source",
+                    "passages",
+                    "result_fingerprint",
+                }
+                if mode == "glance":
+                    expected_output.add("headings")
+                elif mode == "grep":
+                    expected_output.add("query")
+                if input_properties != expected_input or input_required != expected_input:
+                    raise ContractViolation(
+                        f"SmartRead {mode} input schema must require exactly "
+                        + ", ".join(sorted(expected_input))
+                    )
+                if output_properties != expected_output:
+                    raise ContractViolation(
+                        f"SmartRead {mode} output schema has the wrong top-level fields"
+                    )
+                if normalized_input["properties"]["source_version_id"]["type"] != "string":
+                    raise ContractViolation("SmartRead source_version_id must be a string")
+                if mode == "focus" and any(
+                    normalized_input["properties"][name]["type"] != "integer"
+                    for name in ("line_start", "line_end")
+                ):
+                    raise ContractViolation("SmartRead focus line fields must be integers")
+                if mode == "grep" and (
+                    normalized_input["properties"]["query"]["type"] != "string"
+                    or normalized_input["properties"]["max_results"]["type"] != "integer"
+                ):
+                    raise ContractViolation("SmartRead grep query or max_results type is invalid")
+            else:
+                if normalized_config:
+                    raise ContractViolation("context search Action config must be empty")
+                expected_input = {"query", "max_results"}
+                expected_output = {"query", "terms", "results", "result_fingerprint"}
+                if input_properties != expected_input or input_required != expected_input:
+                    raise ContractViolation(
+                        "context search input schema must require query and max_results"
+                    )
+                if output_properties != expected_output:
+                    raise ContractViolation("context search output schema has the wrong top-level fields")
+                if (
+                    normalized_input["properties"]["query"]["type"] != "string"
+                    or normalized_input["properties"]["max_results"]["type"] != "integer"
+                ):
+                    raise ContractViolation("context search input types are invalid")
         elif normalized_kind == "template":
             if normalized_agent is not None or set(normalized_config) != {"template"}:
                 raise ContractViolation("template Action config is invalid")
@@ -1895,6 +1969,7 @@ class ControlPlane:
 
     def studio_snapshot(self, workspace_id: str) -> dict[str, Any]:
         snapshot = self.studio.snapshot(workspace_id)
+        snapshot.update(self.context.snapshot(workspace_id))
         snapshot["comparisons"] = self.list_comparisons(workspace_id, limit=10)
         # The comparison surface has to offer exactly the models the override
         # membership check will accept. Projecting the set the server enforces
@@ -1902,6 +1977,349 @@ class ControlPlane:
         # start offering a model the runtime refuses, or hiding one it allows.
         snapshot["supported_models"] = sorted(SUPPORTED_MODELS)
         return snapshot
+
+    # -- Context: Knowledge, SmartRead, and governed Memory ------------
+
+    @staticmethod
+    def _knowledge_filename(value: Any) -> str:
+        filename = require_string(value, "Knowledge filename", maximum=180)
+        if any(marker in filename for marker in ("/", "\\", "..")) or any(
+            ord(character) < 32 for character in filename
+        ):
+            raise ContractViolation("Knowledge filename must be a display name, not a path")
+        return filename
+
+    @staticmethod
+    def _knowledge_media_type(value: Any) -> str:
+        media_type = require_string(value, "Knowledge media type", maximum=80)
+        if media_type not in {
+            "text/plain",
+            "text/markdown",
+            "application/json",
+            "application/yaml",
+            "text/x-source-code",
+        }:
+            raise ContractViolation("Knowledge media type is not supported")
+        return media_type
+
+    def create_knowledge_source(
+        self,
+        workspace_id: str,
+        *,
+        name: Any,
+        slug: Any,
+        description: Any,
+        filename: Any,
+        media_type: Any,
+        content: Any,
+        created_by: Any = "user",
+    ) -> dict[str, Any]:
+        return self.context.create_source(
+            workspace_id,
+            name=require_string(name, "Knowledge Source name", maximum=100),
+            slug=require_slug(slug),
+            description=require_string(
+                description, "Knowledge Source description", minimum=0, maximum=500
+            ),
+            filename=self._knowledge_filename(filename),
+            media_type=self._knowledge_media_type(media_type),
+            content=content,
+            created_by=require_string(created_by, "Knowledge author", maximum=100),
+        )
+
+    def revise_knowledge_source(
+        self,
+        workspace_id: str,
+        source_id: str,
+        *,
+        expected_version: Any,
+        name: Any,
+        description: Any,
+        filename: Any,
+        media_type: Any,
+        content: Any,
+        created_by: Any = "user",
+    ) -> dict[str, Any]:
+        expected = self._expected_resource_version(expected_version, "Knowledge Source")
+        return self.context.revise_source(
+            workspace_id,
+            source_id,
+            expected_version=expected,
+            name=require_string(name, "Knowledge Source name", maximum=100),
+            description=require_string(
+                description, "Knowledge Source description", minimum=0, maximum=500
+            ),
+            filename=self._knowledge_filename(filename),
+            media_type=self._knowledge_media_type(media_type),
+            content=content,
+            created_by=require_string(created_by, "Knowledge author", maximum=100),
+        )
+
+    def get_knowledge_source(self, workspace_id: str, source_id: str) -> dict[str, Any]:
+        return self.context.get_source(workspace_id, source_id)
+
+    def smart_read(
+        self,
+        workspace_id: str,
+        *,
+        source_version_id: Any,
+        mode: Any,
+        query: Any = None,
+        line_start: Any = None,
+        line_end: Any = None,
+        max_results: Any = 12,
+    ) -> dict[str, Any]:
+        return self.context.smart_read(
+            workspace_id,
+            require_string(source_version_id, "Knowledge Source version id", maximum=80),
+            mode=require_string(mode, "SmartRead mode", maximum=20),
+            query=query,
+            line_start=line_start,
+            line_end=line_end,
+            max_results=max_results,
+        )
+
+    def search_knowledge(
+        self, workspace_id: str, *, query: Any, max_results: Any = 12
+    ) -> dict[str, Any]:
+        return self.context.search_knowledge(workspace_id, query, max_results=max_results)
+
+    @staticmethod
+    def _memory_tags(value: Any) -> list[str]:
+        tags = require_string_list(
+            value, "Memory tags", maximum_items=12, maximum_item_length=40
+        )
+        normalized: list[str] = []
+        for tag in tags:
+            folded = tag.casefold()
+            if folded not in normalized:
+                normalized.append(folded)
+        return normalized
+
+    @staticmethod
+    def _memory_event_ids(value: Any) -> list[str]:
+        return require_string_list(
+            value, "Memory evidence event ids", maximum_items=20, maximum_item_length=80
+        )
+
+    def create_human_memory_candidate(
+        self,
+        workspace_id: str,
+        *,
+        source_run_id: Any,
+        title: Any,
+        content: Any,
+        rationale: Any,
+        tags: Any,
+        evidence_event_ids: Any,
+    ) -> dict[str, Any]:
+        return self.context.create_human_candidate(
+            workspace_id,
+            source_run_id=require_string(source_run_id, "Memory source Run id", maximum=80),
+            title=require_string(title, "Memory title", maximum=140),
+            content=require_string(content, "Memory content", maximum=6_000),
+            rationale=require_string(rationale, "Memory rationale", maximum=1_500),
+            tags=self._memory_tags(tags),
+            evidence_event_ids=self._memory_event_ids(evidence_event_ids),
+        )
+
+    def draft_model_memory_candidate(
+        self,
+        workspace_id: str,
+        *,
+        source_run_id: Any,
+        distiller_agent_version_id: Any,
+        evidence_event_ids: Any,
+        client: ResponseTransport,
+    ) -> dict[str, Any]:
+        run_id = require_string(source_run_id, "Memory source Run id", maximum=80)
+        agent_id = require_string(
+            distiller_agent_version_id, "Memory distiller Agent version id", maximum=80
+        )
+        cited_ids = self._memory_event_ids(evidence_event_ids)
+        run = self.studio.get_run(workspace_id, run_id)
+        if run["status"] != "completed" or run.get("ledger_verified") is not True:
+            raise ContractViolation("Memory source Run must be completed with a verified ledger")
+        owned_events = {event["id"]: event for event in run["events"]}
+        if not cited_ids or not set(cited_ids).issubset(owned_events):
+            raise ContractViolation("Memory distillation evidence must belong to the source Run")
+        agent = self.studio.get_agent_runtime(workspace_id, agent_id)
+        schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "minLength": 3, "maxLength": 140},
+                "content": {"type": "string", "minLength": 12, "maxLength": 6000},
+                "rationale": {"type": "string", "minLength": 12, "maxLength": 1500},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 40},
+                    "minItems": 1,
+                    "maxItems": 12,
+                },
+                "evidence_event_ids": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 80},
+                    "minItems": 1,
+                    "maxItems": 20,
+                },
+            },
+            "required": ["title", "content", "rationale", "tags", "evidence_event_ids"],
+            "additionalProperties": False,
+        }
+        evidence = {
+            "run_id": run_id,
+            "flow_version_id": run["flow_version_id"],
+            "outcome": run["outcome"],
+            "output": run["output"],
+            "events": [owned_events[event_id] for event_id in cited_ids],
+        }
+        evidence_json = canonical_json(evidence)
+        if len(evidence_json.encode("utf-8")) > 96 * 1024:
+            raise ContractViolation("Memory distillation evidence exceeds 96 KiB")
+        payload = {
+            "model": agent["model"],
+            "instructions": (
+                "You are a pinned Memory distiller. Propose one reusable observation "
+                "using only the supplied verified Run evidence. Cite only supplied "
+                "event IDs. Do not grant authority, invent outcomes, or write policy.\n\n"
+                + StudioRuntime._agent_instructions(agent)
+            ),
+            "input": [{"role": "user", "content": evidence_json}],
+            "tool_choice": "none",
+            "parallel_tool_calls": False,
+            "max_output_tokens": 1200,
+            "store": False,
+            "reasoning": {"effort": "medium"},
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "kyn_memory_candidate",
+                    "schema": schema,
+                    "strict": True,
+                }
+            },
+            "metadata": {
+                "kyn_surface": "agent-studio",
+                "operation": "memory-distillation",
+                "source_run_id": run_id,
+                "agent_version_id": agent_id,
+            },
+        }
+        if self.store.in_write_transaction():
+            raise RuntimeError("external model I/O under a SQLite write transaction")
+        response = client.create(payload)
+        try:
+            parsed = json.loads(extract_output_text(response))
+        except json.JSONDecodeError:
+            raise ContractViolation("Memory distiller output is not valid JSON") from None
+        candidate = validate_json_schema(parsed, schema, "Memory distiller output")
+        if not set(candidate["evidence_event_ids"]).issubset(cited_ids):
+            raise ContractViolation("Memory distiller cited evidence outside its supplied window")
+        summary = safe_response_summary(response)
+        return self.context.create_model_candidate(
+            workspace_id,
+            source_run_id=run_id,
+            distiller_agent_version_id=agent_id,
+            title=require_string(candidate["title"], "Memory title", maximum=140),
+            content=require_string(candidate["content"], "Memory content", maximum=6_000),
+            rationale=require_string(candidate["rationale"], "Memory rationale", maximum=1_500),
+            tags=self._memory_tags(candidate["tags"]),
+            evidence_event_ids=self._memory_event_ids(candidate["evidence_event_ids"]),
+            provider_response_id=summary["provider_response_id"],
+            status="completed",
+            model=summary["model"],
+            input_hash=fingerprint(payload),
+            output_hash=fingerprint(candidate),
+            usage=summary["usage"],
+            request_id=(
+                str(response.get("_request_id"))[:128]
+                if response.get("_request_id") is not None
+                else None
+            ),
+        )
+
+    def qualify_memory_candidate(
+        self, workspace_id: str, candidate_id: str
+    ) -> dict[str, Any]:
+        return self.context.qualify_candidate(workspace_id, candidate_id)
+
+    def promote_memory_candidate(
+        self,
+        workspace_id: str,
+        candidate_id: str,
+        *,
+        slug: Any,
+        actor: Any,
+        reason: Any,
+        acknowledged: Any,
+        candidate_fingerprint: Any,
+    ) -> dict[str, Any]:
+        if acknowledged is not True:
+            raise ContractViolation("Memory promotion requires explicit acknowledgement")
+        fingerprint_value = require_string(
+            candidate_fingerprint, "Memory candidate fingerprint", maximum=64
+        )
+        if not HEX_64_RE.fullmatch(fingerprint_value):
+            raise ContractViolation("Memory candidate fingerprint is invalid")
+        return self.context.promote_candidate(
+            workspace_id,
+            candidate_id,
+            slug=require_slug(slug),
+            actor=require_string(actor, "Memory decision actor", maximum=100),
+            reason=require_string(
+                reason, "Memory promotion reason", minimum=20, maximum=1_500
+            ),
+            candidate_fingerprint_value=fingerprint_value,
+        )
+
+    def reject_memory_candidate(
+        self,
+        workspace_id: str,
+        candidate_id: str,
+        *,
+        actor: Any,
+        reason: Any,
+        acknowledged: Any,
+        candidate_fingerprint: Any,
+    ) -> dict[str, Any]:
+        if acknowledged is not True:
+            raise ContractViolation("Memory rejection requires explicit acknowledgement")
+        fingerprint_value = require_string(
+            candidate_fingerprint, "Memory candidate fingerprint", maximum=64
+        )
+        if not HEX_64_RE.fullmatch(fingerprint_value):
+            raise ContractViolation("Memory candidate fingerprint is invalid")
+        return self.context.reject_candidate(
+            workspace_id,
+            candidate_id,
+            actor=require_string(actor, "Memory decision actor", maximum=100),
+            reason=require_string(
+                reason, "Memory rejection reason", minimum=20, maximum=1_500
+            ),
+            candidate_fingerprint_value=fingerprint_value,
+        )
+
+    def retire_memory(
+        self,
+        workspace_id: str,
+        memory_id: str,
+        *,
+        actor: Any,
+        reason: Any,
+    ) -> dict[str, Any]:
+        return self.context.retire_memory(
+            workspace_id,
+            memory_id,
+            actor=require_string(actor, "Memory retirement actor", maximum=100),
+            reason=require_string(
+                reason, "Memory retirement reason", minimum=20, maximum=1_500
+            ),
+        )
+
+    def search_memories(
+        self, workspace_id: str, *, query: Any, max_results: Any = 12
+    ) -> dict[str, Any]:
+        return self.context.search_memories(workspace_id, query, max_results=max_results)
 
     def check_brake(self, workspace_id: str, flow_id: str) -> dict[str, Any]:
         """Report, without writing, whether a canonical dead end VETOES this Flow.

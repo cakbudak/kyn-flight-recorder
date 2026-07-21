@@ -13,6 +13,7 @@ from http.cookies import SimpleCookie
 from typing import Any, Callable, Mapping
 
 from .contracts import (
+    ContractViolation,
     Forbidden,
     NotFound,
     OpenAIKeyRequired,
@@ -152,6 +153,24 @@ class ApiApplication:
         if match:
             workspace_id = self._workspace_id(request)
             return self._ok(self.control_plane.get_studio_flow(workspace_id, match.group(1)))
+        match = re.fullmatch(
+            rf"/api/v1/studio/knowledge-sources/{RESOURCE_ID}", request.path
+        )
+        if match:
+            workspace_id = self._workspace_id(request)
+            return self._ok(
+                self.control_plane.get_knowledge_source(workspace_id, match.group(1))
+            )
+        match = re.fullmatch(rf"/api/v1/studio/memory-candidates/{RESOURCE_ID}", request.path)
+        if match:
+            workspace_id = self._workspace_id(request)
+            return self._ok(
+                self.control_plane.context.get_candidate(workspace_id, match.group(1))
+            )
+        match = re.fullmatch(rf"/api/v1/studio/memories/{RESOURCE_ID}", request.path)
+        if match:
+            workspace_id = self._workspace_id(request)
+            return self._ok(self.control_plane.context.get_memory(workspace_id, match.group(1)))
         if request.path == "/api/v1/studio/comparisons":
             workspace_id = self._workspace_id(request)
             return self._ok(
@@ -206,6 +225,162 @@ class ApiApplication:
             )
 
         workspace_id = self._workspace_id(request)
+        if request.path == "/api/v1/studio/knowledge-sources":
+            self._require_exact_keys(
+                body,
+                {
+                    "name",
+                    "slug",
+                    "description",
+                    "filename",
+                    "media_type",
+                    "content",
+                    "created_by",
+                },
+            )
+            return self._ok(
+                self.control_plane.create_knowledge_source(workspace_id, **body),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/knowledge-sources/{RESOURCE_ID}/versions", request.path
+        )
+        if match:
+            self._require_exact_keys(
+                body,
+                {
+                    "expected_version",
+                    "name",
+                    "description",
+                    "filename",
+                    "media_type",
+                    "content",
+                    "created_by",
+                },
+            )
+            return self._ok(
+                self.control_plane.revise_knowledge_source(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        if request.path == "/api/v1/studio/knowledge/smart-read":
+            self._require_keys(
+                body,
+                {"source_version_id", "mode"},
+                {"query", "line_start", "line_end", "max_results"},
+            )
+            return self._ok(self.control_plane.smart_read(workspace_id, **body))
+        if request.path == "/api/v1/studio/knowledge/search":
+            self._require_keys(body, {"query"}, {"max_results"})
+            return self._ok(self.control_plane.search_knowledge(workspace_id, **body))
+        if request.path == "/api/v1/studio/memory-candidates":
+            author_kind = body.get("author_kind")
+            if author_kind == "human":
+                self._require_exact_keys(
+                    body,
+                    {
+                        "author_kind",
+                        "source_run_id",
+                        "title",
+                        "content",
+                        "rationale",
+                        "tags",
+                        "evidence_event_ids",
+                    },
+                )
+                command = dict(body)
+                command.pop("author_kind")
+                return self._ok(
+                    self.control_plane.create_human_memory_candidate(
+                        workspace_id, **command
+                    ),
+                    status=HTTPStatus.CREATED,
+                )
+            if author_kind == "model":
+                self._require_exact_keys(
+                    body,
+                    {
+                        "author_kind",
+                        "source_run_id",
+                        "distiller_agent_version_id",
+                        "evidence_event_ids",
+                    },
+                )
+                command = dict(body)
+                command.pop("author_kind")
+                return self._model_action(
+                    request,
+                    workspace_id,
+                    forecast_calls=1,
+                    status=HTTPStatus.CREATED,
+                    operation=lambda client: self.control_plane.draft_model_memory_candidate(
+                        workspace_id, client=client, **command
+                    ),
+                )
+            raise ContractViolation("Memory candidate author kind must be human or model")
+        match = re.fullmatch(
+            rf"/api/v1/studio/memory-candidates/{RESOURCE_ID}/qualifications",
+            request.path,
+        )
+        if match:
+            self._require_exact_keys(body, set())
+            return self._ok(
+                self.control_plane.qualify_memory_candidate(
+                    workspace_id, match.group(1)
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/memory-candidates/{RESOURCE_ID}/promotion",
+            request.path,
+        )
+        if match:
+            self._require_exact_keys(
+                body,
+                {
+                    "slug",
+                    "actor",
+                    "reason",
+                    "acknowledged",
+                    "candidate_fingerprint",
+                },
+            )
+            return self._ok(
+                self.control_plane.promote_memory_candidate(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        match = re.fullmatch(
+            rf"/api/v1/studio/memory-candidates/{RESOURCE_ID}/rejection",
+            request.path,
+        )
+        if match:
+            self._require_exact_keys(
+                body,
+                {"actor", "reason", "acknowledged", "candidate_fingerprint"},
+            )
+            return self._ok(
+                self.control_plane.reject_memory_candidate(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
+        if request.path == "/api/v1/studio/memories/search":
+            self._require_keys(body, {"query"}, {"max_results"})
+            return self._ok(self.control_plane.search_memories(workspace_id, **body))
+        match = re.fullmatch(
+            rf"/api/v1/studio/memories/{RESOURCE_ID}/retirement", request.path
+        )
+        if match:
+            self._require_exact_keys(body, {"actor", "reason"})
+            return self._ok(
+                self.control_plane.retire_memory(
+                    workspace_id, match.group(1), **body
+                ),
+                status=HTTPStatus.CREATED,
+            )
         if request.path == "/api/v1/studio/actions":
             self._require_keys(
                 body,
